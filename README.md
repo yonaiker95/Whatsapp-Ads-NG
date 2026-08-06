@@ -150,4 +150,4 @@ Ver [DOCUMENTACION.md](DOCUMENTACION.md) para la documentación técnica complet
 
 ## Créditos
 
-Proyecto elaborado por **Yonaike Peralta** (V-22357130) y **Greimar Marin** (V-29686611).
+Proyecto elaborado por **Yonaiker Peralta** (V-22357130) y **Greimar Marin** (V-29686611).
