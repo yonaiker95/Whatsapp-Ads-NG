@@ -146,4 +146,8 @@ whatsapp-ads-angular/
 
 ## Documentación
 
-Ver [DOCUMENTACION.md](DOCUMENTACION.md) para la documentación técnica completa: arquitectura, base de datos, endpoints de la API, contenedores Docker, orquestación dinámica con n8n, Centro de IA y resolución de problemas.
+Ver [DOCUMENTACION.md](DOCUMENTACION.md) para la documentación técnica completa: arquitectura, base de datos (incluye el **diagrama entidad-relación**), endpoints de la API, contenedores Docker, orquestación dinámica con n8n, Centro de IA y resolución de problemas.
+
+## Créditos
+
+Proyecto elaborado por **Yonaike Peralta** (V-22357130) y **Greimar Marin** (V-29686611).
