@@ -213,6 +213,226 @@ Campos principales: `phone` (sin `+`), `code`, `purpose`, `token` (solo login/re
 - Un **usuario** tiene una **configuración de IA** (`ai_configs`) y su historial en `ai_usage_logs` / `ai_audit_logs`.
 - Una **organización** tiene un **propietario** (`organizations.owner_id`) y muchos **miembros** (usuarios con `organization_id`).
 
+### Diagrama entidad-relación (E-R)
+
+Diagrama derivado de las claves foráneas del esquema (definido en `server.js`). Notación *crow's foot*: `||` = uno, `o{` = cero o muchos, `o|` = cero o uno.
+
+```mermaid
+erDiagram
+    organizations ||--o{ users : "members (organization_id)"
+    organizations ||--o| users : "owner (owner_id)"
+    users ||--o{ sessions : "user_id"
+    users ||--o{ invoices : "user_id"
+    users ||--o{ payment_methods : "user_id"
+    users ||--o{ instances : "user_id"
+    users ||--o{ templates : "user_id"
+    users ||--o{ reported_payments : "user_id"
+    users ||--o{ user_addons : "user_id"
+    users ||--o| ai_configs : "user_id (1:1)"
+    users ||--o{ ai_usage_logs : "user_id"
+    users ||--o{ ai_audit_logs : "user_id"
+    instances ||--o{ groups_ : "instance_id"
+    instances ||--o{ campaigns : "instance_id"
+    instances ||--o{ message_logs : "instance_id"
+    instances ||--o{ auto_replies : "instance_id"
+    instances ||--o| chatbot_configs : "instance_id (1:1)"
+    instances ||--o{ chatbot_paused : "instance_id"
+    templates ||--o{ campaigns : "template_id"
+    campaigns ||--o{ send_logs : "campaign_id"
+    campaigns ||--o{ message_logs : "campaign_id"
+
+    users {
+        text id PK
+        text email UK
+        text name
+        text password_hash
+        text role
+        text[] permissions
+        text organization_id FK
+        text plan
+        text phone
+        boolean phone_verified
+        boolean two_factor_enabled
+    }
+    organizations {
+        text id PK
+        text name
+        text description
+        text owner_id FK
+    }
+    otp_codes {
+        text id PK
+        text phone
+        text code
+        text purpose
+        text token
+        int attempts
+        boolean used
+        datetime expires_at
+    }
+    invoices {
+        text id PK
+        text number
+        numeric amount
+        text status
+        text user_id FK
+        datetime due_date
+    }
+    payment_methods {
+        text id PK
+        text user_id FK
+        text type
+        text brand
+        text last4
+    }
+    sessions {
+        text id PK
+        text user_id FK
+        text email
+        text role
+        datetime expires_at
+    }
+    instances {
+        text id PK
+        text name
+        text evolution_url
+        text api_key
+        text phone
+        text status
+        text user_id FK
+        text verification_role
+    }
+    groups_ {
+        text id PK
+        text instance_id FK
+        text jid
+        text name
+        int participants
+        boolean excluded
+    }
+    templates {
+        text id PK
+        text name
+        text user_id FK
+        text category
+    }
+    campaigns {
+        text id PK
+        text name
+        text status
+        text template_id FK
+        text instance_id FK
+        datetime scheduled_at
+        int total_sent
+        int total_failed
+    }
+    send_logs {
+        text id PK
+        text campaign_id FK
+        int sent
+        int failed
+    }
+    message_logs {
+        text id PK
+        text instance_id FK
+        text campaign_id FK
+        text sender_jid
+        text content
+        text status
+    }
+    auto_replies {
+        text id PK
+        text instance_id FK
+        text name
+        text trigger
+        text response
+        boolean is_active
+    }
+    chatbot_configs {
+        text id PK
+        text instance_id FK
+        boolean is_active
+        text system_prompt
+    }
+    chatbot_paused {
+        text id PK
+        text instance_id FK
+        text sender_jid
+    }
+    payment_destinations {
+        text id PK
+        text type
+        text name
+        boolean is_active
+    }
+    reported_payments {
+        text id PK
+        text user_id FK
+        text destination_id
+        numeric amount
+        text status
+    }
+    plans {
+        text id PK
+        text name
+        text slug UK
+        numeric price_monthly
+        numeric price_yearly
+        int max_instances
+    }
+    user_addons {
+        text id PK
+        text user_id FK
+        text addon_key
+        int quantity
+        numeric unit_amount
+    }
+    plan_addons {
+        text key PK
+        text label
+        numeric unit_amount
+        boolean is_active
+    }
+    testimonials {
+        text id PK
+        text author
+        text quote
+        int rating
+    }
+    ai_configs {
+        text id PK
+        text user_id FK
+        text mode
+        text provider
+        text model
+        text api_key_enc
+        numeric monthly_quota
+    }
+    ai_saas_keys {
+        text id PK
+        text provider
+        text api_key_enc
+        boolean is_active
+    }
+    ai_usage_logs {
+        text id PK
+        text user_id FK
+        text provider
+        text model
+        int input_tokens
+        int output_tokens
+        numeric estimated_cost
+    }
+    ai_audit_logs {
+        text id PK
+        text user_id FK
+        text action
+        text detail
+    }
+```
+
+> Las tablas `otp_codes`, `payment_destinations`, `plans`, `plan_addons`, `testimonials` y `ai_saas_keys` no tienen claves foráneas; se relacionan lógicamente por columnas (p. ej. `reported_payments.destination_id` → `payment_destinations.id`).
+
 ### Permisos por módulo (`users.permissions`)
 
 La columna `users.permissions` (`TEXT[]`) guarda los permisos que el **propietario** de la organización concede a cada miembro. El administrador global (`role = 'admin'`) y el propietario (`role = 'owner'`) siempre tienen acceso completo; el resto de usuarios solo acceden a los módulos incluidos en su lista.
