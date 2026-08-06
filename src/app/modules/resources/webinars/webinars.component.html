@@ -1,0 +1,61 @@
+<div class="legal-container">
+  <div class="legal-header">
+    <mat-icon class="header-icon">play_circle</mat-icon>
+    <h1>Webinars</h1>
+    <p class="last-updated">Capacitación en vivo y grabada para dominar WhatsApp Ads</p>
+  </div>
+
+  <section class="webinar-section">
+    <h2>Próximos webinars</h2>
+    <div class="webinar-list">
+      <div class="webinar-card" *ngFor="let w of upcoming">
+        <div class="webinar-date">
+          <span class="day">{{ w.date.split(',')[0] }}</span>
+        </div>
+        <div class="webinar-info">
+          <h3>{{ w.title }}</h3>
+          <p class="webinar-meta">
+            <mat-icon>schedule</mat-icon> {{ w.date }} — {{ w.time }}
+          </p>
+          <p class="webinar-desc">{{ w.desc }}</p>
+          <div class="webinar-tags">
+            <mat-chip *ngFor="let tag of w.tags" class="tag">{{ tag }}</mat-chip>
+          </div>
+        </div>
+        <div class="webinar-action">
+          <button mat-raised-button class="register-btn">
+            <mat-icon>event</mat-icon> Registrarme
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="webinar-section">
+    <h2>Webinars grabados</h2>
+    <div class="recorded-grid">
+      <div class="recorded-card" *ngFor="let r of recorded">
+        <div class="recorded-thumb">
+          <mat-icon>smart_display</mat-icon>
+          <span class="duration">{{ r.duration }}</span>
+        </div>
+        <div class="recorded-info">
+          <h3>{{ r.title }}</h3>
+          <p class="views"><mat-icon>visibility</mat-icon> {{ r.views }} visualizaciones</p>
+        </div>
+        <button mat-button class="play-btn">
+          <mat-icon>play_arrow</mat-icon>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section class="webinar-subscribe">
+    <mat-icon>notifications_active</mat-icon>
+    <h2>No te pierdas ningún webinar</h2>
+    <p>Suscríbete y recibe notificaciones de nuevos eventos y contenido exclusivo.</p>
+    <a mat-raised-button class="subscribe-btn">
+      <mat-icon>mark_email_read</mat-icon> Suscribirme al calendario
+    </a>
+  </section>
+</div>

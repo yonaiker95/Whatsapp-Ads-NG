@@ -1,0 +1,112 @@
+<div class="dialog-header">
+  <div class="dialog-icon">
+    <mat-icon>{{ id ? 'edit' : 'description' }}</mat-icon>
+  </div>
+  <div class="dialog-title">
+    <h2>{{ title }}</h2>
+    <p>{{ subtitle }}</p>
+  </div>
+</div>
+
+<mat-dialog-content>
+  <div class="dialog-body">
+    <div class="form-column" [formGroup]="form">
+      <mat-form-field appearance="outline">
+        <mat-label>Nombre de la plantilla *</mat-label>
+        <input matInput formControlName="name" placeholder="Ej: Bienvenida nuevos clientes">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Categoría</mat-label>
+        <mat-select formControlName="category">
+          <mat-option value="">Sin categoría</mat-option>
+          <mat-option *ngFor="let cat of categories" [value]="cat">{{ categoryLabel(cat) }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <div class="form-section-label">Contenido del mensaje</div>
+      <div class="content-group" formGroupName="content">
+        <mat-form-field appearance="outline">
+          <mat-label>Texto del mensaje *</mat-label>
+          <textarea matInput formControlName="text" rows="5"
+            placeholder="Escribe el texto... usa {variable} para personalizar"></textarea>
+          <mat-hint>Las variables se detectan automáticamente al escribir entre llaves</mat-hint>
+        </mat-form-field>
+
+        <div class="media-row">
+          <mat-form-field appearance="outline">
+            <mat-label>Tipo de medio</mat-label>
+            <mat-select formControlName="mediaType">
+              <mat-option value="">Sin medio</mat-option>
+              <mat-option value="image">Imagen</mat-option>
+              <mat-option value="video">Video</mat-option>
+              <mat-option value="audio">Audio</mat-option>
+              <mat-option value="document">Documento</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>URL del medio</mat-label>
+            <input matInput formControlName="mediaUrl" placeholder="https://ejemplo.com/imagen.jpg">
+          </mat-form-field>
+        </div>
+      </div>
+    </div>
+
+    <div class="preview-column">
+      <div class="preview-label">
+        <mat-icon>visibility</mat-icon>
+        Vista previa
+      </div>
+      <div class="chat-mockup">
+        <div class="chat-header">
+          <div class="chat-avatar">{{ previewName.charAt(0).toUpperCase() }}</div>
+          <div class="chat-header-text">
+            <div class="chat-title">{{ previewName }}</div>
+            <div class="chat-status">{{ previewCategory }}</div>
+          </div>
+        </div>
+        <div class="chat-body">
+          <div class="chat-bubble" *ngIf="previewTokens.length > 0 || previewMedia">
+            <ng-container *ngIf="previewMedia">
+              <div class="bubble-media" *ngIf="!previewMedia.url">
+                <mat-icon>{{ mediaIcon(previewMedia.type) }}</mat-icon>
+                <span>{{ mediaLabel(previewMedia.type) }}</span>
+              </div>
+              <img *ngIf="previewMedia.url && previewMedia.type === 'image'"
+                [src]="previewMedia.url" alt="Vista previa del medio">
+              <div class="bubble-media" *ngIf="previewMedia.url && previewMedia.type !== 'image'">
+                <mat-icon>{{ mediaIcon(previewMedia.type) }}</mat-icon>
+                <span>{{ mediaLabel(previewMedia.type) }}</span>
+              </div>
+            </ng-container>
+            <ng-container *ngIf="previewTokens.length > 0">
+              <span *ngFor="let token of previewTokens"
+                class="preview-token"
+                [class.token-var]="token.variable">{{ token.text }}</span>
+            </ng-container>
+            <span class="bubble-time">ahora</span>
+          </div>
+          <div class="chat-bubble chat-bubble-empty" *ngIf="previewTokens.length === 0 && !previewMedia">
+            Escribe el mensaje para ver la vista previa
+          </div>
+        </div>
+      </div>
+
+      <div class="variables-box" *ngIf="previewVariables.length > 0">
+        <div class="variables-label">Variables detectadas</div>
+        <div class="variables-chips">
+          <span class="variable-chip" *ngFor="let v of previewVariables">{{ variableTag(v) }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()">Cancelar</button>
+  <button mat-raised-button color="primary" (click)="save()" [disabled]="saving">
+    <mat-progress-spinner diameter="18" *ngIf="saving"></mat-progress-spinner>
+    {{ saveLabel }}
+  </button>
+</mat-dialog-actions>

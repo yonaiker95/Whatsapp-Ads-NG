@@ -1,0 +1,62 @@
+<div class="blog-page">
+  <header class="blog-header">
+    <span class="blog-badge"><mat-icon>article</mat-icon> Blog</span>
+    <h1>Ideas para escalar tu negocio en WhatsApp</h1>
+    <p>Guías, casos de éxito y las últimas tendencias en mensajería de negocios.</p>
+    <div class="blog-search">
+      <mat-icon>search</mat-icon>
+      <input type="text" placeholder="Buscar artículos..." (input)="onSearch($event)" />
+    </div>
+  </header>
+
+  <section class="featured-post" *ngIf="featuredPost">
+    <div class="featured-icon" [style.background]="featuredPost.color + '1a'" [style.color]="featuredPost.color">
+      <mat-icon>auto_stories</mat-icon>
+    </div>
+    <div class="featured-content">
+      <span class="post-category" [style.color]="featuredPost.color">{{ featuredPost.category }}</span>
+      <h2>{{ featuredPost.title }}</h2>
+      <p>{{ featuredPost.excerpt }}</p>
+      <div class="post-meta">
+        <span class="post-author">
+          <span class="author-avatar" [style.background]="featuredPost.color" [style.color]="textColor(featuredPost.color)">{{ featuredPost.author[0] }}</span>
+          {{ featuredPost.author }}
+        </span>
+        <span>{{ featuredPost.date }}</span>
+        <span><mat-icon>schedule</mat-icon> {{ featuredPost.readTime }}</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="posts-grid">
+    <article class="post-card" *ngFor="let post of regularPosts">
+      <div class="post-cover" [style.background]="'linear-gradient(135deg, ' + post.color + '22, ' + post.color + '11)'">
+        <span class="post-icon" [style.color]="post.color">
+          <mat-icon>description</mat-icon>
+        </span>
+        <span class="post-category-badge" [style.background]="post.color + '1a'" [style.color]="post.color">{{ post.category }}</span>
+      </div>
+      <div class="post-body">
+        <h3>{{ post.title }}</h3>
+        <p class="post-excerpt">{{ post.excerpt }}</p>
+        <div class="post-meta">
+          <span class="post-author">
+            <span class="author-avatar" [style.background]="post.color" [style.color]="textColor(post.color)">{{ post.author[0] }}</span>
+            {{ post.author }}
+          </span>
+          <span>{{ post.date }}</span>
+          <span><mat-icon>schedule</mat-icon> {{ post.readTime }}</span>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <section class="blog-cta">
+    <h2>No te pierdas ningún artículo</h2>
+    <p>Recibe contenido sobre automatización directamente en tu correo.</p>
+    <a routerLink="/contact" mat-raised-button color="primary">
+      <mat-icon>subscribe</mat-icon>
+      Suscribirme
+    </a>
+  </section>
+</div>

@@ -1,0 +1,322 @@
+<div class="page-container">
+  <div class="page-header">
+    <h1>Reportes y Analytics</h1>
+    <p class="page-subtitle">Análisis de rendimiento de tus campañas de WhatsApp</p>
+  </div>
+
+  <mat-tab-group>
+    <mat-tab label="Dashboard">
+      @if (loading) {
+        <div class="metrics-grid">
+          @for (item of [1,2,3,4,5,6,7,8]; track item) {
+            <mat-card class="skeleton-card" appearance="outlined">
+              <mat-card-content>
+                <div class="metric-content">
+                  <div class="metric-info">
+                    <div class="skeleton-line w-50 h-24"></div>
+                    <div class="skeleton-line w-75 h-32" style="margin-top: 8px;"></div>
+                  </div>
+                  <div class="skeleton-icon"></div>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          }
+        </div>
+      } @else {
+        <div class="metrics-grid">
+          @for (card of statCards; track card.key) {
+            <mat-card class="metric-card" appearance="outlined">
+              <mat-card-content>
+                <div class="metric-content">
+                  <div class="metric-info">
+                    <span class="metric-label">{{ card.label }}</span>
+                    <div class="metric-value">{{ getMetricValue(card.key) | number }}</div>
+                  </div>
+                  <div class="metric-icon" [style.background]="card.gradient">
+                    <mat-icon>{{ card.icon }}</mat-icon>
+                  </div>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          }
+        </div>
+
+        <div class="charts-row">
+          <mat-card class="chart-card" appearance="outlined">
+            <mat-card-header>
+              <mat-card-title>
+                <mat-icon>pie_chart</mat-icon>
+                Distribución de mensajes
+              </mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="donut-wrap" *ngIf="messageDonutTotal > 0">
+                <svg viewBox="0 0 200 200" class="donut-svg">
+                  <circle cx="100" cy="100" r="80" fill="none" stroke="var(--border-light)" stroke-width="26"></circle>
+                  <circle *ngFor="let seg of messageDonut"
+                    cx="100" cy="100" r="80" fill="none" [attr.stroke]="seg.color" stroke-width="26"
+                    [attr.stroke-dasharray]="seg.dash" [attr.stroke-dashoffset]="seg.offset"
+                    transform="rotate(-90 100 100)"></circle>
+                  <text x="100" y="97" text-anchor="middle" class="donut-total">{{ messageDonutTotal | number }}</text>
+                  <text x="100" y="113" text-anchor="middle" class="donut-sub">mensajes</text>
+                </svg>
+                <div class="donut-legend">
+                  <div class="legend-item" *ngFor="let seg of messageDonut">
+                    <span class="legend-dot" [style.background]="seg.color"></span>
+                    <span class="legend-label">{{ seg.label }}</span>
+                    <span class="legend-value">{{ seg.percent }}%</span>
+                  </div>
+                </div>
+              </div>
+              <div class="empty-state compact-empty" *ngIf="messageDonutTotal === 0">
+                <h3>Sin mensajes todavía</h3>
+                <p>Los gráficos aparecerán cuando envíes mensajes</p>
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <mat-card class="chart-card" appearance="outlined">
+            <mat-card-header>
+              <mat-card-title>
+                <mat-icon>bar_chart</mat-icon>
+                Campañas por estado
+              </mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="hbars" *ngIf="campaignStatusBars.length > 0">
+                <div class="hbar" *ngFor="let b of campaignStatusBars">
+                  <span class="hbar-label">{{ b.label }}</span>
+                  <div class="hbar-track">
+                    <div class="hbar-fill" [style.width.%]="b.percent" [style.background]="b.color"></div>
+                  </div>
+                  <span class="hbar-value">{{ b.value }}</span>
+                </div>
+              </div>
+              <div class="empty-state compact-empty" *ngIf="campaignStatusBars.length === 0">
+                <h3>Sin campañas</h3>
+                <p>Crea campañas para ver su distribución</p>
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <mat-card class="chart-card chart-wide" appearance="outlined">
+            <mat-card-header>
+              <mat-card-title>
+                <mat-icon>leaderboard</mat-icon>
+                Top campañas por envíos
+              </mat-card-title>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="hbars" *ngIf="topCampaigns.length > 0">
+                <div class="hbar" *ngFor="let b of topCampaigns">
+                  <span class="hbar-label truncate-label">{{ b.label }}</span>
+                  <div class="hbar-track">
+                    <div class="hbar-fill" [style.width.%]="b.percent" [style.background]="b.color"></div>
+                  </div>
+                  <span class="hbar-value">{{ b.value | number }}</span>
+                </div>
+              </div>
+              <div class="empty-state compact-empty" *ngIf="topCampaigns.length === 0">
+                <h3>Sin campañas</h3>
+                <p>Las campañas con más envíos aparecerán aquí</p>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        </div>
+      }
+    </mat-tab>
+
+    <mat-tab label="Campañas">
+      <div class="section-header">
+        <h2>Campañas <span class="count-badge">{{ campaigns.length }}</span></h2>
+      </div>
+
+      <div class="loading-state" *ngIf="loadingCampaigns">
+        <mat-spinner diameter="32"></mat-spinner>
+        <p>Cargando campañas...</p>
+      </div>
+
+      <div class="table-wrapper" *ngIf="!loadingCampaigns && campaigns.length > 0">
+        <table mat-table [dataSource]="campaigns">
+          <ng-container matColumnDef="name">
+            <th mat-header-cell *matHeaderCellDef>Campaña</th>
+            <td mat-cell *matCellDef="let campaign">{{ campaign.name }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef>Estado</th>
+            <td mat-cell *matCellDef="let campaign">
+              <mat-chip [class.status-sent]="campaign.status === 'sent'" [class.status-failed]="campaign.status === 'failed'" [class.status-partial]="campaign.status === 'partial'">
+                {{ statusLabel(campaign.status) }}
+              </mat-chip>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="totalSent">
+            <th mat-header-cell *matHeaderCellDef>Enviados</th>
+            <td mat-cell *matCellDef="let campaign" class="num-cell">{{ campaign.totalSent | number }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="totalFailed">
+            <th mat-header-cell *matHeaderCellDef>Fallidos</th>
+            <td mat-cell *matCellDef="let campaign" class="num-cell">{{ campaign.totalFailed | number }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="createdAt">
+            <th mat-header-cell *matHeaderCellDef>Creada</th>
+            <td mat-cell *matCellDef="let campaign">{{ campaign.createdAt | date:'dd MMM yyyy' }}</td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="campaignColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: campaignColumns"></tr>
+        </table>
+      </div>
+
+      <div class="empty-state" *ngIf="!loadingCampaigns && campaigns.length === 0">
+        <div class="empty-icon"><mat-icon>campaign</mat-icon></div>
+        <h3>Sin campañas</h3>
+        <p>Crea campañas para ver su rendimiento aquí</p>
+      </div>
+    </mat-tab>
+
+    <mat-tab label="Mensajes">
+      <div class="section-header">
+        <h2>Estadísticas de mensajes</h2>
+      </div>
+      <div class="metrics-grid compact" *ngIf="metrics">
+        @for (stat of messageStats; track stat.key) {
+          <mat-card class="metric-card" appearance="outlined">
+            <mat-card-content>
+              <div class="metric-content">
+                <div class="metric-info">
+                  <span class="metric-label">{{ stat.label }}</span>
+                  <div class="metric-value">{{ getMetricValue(stat.key) | number }}</div>
+                </div>
+                <div class="metric-icon" [style.background]="'linear-gradient(135deg, ' + stat.color + ', #ffffff33)'">
+                  <mat-icon>{{ stat.icon }}</mat-icon>
+                </div>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        }
+      </div>
+
+      <div class="message-breakdown" *ngIf="metrics">
+        <mat-card class="config-card" appearance="outlined">
+          <mat-card-header>
+            <mat-card-title>
+              <mat-icon>insights</mat-icon>
+              Distribución de mensajes
+            </mat-card-title>
+          </mat-card-header>
+          <mat-card-content>
+            <div class="donut-wrap" *ngIf="messageDonutTotal > 0">
+              <svg viewBox="0 0 200 200" class="donut-svg">
+                <circle cx="100" cy="100" r="80" fill="none" stroke="var(--border-light)" stroke-width="26"></circle>
+                <circle *ngFor="let seg of messageDonut"
+                  cx="100" cy="100" r="80" fill="none" [attr.stroke]="seg.color" stroke-width="26"
+                  [attr.stroke-dasharray]="seg.dash" [attr.stroke-dashoffset]="seg.offset"
+                  transform="rotate(-90 100 100)"></circle>
+                <text x="100" y="97" text-anchor="middle" class="donut-total">{{ messageDonutTotal | number }}</text>
+                <text x="100" y="113" text-anchor="middle" class="donut-sub">mensajes</text>
+              </svg>
+              <div class="donut-legend">
+                <div class="legend-item" *ngFor="let seg of messageDonut">
+                  <span class="legend-dot" [style.background]="seg.color"></span>
+                  <span class="legend-label">{{ seg.label }}</span>
+                  <span class="legend-value">{{ seg.percent }}%</span>
+                </div>
+              </div>
+            </div>
+            <div class="usage-item" *ngIf="metrics.totalMessages > 0">
+              <div class="usage-label">
+                <span>Entregados</span>
+                <span class="usage-value">{{ metrics.deliveredMessages }} / {{ metrics.totalMessages }}</span>
+              </div>
+              <mat-progress-bar mode="determinate" [value]="percent(metrics.deliveredMessages, metrics.totalMessages)" color="primary"></mat-progress-bar>
+            </div>
+            <div class="usage-item" *ngIf="metrics.totalMessages > 0">
+              <div class="usage-label">
+                <span>Leídos</span>
+                <span class="usage-value">{{ metrics.readMessages }} / {{ metrics.totalMessages }}</span>
+              </div>
+              <mat-progress-bar mode="determinate" [value]="percent(metrics.readMessages, metrics.totalMessages)" color="accent"></mat-progress-bar>
+            </div>
+            <div class="usage-item" *ngIf="metrics.totalMessages > 0">
+              <div class="usage-label">
+                <span>Fallidos</span>
+                <span class="usage-value">{{ metrics.totalFailed }} / {{ metrics.totalMessages }}</span>
+              </div>
+              <mat-progress-bar mode="determinate" [value]="percent(metrics.totalFailed, metrics.totalMessages)" color="warn"></mat-progress-bar>
+            </div>
+            <div class="empty-state compact-empty" *ngIf="metrics.totalMessages === 0">
+              <h3>Sin mensajes todavía</h3>
+              <p>Las métricas de entrega y lectura aparecerán cuando envíes mensajes</p>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      </div>
+    </mat-tab>
+
+    <mat-tab label="Conversaciones">
+      <div class="section-header">
+        <div class="section-title-group">
+          <h2>Conversaciones <span class="count-badge">{{ conversations.length }}</span></h2>
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="instance-selector">
+            <mat-label>Instancia</mat-label>
+            <mat-select [(ngModel)]="selectedInstanceId" (selectionChange)="onInstanceChange()">
+              <mat-option *ngFor="let inst of instances" [value]="inst.id">{{ inst.name }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+      </div>
+
+      <div class="loading-state" *ngIf="loadingConversations">
+        <mat-spinner diameter="32"></mat-spinner>
+        <p>Cargando conversaciones...</p>
+      </div>
+
+      <div class="table-wrapper" *ngIf="!loadingConversations && conversations.length > 0">
+        <table mat-table [dataSource]="conversations">
+          <ng-container matColumnDef="senderName">
+            <th mat-header-cell *matHeaderCellDef>Contacto</th>
+            <td mat-cell *matCellDef="let conv">
+              <div class="contact-cell">
+                <div class="contact-name">{{ conv.senderName || 'Desconocido' }}</div>
+              </div>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="senderJid">
+            <th mat-header-cell *matHeaderCellDef>JID</th>
+            <td mat-cell *matCellDef="let conv" class="muted">{{ conv.senderJid }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="lastMessage">
+            <th mat-header-cell *matHeaderCellDef>Último mensaje</th>
+            <td mat-cell *matCellDef="let conv" class="truncate">{{ conv.lastMessage }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="lastMessageAt">
+            <th mat-header-cell *matHeaderCellDef>Última actividad</th>
+            <td mat-cell *matCellDef="let conv">{{ conv.lastMessageAt | date:'dd MMM HH:mm' }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="messageCount">
+            <th mat-header-cell *matHeaderCellDef>Mensajes</th>
+            <td mat-cell *matCellDef="let conv" class="num-cell">{{ conv.messageCount }}</td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="conversationColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: conversationColumns"></tr>
+        </table>
+      </div>
+
+      <div class="empty-state" *ngIf="!loadingConversations && conversations.length === 0">
+        <div class="empty-icon"><mat-icon>chat</mat-icon></div>
+        <h3>Sin conversaciones</h3>
+        <p>Las conversaciones de esta instancia aparecerán aquí</p>
+      </div>
+    </mat-tab>
+  </mat-tab-group>
+</div>

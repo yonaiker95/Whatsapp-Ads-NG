@@ -1,0 +1,37 @@
+<div
+  class="otp"
+  [class.disabled]="disabled"
+  [class.focused]="focused"
+  [class.state-error]="state === 'error'"
+  [class.state-success]="state === 'success'"
+>
+  <input
+    #realInput
+    class="otp-real"
+    type="tel"
+    inputmode="numeric"
+    autocomplete="one-time-code"
+    [attr.maxlength]="length"
+    [attr.aria-label]="'Código de verificación de ' + length + ' dígitos'"
+    [value]="code"
+    [disabled]="disabled"
+    (input)="onInput($event)"
+    (keydown)="onKeydown($event)"
+    (focus)="onFocus()"
+    (blur)="onBlur()"
+  />
+
+  <div class="otp-cells">
+    <ng-container *ngFor="let i of cellIndexes">
+      <div
+        class="otp-cell"
+        [class.filled]="!!digitAt(i)"
+        [class.active]="focused && i === activeIndex"
+        (click)="focusAt(i)"
+      >
+        {{ digitAt(i) }}
+      </div>
+      <span class="otp-sep" *ngIf="shouldSeparateAfter(i)">–</span>
+    </ng-container>
+  </div>
+</div>

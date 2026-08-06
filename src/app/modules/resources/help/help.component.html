@@ -1,0 +1,53 @@
+<div class="legal-container">
+  <div class="legal-header">
+    <mat-icon class="header-icon">help_center</mat-icon>
+    <h1>Centro de ayuda</h1>
+    <p class="last-updated">¿En qué podemos ayudarte?</p>
+  </div>
+
+  <div class="help-search">
+    <div class="search-box">
+      <mat-icon>search</mat-icon>
+      <input type="text" placeholder="Buscar en el centro de ayuda..." disabled>
+    </div>
+  </div>
+
+  <section class="help-categories">
+    <h2>Categorías</h2>
+    <div class="categories-grid">
+      <a *ngFor="let cat of categories" class="category-card">
+        <div class="cat-icon">
+          <mat-icon>{{ cat.icon }}</mat-icon>
+        </div>
+        <h3>{{ cat.title }}</h3>
+        <p>{{ cat.desc }}</p>
+      </a>
+    </div>
+  </section>
+
+  <section class="help-faq">
+    <h2>Preguntas frecuentes</h2>
+    <mat-accordion>
+      <mat-expansion-panel *ngFor="let faq of faqs; let i = index">
+        <mat-expansion-panel-header>
+          <mat-panel-title>{{ faq.q }}</mat-panel-title>
+        </mat-expansion-panel-header>
+        <p>{{ faq.a }}</p>
+      </mat-expansion-panel>
+    </mat-accordion>
+  </section>
+
+  <section class="help-contact">
+    <mat-icon>support_agent</mat-icon>
+    <h2>¿No encuentras lo que buscas?</h2>
+    <p>Nuestro equipo de soporte está disponible 24/7 para ayudarte.</p>
+    <div class="contact-buttons">
+      <a href="mailto:support&#64;whatsappads.com" class="contact-btn primary" mat-raised-button>
+        <mat-icon>email</mat-icon> Enviar email
+      </a>
+      <a class="contact-btn secondary" mat-button>
+        <mat-icon>chat</mat-icon> Chat en vivo
+      </a>
+    </div>
+  </section>
+</div>

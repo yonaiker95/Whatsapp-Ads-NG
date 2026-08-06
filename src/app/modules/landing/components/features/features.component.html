@@ -1,0 +1,19 @@
+<section class="features" id="features">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-badge">Características</div>
+      <h2>Todo lo que necesitas para escalar en WhatsApp</h2>
+      <p>Una plataforma completa para automatizar, gestionar y analizar tus comunicaciones de WhatsApp Business.</p>
+    </div>
+
+    <div class="features-grid">
+      <mat-card class="feature-card" *ngFor="let feature of features; let i = index" [style.animation-delay]="'{{ i * 100 }}ms'">
+        <div class="feature-icon" [style.--icon-color]="featureColors[i % featureColors.length]">
+          <mat-icon>{{ feature.icon }}</mat-icon>
+        </div>
+        <h3>{{ feature.title }}</h3>
+        <p>{{ feature.description }}</p>
+      </mat-card>
+    </div>
+  </div>
+</section>

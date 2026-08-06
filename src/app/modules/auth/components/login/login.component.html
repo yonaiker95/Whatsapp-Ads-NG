@@ -1,0 +1,104 @@
+<div class="login-page">
+  <div class="login-bg-shapes">
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+    <div class="shape shape-3"></div>
+  </div>
+
+  <div class="login-container">
+    <div class="login-brand">
+      <div class="brand-icon">
+        <mat-icon>chat_bubble</mat-icon>
+      </div>
+      <h1>WhatsApp Ads</h1>
+      <p class="brand-subtitle">Plataforma de automatización WhatsApp Business</p>
+    </div>
+
+    <mat-card class="login-card">
+      @if (!twoFactorStep) {
+        <div class="login-header">
+          <h2>Iniciar sesión</h2>
+          <p>Ingresa tus credenciales para continuar</p>
+        </div>
+
+        <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="login-form">
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Correo electrónico</mat-label>
+            <input matInput type="email" formControlName="email" autocomplete="email" placeholder="tu@correo.com">
+            <mat-icon matPrefix>email</mat-icon>
+            <mat-error *ngIf="loginForm.get('email')?.hasError('required')">El correo es requerido</mat-error>
+            <mat-error *ngIf="loginForm.get('email')?.hasError('email')">Ingresa un correo válido</mat-error>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Contraseña</mat-label>
+            <input matInput [type]="hidePassword ? 'password' : 'text'" formControlName="password" autocomplete="current-password" placeholder="••••••••">
+            <mat-icon matPrefix>lock</mat-icon>
+            <button mat-icon-button matSuffix type="button" (click)="togglePasswordVisibility()" tabindex="-1">
+              <mat-icon>{{ hidePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+            </button>
+            <mat-error *ngIf="loginForm.get('password')?.hasError('required')">La contraseña es requerida</mat-error>
+            <mat-error *ngIf="loginForm.get('password')?.hasError('minlength')">Mínimo 6 caracteres</mat-error>
+          </mat-form-field>
+
+          <div class="form-options">
+            <a routerLink="/auth/forgot" class="forgot-link">¿Olvidaste tu contraseña?</a>
+          </div>
+
+          <button mat-raised-button color="primary" type="submit" class="full-width login-btn" [disabled]="loading">
+            @if (loading) {
+              <mat-spinner diameter="20"></mat-spinner>
+            } @else {
+              <span>Iniciar sesión</span>
+            }
+          </button>
+        </form>
+
+        <div class="login-footer">
+          <p>¿No tienes cuenta? <a routerLink="/auth/register">Crear cuenta</a></p>
+        </div>
+      } @else {
+        <div class="login-header">
+          <h2>Verificación en dos pasos</h2>
+          <p>Ingresa el código que enviamos a tu WhatsApp</p>
+        </div>
+
+        <form [formGroup]="codeForm" (ngSubmit)="onVerifyCode()" class="login-form">
+          <div class="two-factor-info">
+            <mat-icon>chat</mat-icon>
+            <p>Enviamos un código de 6 dígitos a {{ maskedPhone || 'tu WhatsApp' }}.</p>
+          </div>
+
+          <div class="otp-wrap">
+            <app-otp-input
+              [code]="codeForm.get('code')?.value"
+              [state]="codeError ? 'error' : 'normal'"
+              (codeChange)="onCodeChange($event)"
+              (complete)="onVerifyCode()"
+            ></app-otp-input>
+          </div>
+          <p class="otp-hint">El código se verifica automáticamente al completarlo.</p>
+
+          <button mat-raised-button color="primary" type="submit" class="full-width login-btn" [disabled]="loading">
+            @if (loading) {
+              <mat-spinner diameter="20"></mat-spinner>
+            } @else {
+              <span>Verificar código</span>
+            }
+          </button>
+
+          <div class="form-options center">
+            <a href="javascript:void(0)" class="forgot-link" (click)="resendCode()">Reenviar código</a>
+          </div>
+          <div class="form-options center">
+            <a href="javascript:void(0)" class="forgot-link" (click)="backToLogin()">Usar otra cuenta</a>
+          </div>
+        </form>
+
+        <div class="login-footer">
+          <p>¿Problemas? <a routerLink="/auth/forgot">Recupera tu acceso</a></p>
+        </div>
+      }
+    </mat-card>
+  </div>
+</div>

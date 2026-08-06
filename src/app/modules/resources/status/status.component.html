@@ -1,0 +1,50 @@
+<div class="legal-container">
+  <div class="legal-header">
+    <mat-icon class="header-icon">monitor_heart</mat-icon>
+    <h1>Estado del sistema</h1>
+    <p class="last-updated">Monitoreo en tiempo real de todos nuestros servicios</p>
+  </div>
+
+  <div class="status-summary">
+    <div class="summary-badge operational">
+      <mat-icon>check_circle</mat-icon>
+      <span>Todos los sistemas operativos</span>
+    </div>
+    <span class="summary-update">Actualizado hace 2 minutos</span>
+  </div>
+
+  <div class="status-services">
+    <div class="service-row" *ngFor="let s of services">
+      <div class="service-name">
+        <span class="status-dot" [class.operational]="s.status === 'operational'" [class.degraded]="s.status === 'degraded'"></span>
+        {{ s.name }}
+      </div>
+      <div class="service-status">{{ statusLabel(s.status) }}</div>
+      <div class="service-uptime">Uptime: {{ s.uptime }}</div>
+      <div class="service-latency">{{ s.latency }}</div>
+    </div>
+  </div>
+
+  <section class="status-incidents">
+    <h2>Incidentes recientes</h2>
+    <div class="incident-card" *ngFor="let inc of incidents">
+      <div class="incident-header">
+        <span class="incident-badge" [class.investigating]="inc.status === 'investigating'" [class.resolved]="inc.status === 'resolved'">
+          {{ statusLabel(inc.status) }}
+        </span>
+        <span class="incident-date">{{ inc.date }}</span>
+      </div>
+      <h3>{{ inc.title }}</h3>
+      <p>{{ inc.desc }}</p>
+    </div>
+  </section>
+
+  <section class="status-subscribe">
+    <mat-icon>notifications</mat-icon>
+    <h2>Recibe notificaciones</h2>
+    <p>Suscríbete para recibir alertas cuando haya incidentes o mantenimientos programados.</p>
+    <a mat-raised-button class="subscribe-btn">
+      <mat-icon>mark_email_read</mat-icon> Suscribirme
+    </a>
+  </section>
+</div>

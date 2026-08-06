@@ -1,0 +1,222 @@
+<div class="page-container">
+  <div class="page-header">
+    <div>
+      <h1>Campañas</h1>
+      <p class="page-subtitle">Gestiona y envía tus campañas de WhatsApp</p>
+    </div>
+    <div class="header-actions">
+      <button mat-raised-button color="primary" (click)="createCampaign()">
+        <mat-icon>add</mat-icon>
+        Nueva campaña
+      </button>
+    </div>
+  </div>
+
+  <div class="stats-row" *ngIf="!loading && campaigns.length > 0">
+    <div class="stat-card">
+      <div class="stat-icon stat-total"><mat-icon>campaign</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.total }}</span>
+        <span class="stat-label">Campañas</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-active"><mat-icon>check_circle</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.active }}</span>
+        <span class="stat-label">Activas</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-scheduled"><mat-icon>schedule</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.scheduled }}</span>
+        <span class="stat-label">Programadas</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-sent"><mat-icon>send</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.totalSent }}</span>
+        <span class="stat-label">Mensajes enviados</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <div class="section-header">
+      <div>
+        <h2>Todas las campañas <span class="count-badge">{{ filteredCampaigns.length }}</span></h2>
+      </div>
+      <div class="filters-row">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="search-field">
+          <mat-label>Buscar campaña</mat-label>
+          <mat-icon matPrefix>search</mat-icon>
+          <input matInput [(ngModel)]="searchQuery" placeholder="Nombre, instancia o plantilla..." aria-label="Buscar campaña">
+          <button *ngIf="searchQuery" matSuffix mat-icon-button aria-label="Limpiar búsqueda" (click)="clearSearch()">
+            <mat-icon>close</mat-icon>
+          </button>
+        </mat-form-field>
+        <div class="status-chips" role="group" aria-label="Filtrar por estado">
+          <button
+            type="button"
+            class="filter-chip"
+            [class.active]="statusFilter === 'all'"
+            [attr.aria-pressed]="statusFilter === 'all'"
+            (click)="setStatusFilter('all')">Todos</button>
+          <button
+            *ngFor="let status of statuses"
+            type="button"
+            class="filter-chip"
+            [class.active]="statusFilter === status"
+            [attr.aria-pressed]="statusFilter === status"
+            (click)="setStatusFilter(status)">{{ statusLabel(status) }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="skeleton-loading" *ngIf="loading" aria-label="Cargando campañas">
+      <div class="skeleton-row" *ngFor="let _ of [0, 1, 2]">
+        <div class="skeleton skeleton-avatar"></div>
+        <div class="skeleton-lines">
+          <div class="skeleton skeleton-line w-50"></div>
+          <div class="skeleton skeleton-line w-25"></div>
+        </div>
+        <div class="skeleton skeleton-pill"></div>
+      </div>
+    </div>
+
+    <div class="table-wrapper" *ngIf="!loading && filteredCampaigns.length > 0">
+      <table mat-table [dataSource]="filteredCampaigns" class="campaigns-table">
+        <ng-container matColumnDef="name">
+          <th mat-header-cell *matHeaderCellDef> Nombre </th>
+          <td mat-cell *matCellDef="let campaign">
+            <div class="name-cell">
+              <span class="campaign-avatar" [style.background]="avatarColor(campaign.name)">
+                {{ campaign.name.charAt(0).toUpperCase() }}
+              </span>
+              <div class="name-text">
+                <div class="campaign-name">{{ campaign.name }}</div>
+                <div class="campaign-meta">
+                  <mat-icon>schedule</mat-icon>
+                  {{ campaign.createdAt | date: 'dd MMM yyyy' }}
+                  <span class="active-dot" *ngIf="campaign.active" [matTooltip]="'Campaña activa'"></span>
+                </div>
+              </div>
+            </div>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="instance">
+          <th mat-header-cell *matHeaderCellDef> Instancia </th>
+          <td mat-cell *matCellDef="let campaign">
+            <span class="instance-name">{{ campaign.instance?.name || 'Sin instancia' }}</span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="template">
+          <th mat-header-cell *matHeaderCellDef> Plantilla </th>
+          <td mat-cell *matCellDef="let campaign">
+            <span class="template-badge" *ngIf="campaign.template">{{ campaign.template.name }}</span>
+            <span class="no-template" *ngIf="!campaign.template">Sin plantilla</span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="groups">
+          <th mat-header-cell *matHeaderCellDef> Grupos </th>
+          <td mat-cell *matCellDef="let campaign">
+            <span class="group-count">
+              <mat-icon>groups</mat-icon>
+              {{ campaign.groupIds.length }}
+            </span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="status">
+          <th mat-header-cell *matHeaderCellDef> Estado </th>
+          <td mat-cell *matCellDef="let campaign">
+            <span
+              class="status-chip"
+              [style.background]="statusStyle(campaign.status).bg"
+              [style.color]="statusStyle(campaign.status).color">
+              <span class="status-dot"></span>
+              {{ statusLabel(campaign.status) }}
+            </span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="metrics">
+          <th mat-header-cell *matHeaderCellDef> Métricas </th>
+          <td mat-cell *matCellDef="let campaign">
+            <div class="metrics">
+              <span class="metric sent">
+                <mat-icon>check_circle</mat-icon>
+                {{ campaign.totalSent || 0 }}
+              </span>
+              <span class="metric failed">
+                <mat-icon>error</mat-icon>
+                {{ campaign.totalFailed || 0 }}
+              </span>
+            </div>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef> Acciones </th>
+          <td mat-cell *matCellDef="let campaign">
+            <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Acciones">
+              <mat-icon>more_vert</mat-icon>
+            </button>
+            <mat-menu #menu="matMenu">
+              <button mat-menu-item (click)="viewCampaign(campaign)">
+                <mat-icon>visibility</mat-icon>
+                <span>Ver detalle</span>
+              </button>
+              <button mat-menu-item (click)="editCampaign(campaign)">
+                <mat-icon>edit</mat-icon>
+                <span>Editar</span>
+              </button>
+              <button mat-menu-item (click)="sendCampaign(campaign)" [disabled]="campaign.status !== 'draft' || isSending(campaign)">
+                <mat-spinner diameter="16" *ngIf="isSending(campaign)"></mat-spinner>
+                <mat-icon *ngIf="!isSending(campaign)">send</mat-icon>
+                <span>{{ isSending(campaign) ? 'Enviando...' : 'Enviar' }}</span>
+              </button>
+              <button mat-menu-item (click)="duplicateCampaign(campaign)">
+                <mat-icon>content_copy</mat-icon>
+                <span>Duplicar</span>
+              </button>
+              <mat-divider></mat-divider>
+              <button mat-menu-item (click)="deleteCampaign(campaign)" class="delete-action">
+                <mat-icon>delete</mat-icon>
+                <span>Eliminar</span>
+              </button>
+            </mat-menu>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+      </table>
+    </div>
+
+    <div class="empty-state" *ngIf="!loading && campaigns.length === 0">
+      <div class="empty-icon"><mat-icon>campaign</mat-icon></div>
+      <h3>No hay campañas</h3>
+      <p>Crea tu primera campaña de WhatsApp para llegar a tus grupos</p>
+      <button mat-raised-button color="primary" (click)="createCampaign()">
+        <mat-icon>add</mat-icon>
+        Crear campaña
+      </button>
+    </div>
+
+    <div class="no-results" *ngIf="!loading && campaigns.length > 0 && filteredCampaigns.length === 0">
+      <mat-icon>search_off</mat-icon>
+      <h3>Sin resultados</h3>
+      <p>No hay campañas que coincidan con tu búsqueda o filtro</p>
+      <button mat-stroked-button (click)="clearSearch(); setStatusFilter('all')">
+        <mat-icon>filter_alt_off</mat-icon>
+        Limpiar filtros
+      </button>
+    </div>
+  </div>
+</div>

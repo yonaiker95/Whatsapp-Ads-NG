@@ -1,0 +1,162 @@
+<div class="dialog-header">
+  <div class="dialog-icon">
+    <mat-icon>{{ isEdit ? 'edit' : 'campaign' }}</mat-icon>
+  </div>
+  <div class="dialog-title">
+    <h2>{{ title }}</h2>
+    <p>{{ subtitle }}</p>
+  </div>
+</div>
+
+<mat-dialog-content>
+  <form [formGroup]="form" (ngSubmit)="save()">
+    <div class="form-section-label">Información básica</div>
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Nombre de la campaña *</mat-label>
+        <input matInput formControlName="name" placeholder="Ej: Promoción Black Friday">
+        <mat-error *ngIf="form.get('name')?.hasError('required')">El nombre es requerido</mat-error>
+        <mat-error *ngIf="form.get('name')?.hasError('minlength')">Mínimo 3 caracteres</mat-error>
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Descripción</mat-label>
+        <textarea matInput formControlName="description" rows="3" placeholder="Descripción opcional..."></textarea>
+      </mat-form-field>
+    </div>
+
+    <div class="form-section-label">Configuración de envío</div>
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Instancia *</mat-label>
+        <mat-select formControlName="instanceId" required>
+          <mat-option *ngFor="let instance of instances" [value]="instance.id">
+            {{ instance.name }}
+          </mat-option>
+        </mat-select>
+        <mat-error *ngIf="form.get('instanceId')?.hasError('required')">Selecciona una instancia</mat-error>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Plantilla</mat-label>
+        <mat-select formControlName="templateId">
+          <mat-option value="">Sin plantilla</mat-option>
+          <mat-option *ngFor="let template of templates" [value]="template.id">
+            {{ template.name }}
+          </mat-option>
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Grupos destinatarios *</mat-label>
+      <mat-select formControlName="groupIds" multiple required>
+        <mat-option *ngFor="let group of groups" [value]="group.id">
+          {{ group.name }} ({{ group.participants }} participantes)
+        </mat-option>
+      </mat-select>
+      <mat-hint>Selecciona uno o más grupos</mat-hint>
+      <mat-error *ngIf="form.get('groupIds')?.hasError('required')">Selecciona al menos un grupo</mat-error>
+    </mat-form-field>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Etiquetas a incluir</mat-label>
+        <mat-chip-grid #tagGrid aria-label="Etiquetas">
+          <mat-chip-row *ngFor="let tag of form.get('tags')?.value || []" (removed)="removeTag(tag, 'tags')">
+            {{ tag }}
+            <button matChipRemove>
+              <mat-icon>cancel</mat-icon>
+            </button>
+          </mat-chip-row>
+          <input
+            placeholder="Agregar etiqueta..."
+            [matChipInputFor]="tagGrid"
+            [matAutocomplete]="tagAuto"
+            (matChipInputTokenEnd)="addTag($event, 'tags')" />
+        </mat-chip-grid>
+        <mat-autocomplete #tagAuto>
+          <mat-option *ngFor="let tag of availableTags" [value]="tag">{{ tag }}</mat-option>
+        </mat-autocomplete>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Etiquetas a excluir</mat-label>
+        <mat-chip-grid #excludeTagGrid aria-label="Etiquetas excluidas">
+          <mat-chip-row *ngFor="let tag of form.get('excludeTags')?.value || []" (removed)="removeTag(tag, 'excludeTags')">
+            {{ tag }}
+            <button matChipRemove>
+              <mat-icon>cancel</mat-icon>
+            </button>
+          </mat-chip-row>
+          <input
+            placeholder="Agregar etiqueta..."
+            [matChipInputFor]="excludeTagGrid"
+            [matAutocomplete]="excludeTagAuto"
+            (matChipInputTokenEnd)="addTag($event, 'excludeTags')" />
+        </mat-chip-grid>
+        <mat-autocomplete #excludeTagAuto>
+          <mat-option *ngFor="let tag of availableTags" [value]="tag">{{ tag }}</mat-option>
+        </mat-autocomplete>
+      </mat-form-field>
+    </div>
+
+    <div class="form-section-label">Programación</div>
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Fecha y hora de envío</mat-label>
+        <input matInput type="datetime-local" formControlName="scheduledAt">
+        <mat-hint>Deja vacío para envío inmediato</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Recurrencia</mat-label>
+        <mat-select formControlName="recurrence">
+          <mat-option *ngFor="let opt of recurrenceOptions" [value]="opt.value">{{ opt.label }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <div class="form-row" *ngIf="form.get('recurrence')?.value !== 'none'">
+      <mat-form-field appearance="outline">
+        <mat-label>Hora de inicio</mat-label>
+        <input matInput type="time" formControlName="startTime">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Hora de fin</mat-label>
+        <input matInput type="time" formControlName="endTime">
+      </mat-form-field>
+    </div>
+
+    <div class="form-row" *ngIf="form.get('recurrence')?.value === 'custom'">
+      <mat-form-field appearance="outline">
+        <mat-label>Valor intervalo</mat-label>
+        <input matInput type="number" formControlName="intervalValue" min="1">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Unidad</mat-label>
+        <mat-select formControlName="intervalUnit">
+          <mat-option *ngFor="let opt of intervalUnitOptions" [value]="opt.value">{{ opt.label }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Concurrencia</mat-label>
+        <input matInput type="number" formControlName="concurrence" min="1" max="10">
+        <mat-hint>Mensajes simultáneos</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <div class="form-section-label">Opciones avanzadas</div>
+    <mat-checkbox formControlName="active">Campaña activa</mat-checkbox>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button type="button" (click)="cancel()">Cancelar</button>
+  <button mat-raised-button color="primary" (click)="save()" [disabled]="submitting">
+    <mat-spinner diameter="18" *ngIf="submitting"></mat-spinner>
+    {{ saveLabel }}
+  </button>
+</mat-dialog-actions>

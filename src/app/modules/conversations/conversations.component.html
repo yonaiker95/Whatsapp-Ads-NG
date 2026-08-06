@@ -1,0 +1,117 @@
+<div class="conversations-layout" [class.mobile-chat-active]="!!selectedConversation">
+  <aside class="conversations-sidebar">
+    <div class="sidebar-header">
+      <h2>Conversaciones</h2>
+      <mat-form-field appearance="outline" class="instance-field">
+        <mat-label>Instancia</mat-label>
+        <mat-select [(ngModel)]="selectedInstanceId" (ngModelChange)="onInstanceChange()">
+          @for (inst of instances; track inst.id) {
+            <mat-option [value]="inst.id">{{ inst.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="outline" class="search-field">
+        <mat-label>Buscar</mat-label>
+        <input matInput [(ngModel)]="searchQuery" placeholder="Nombre o número...">
+        <mat-icon matPrefix>search</mat-icon>
+      </mat-form-field>
+    </div>
+
+    <div class="conversations-list">
+      @if (loading) {
+        <div class="loading-list">
+          <mat-spinner diameter="32"></mat-spinner>
+        </div>
+      }
+      @for (conv of filteredConversations; track conv.senderJid) {
+        <div class="conversation-item" [class.active]="selectedConversation?.senderJid === conv.senderJid" (click)="selectConversation(conv)">
+          <div class="conv-avatar">
+            {{ (conv.senderName || '?').charAt(0).toUpperCase() }}
+          </div>
+          <div class="conv-info">
+            <div class="conv-header">
+              <span class="conv-name">{{ conv.senderName || conv.senderJid }}</span>
+              <span class="conv-time">{{ formatDate(conv.lastMessageAt) }}</span>
+            </div>
+            <div class="conv-preview">
+              <span class="conv-message">{{ conv.lastMessage }}</span>
+              @if (conv.messageCount > 0) {
+                <span class="unread-badge">{{ conv.messageCount }}</span>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+
+    @if (!loading && filteredConversations.length === 0) {
+      <div class="empty-conversations">
+        <mat-icon>chat_bubble</mat-icon>
+        <p>No hay conversaciones</p>
+      </div>
+    }
+  </aside>
+
+  <main class="chat-area">
+    @if (selectedConversation) {
+      <div class="chat-container">
+        <div class="chat-header">
+          <div class="chat-header-info">
+            <div class="chat-avatar">
+              {{ (selectedConversation.senderName || '?').charAt(0).toUpperCase() }}
+            </div>
+            <div>
+              <h3>{{ selectedConversation.senderName || selectedConversation.senderJid }}</h3>
+              <span class="chat-status">WhatsApp</span>
+            </div>
+          </div>
+          <div class="chat-actions">
+            <button mat-icon-button class="back-btn" (click)="backToList()" matTooltip="Volver a la lista">
+              <mat-icon>arrow_back</mat-icon>
+            </button>
+            <button mat-icon-button matTooltip="Más opciones"><mat-icon>more_vert</mat-icon></button>
+          </div>
+        </div>
+
+        <div class="chat-messages" #messagesContainer>
+          @for (msg of messages; track msg.id) {
+            <div class="message" [class.outgoing]="msg.direction === 'outgoing'">
+              <div class="message-bubble" [class.outgoing]="msg.direction === 'outgoing'">
+                <span class="message-text">{{ msg.content }}</span>
+                <span class="message-time">
+                  {{ formatTime(msg.createdAt) }}
+                  @if (msg.direction === 'outgoing') {
+                    <mat-icon class="message-status" [class.read]="msg.status === 'read'">
+                      {{ msg.status === 'read' || msg.status === 'delivered' ? 'done_all' : 'schedule' }}
+                    </mat-icon>
+                  }
+                </span>
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="chat-input-area">
+          <div class="chat-input-wrapper">
+            <button mat-icon-button class="ai-suggest-btn" (click)="suggestReply()" [disabled]="suggesting || !selectedConversation" matTooltip="Sugerir respuesta con IA" [matTooltipDisabled]="suggesting">
+              <mat-progress-spinner diameter="20" *ngIf="suggesting"></mat-progress-spinner>
+              <mat-icon *ngIf="!suggesting">auto_awesome</mat-icon>
+            </button>
+            <mat-form-field appearance="outline" class="message-input-field">
+              <input matInput [(ngModel)]="newMessage" placeholder="Escribe un mensaje..." (keydown.enter)="sendMessage()">
+            </mat-form-field>
+            <button mat-icon-button class="send-btn" (click)="sendMessage()" [disabled]="!newMessage.trim()" matTooltip="Enviar">
+              <mat-icon>send</mat-icon>
+            </button>
+          </div>
+        </div>
+      </div>
+    } @else {
+      <div class="chat-empty">
+        <div class="empty-icon"><mat-icon>chat_bubble</mat-icon></div>
+        <h3>Selecciona una conversación</h3>
+        <p>Elige un chat de la lista para empezar a chatear</p>
+      </div>
+    }
+  </main>
+</div>

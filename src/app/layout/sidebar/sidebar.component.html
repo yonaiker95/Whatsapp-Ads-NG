@@ -1,0 +1,63 @@
+<nav class="sidebar" [class.collapsed]="collapsed()" [class.mobile-open]="mobileOpen()">
+  <div class="sidebar-header">
+    <div class="logo-area" (click)="onToggle()">
+      <mat-icon class="logo-icon">chat_bubble</mat-icon>
+      <span class="logo-text" *ngIf="!collapsed()">WhatsApp Ads</span>
+    </div>
+    <button mat-icon-button class="collapse-btn" (click)="onToggle()" aria-label="Toggle sidebar">
+      <mat-icon>{{ collapsed() ? 'chevron_right' : 'chevron_left' }}</mat-icon>
+    </button>
+  </div>
+
+  <div class="nav-list">
+    <div class="nav-section" *ngFor="let section of visibleSections">
+      <span class="nav-section-label" *ngIf="!collapsed()">{{ section.label }}</span>
+      <a
+        *ngFor="let item of section.items"
+        [routerLink]="item.route"
+        routerLinkActive="active"
+        [routerLinkActiveOptions]="activeOptions"
+        class="nav-item"
+        [title]="collapsed() ? item.label : ''"
+      >
+        <div class="nav-icon-wrap">
+          <mat-icon class="nav-icon">{{ item.icon }}</mat-icon>
+        </div>
+        <span class="nav-label" *ngIf="!collapsed()">{{ item.label }}</span>
+        <span class="nav-badge" *ngIf="item.badge && !collapsed()">{{ item.badge }}</span>
+        <span class="nav-badge-mini" *ngIf="item.badge && collapsed()">{{ item.badge }}</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <ng-container *ngIf="!collapsed()">
+      <a class="user-card" routerLink="/app/profile">
+        <div class="user-avatar">{{ userInitial }}</div>
+        <div class="user-details">
+          <span class="user-name">{{ userName }}</span>
+          <span class="user-role">{{ roleLabel }}</span>
+        </div>
+        <mat-icon class="user-chevron">chevron_right</mat-icon>
+      </a>
+      <div class="footer-actions">
+        <a class="footer-action" routerLink="/app/settings" title="Configuración">
+          <mat-icon>settings</mat-icon>
+          <span>Configuración</span>
+        </a>
+        <button class="logout-link" (click)="authService.logout()">
+          <mat-icon>logout</mat-icon>
+          <span>Cerrar sesión</span>
+        </button>
+      </div>
+    </ng-container>
+    <ng-container *ngIf="collapsed()">
+      <a class="user-avatar-mini" routerLink="/app/profile" [title]="userName">
+        {{ userInitial }}
+      </a>
+      <button class="logout-btn-mini" (click)="authService.logout()" title="Cerrar sesión">
+        <mat-icon>logout</mat-icon>
+      </button>
+    </ng-container>
+  </div>
+</nav>

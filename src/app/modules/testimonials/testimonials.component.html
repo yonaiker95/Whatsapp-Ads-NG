@@ -1,0 +1,87 @@
+<div class="page-container">
+  <div class="page-header">
+    <div>
+      <h1>Administración de testimonios</h1>
+      <p class="page-subtitle">Gestiona los testimonios de clientes que se muestran en el landing page</p>
+    </div>
+    <button mat-raised-button color="primary" (click)="create()">
+      <mat-icon>add</mat-icon>
+      Nuevo testimonio
+    </button>
+  </div>
+
+  <div class="hint-card">
+    <mat-icon>info</mat-icon>
+    <p>
+      Los cambios se reflejan automáticamente en la sección de testimonios del landing page. Solo los testimonios
+      <strong>activos</strong> se muestran al público y el <strong>destacado</strong> ocupa la posición principal.
+    </p>
+  </div>
+
+  <div class="loading-state" *ngIf="loading">
+    <mat-spinner diameter="32"></mat-spinner>
+    <p>Cargando testimonios...</p>
+  </div>
+
+  <div class="testimonials-grid" *ngIf="!loading && testimonials.length > 0">
+    <mat-card class="testimonial-admin-card" [class.inactive]="!testimonial.isActive" *ngFor="let testimonial of testimonials">
+      <div class="testimonial-top">
+        <div class="avatar" [style.background]="testimonial.color" [style.color]="textColor(testimonial.color)">{{ testimonial.avatar }}</div>
+        <div class="testimonial-identity">
+          <div class="testimonial-name-row">
+            <h3>{{ testimonial.author }}</h3>
+            <mat-chip class="featured-chip" *ngIf="testimonial.featured">Destacado</mat-chip>
+            <mat-chip class="inactive-chip" *ngIf="!testimonial.isActive">Inactivo</mat-chip>
+          </div>
+          <p class="testimonial-role">{{ testimonial.role }}<span *ngIf="testimonial.company"> &#64; {{ testimonial.company }}</span></p>
+        </div>
+        <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Acciones del testimonio">
+          <mat-icon>more_vert</mat-icon>
+        </button>
+        <mat-menu #menu="matMenu">
+          <button mat-menu-item (click)="edit(testimonial)">
+            <mat-icon>edit</mat-icon>
+            <span>Editar</span>
+          </button>
+          <button mat-menu-item (click)="toggleActive(testimonial)">
+            <mat-icon>{{ testimonial.isActive ? 'visibility_off' : 'visibility' }}</mat-icon>
+            <span>{{ testimonial.isActive ? 'Desactivar' : 'Activar' }}</span>
+          </button>
+          <mat-divider></mat-divider>
+          <button mat-menu-item (click)="delete(testimonial)">
+            <mat-icon color="warn">delete</mat-icon>
+            <span>Eliminar</span>
+          </button>
+        </mat-menu>
+      </div>
+
+      <blockquote class="testimonial-quote">"{{ testimonial.quote }}"</blockquote>
+
+      <div class="testimonial-meta">
+        <span class="rating" *ngIf="testimonial.rating > 0">
+          <mat-icon *ngFor="let s of stars(testimonial.rating)">star</mat-icon>
+          <span>{{ testimonial.rating }}/5</span>
+        </span>
+        <span class="result" *ngIf="testimonial.result">
+          <mat-icon>trending_up</mat-icon>
+          {{ testimonial.result }}
+        </span>
+      </div>
+
+      <div class="testimonial-meta-bottom">
+        <span>Orden: {{ testimonial.sortOrder }}</span>
+        <span *ngIf="testimonial.createdAt">Creado: {{ testimonial.createdAt | date: 'short' }}</span>
+      </div>
+    </mat-card>
+  </div>
+
+  <div class="empty-state" *ngIf="!loading && testimonials.length === 0">
+    <div class="empty-icon"><mat-icon>rate_review</mat-icon></div>
+    <h3>No hay testimonios</h3>
+    <p>Crea tu primer testimonio para mostrarlo en el landing page.</p>
+    <button mat-raised-button color="primary" (click)="create()">
+      <mat-icon>add</mat-icon>
+      Crear testimonio
+    </button>
+  </div>
+</div>

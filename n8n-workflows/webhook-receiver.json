@@ -1,0 +1,150 @@
+{
+  "name": "WhatsApp Ads - Webhook Receiver",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-events",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "WhatsApp Events Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "whatsapp-events"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-event",
+              "leftValue": "={{ $json.body.event }}",
+              "rightValue": "CONNECTION_UPDATE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-connection-update",
+      "name": "¿Connection Update?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [470, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/webhooks",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event",
+              "value": "={{ $json.body.event }}"
+            },
+            {
+              "name": "instance",
+              "value": "={{ $json.body.instance }}"
+            },
+            {
+              "name": "data",
+              "value": "={{ JSON.stringify($json.body.data) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "forward-connection",
+      "name": "Forward Connection Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/webhooks",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "event",
+              "value": "={{ $json.body.event }}"
+            },
+            {
+              "name": "instance",
+              "value": "={{ $json.body.instance }}"
+            },
+            {
+              "name": "data",
+              "value": "={{ JSON.stringify($json.body.data) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "forward-message",
+      "name": "Forward Message Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [690, 400]
+    },
+    {
+      "parameters": {},
+      "id": "noop-other",
+      "name": "Other Events",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [690, 520]
+    }
+  ],
+  "connections": {
+    "WhatsApp Events Webhook": {
+      "main": [
+        [
+          {
+            "node": "¿Connection Update?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Connection Update?": {
+      "main": [
+        [
+          {
+            "node": "Forward Connection Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Forward Message Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}

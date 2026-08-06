@@ -1,0 +1,83 @@
+.dialog-icon {
+  margin-right: 8px;
+  color: var(--primary);
+  vertical-align: middle;
+}
+
+.content {
+  min-width: 420px;
+}
+
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 0;
+  color: var(--text-secondary);
+}
+
+.prices-form {
+  padding-top: 8px;
+}
+
+.note {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+
+  .row-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .row-label {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .row-unit {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .price-field {
+    width: 180px;
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .content {
+    min-width: 0;
+  }
+
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .price-field {
+    width: 100%;
+  }
+}

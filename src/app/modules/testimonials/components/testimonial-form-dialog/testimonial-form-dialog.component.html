@@ -1,0 +1,96 @@
+<h2 mat-dialog-title>
+  <mat-icon class="dialog-icon">{{ isEdit ? 'edit' : 'rate_review' }}</mat-icon>
+  {{ title }}
+</h2>
+<mat-dialog-content>
+  <form [formGroup]="form" class="testimonial-form">
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Autor</mat-label>
+        <input matInput formControlName="author" placeholder="María González" required />
+        <mat-icon matPrefix>person</mat-icon>
+        <mat-error *ngIf="form.get('author')?.hasError('required')">El autor es obligatorio</mat-error>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Iniciales (avatar)</mat-label>
+        <input matInput formControlName="avatar" placeholder="MG" maxlength="2" />
+        <mat-hint>Opcional. Si se deja vacío, se generan automáticamente.</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Cargo</mat-label>
+        <input matInput formControlName="role" placeholder="Directora de Marketing" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Empresa</mat-label>
+        <input matInput formControlName="company" placeholder="EcoMarket" />
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Testimonio</mat-label>
+      <textarea matInput formControlName="quote" rows="4" placeholder="Describe el resultado que obtuvo el cliente..." required></textarea>
+      <mat-error *ngIf="form.get('quote')?.hasError('required')">El testimonio es obligatorio</mat-error>
+      <mat-error *ngIf="form.get('quote')?.hasError('minlength')">Mínimo 10 caracteres</mat-error>
+    </mat-form-field>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Resultado</mat-label>
+        <input matInput formControlName="result" placeholder="+340% ventas en 3 meses" />
+        <mat-icon matPrefix>trending_up</mat-icon>
+        <mat-hint>Opcional. Ej: ROI 12x en campañas</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Orden</mat-label>
+        <input matInput type="number" min="0" formControlName="sortOrder" placeholder="1" />
+      </mat-form-field>
+    </div>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Calificación (1-5)</mat-label>
+        <input matInput type="number" min="0" max="5" formControlName="rating" placeholder="5" />
+        <mat-icon matPrefix>star</mat-icon>
+        <mat-error *ngIf="form.get('rating')?.hasError('required')">La calificación es obligatoria</mat-error>
+        <mat-error *ngIf="form.get('rating')?.hasError('min') || form.get('rating')?.hasError('max')">Entre 1 y 5</mat-error>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Color del testimonio</mat-label>
+        <div class="color-field">
+          <input matInput formControlName="color" placeholder="#25D366" class="color-input" />
+          <div class="color-presets">
+            <button
+              type="button"
+              class="color-swatch"
+              *ngFor="let c of colorPresets"
+              [style.background]="c"
+              [class.selected]="form.get('color')?.value === c"
+              (click)="form.get('color')?.setValue(c)"
+              [attr.aria-label]="'Color ' + c"
+            ></button>
+          </div>
+        </div>
+      </mat-form-field>
+    </div>
+
+    <div class="form-options">
+      <mat-checkbox formControlName="featured">Marcar como destacado</mat-checkbox>
+      <mat-slide-toggle formControlName="isActive">Testimonio activo</mat-slide-toggle>
+    </div>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()">Cancelar</button>
+  <button mat-raised-button color="primary" (click)="save()" [disabled]="submitting">
+    <mat-icon>save</mat-icon>
+    {{ saveLabel }}
+  </button>
+</mat-dialog-actions>

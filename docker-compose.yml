@@ -1,0 +1,109 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: whatsapp_ads_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: whatsapp_ads
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  evolution_postgres:
+    image: postgres:16
+    container_name: evolution_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution_user
+      POSTGRES_PASSWORD: evolution_password
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  evolution_redis:
+    image: redis:latest
+    container_name: evolution_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  evolution_api:
+    image: evoapicloud/evolution-api:latest
+    container_name: evolution_api
+    restart: unless-stopped
+    depends_on:
+      evolution_postgres:
+        condition: service_healthy
+      evolution_redis:
+        condition: service_healthy
+    environment:
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution_user:evolution_password@evolution_postgres:5432/evolution?schema=public
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution_redis:6379/6
+      AUTHENTICATION_TYPE: apikey
+      AUTHENTICATION_API_KEY: evolution_api_7465829274
+      SERVER_PORT: 8080
+      LOG_LEVEL: info
+      LOG_SAVE: "true"
+      DELAY_MESSAGE: "3000"
+      WEBHOOK_GLOBAL_URL: http://host.docker.internal:3000/api/webhooks
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_EVENTS: CONNECTION_UPDATE,MESSAGES_UPSERT,MESSAGES_UPDATE,MESSAGES_DELETE
+    ports:
+      - "3100:8080"
+    volumes:
+      - evolution_api_instances:/evolution/instances
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: unless-stopped
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: admin@whatsapp-ads.com
+      N8N_BASIC_AUTH_PASSWORD: Admin123
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://host.docker.internal:3000
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      N8N_DEFAULT_BINARY_DATA_TEMP: /files
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n-workflows:/backup/workflows
+
+volumes:
+  postgres_data:
+  evolution_postgres_data:
+  evolution_redis_data:
+  evolution_api_instances:
+  n8n_data:

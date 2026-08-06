@@ -1,0 +1,135 @@
+<div class="page-container">
+  <div class="page-header">
+    <h1>Configuración</h1>
+    <p class="page-subtitle">Preferencias de tu cuenta y de la plataforma</p>
+  </div>
+
+  <mat-card class="settings-card" appearance="outlined">
+    <mat-card-header>
+      <mat-card-title>
+        <mat-icon>tune</mat-icon>
+        Preferencias
+      </mat-card-title>
+    </mat-card-header>
+    <mat-divider></mat-divider>
+
+    <mat-card-content>
+      <mat-list class="settings-list">
+        <h3 class="settings-group">Apariencia</h3>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <mat-icon>dark_mode</mat-icon>
+            <div>
+              <span class="setting-title">Tema oscuro</span>
+              <span class="setting-sub">Aplica el modo oscuro en toda la plataforma</span>
+            </div>
+          </div>
+          <mat-slide-toggle [checked]="themeService.isDark()" (change)="setTheme($event.checked)"></mat-slide-toggle>
+        </div>
+        <mat-divider></mat-divider>
+
+        <h3 class="settings-group">Notificaciones</h3>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <mat-icon>notifications</mat-icon>
+            <div>
+              <span class="setting-title">Notificaciones</span>
+              <span class="setting-sub">Recibe avisos de campañas y mensajes</span>
+            </div>
+          </div>
+          <mat-slide-toggle [(ngModel)]="notifications"></mat-slide-toggle>
+        </div>
+        <mat-divider></mat-divider>
+
+        <h3 class="settings-group">Sincronización</h3>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <mat-icon>sync</mat-icon>
+            <div>
+              <span class="setting-title">Sincronización automática</span>
+              <span class="setting-sub">Actualiza grupos e instancias automáticamente</span>
+            </div>
+          </div>
+          <mat-slide-toggle [(ngModel)]="autoSync"></mat-slide-toggle>
+        </div>
+        <mat-divider></mat-divider>
+
+        <h3 class="settings-group">Seguridad</h3>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <mat-icon>phone_iphone</mat-icon>
+            <div>
+              <span class="setting-title">WhatsApp verificado</span>
+              <span class="setting-sub">
+                {{ phoneVerified
+                    ? (maskedPhone ? 'Número verificado: ' + maskedPhone : 'Número verificado')
+                    : 'No tienes un número verificado. Valídalo para activar la verificación en dos pasos.' }}
+              </span>
+            </div>
+          </div>
+          <button mat-button color="primary" (click)="editingPhone = !editingPhone">
+            <mat-icon>{{ editingPhone ? 'close' : 'edit' }}</mat-icon>
+            {{ editingPhone ? 'Cancelar' : 'Cambiar' }}
+          </button>
+        </div>
+
+        @if (editingPhone) {
+          <div class="phone-edit-box">
+            <mat-form-field appearance="outline" class="full-width">
+              <app-country-code-selector
+                matPrefix
+                [(country)]="phoneCountry"
+                (countryChange)="onCountryChange()"
+              ></app-country-code-selector>
+              <mat-label>Nuevo número de WhatsApp</mat-label>
+              <input matInput type="tel" [(ngModel)]="phoneInput" name="phoneInput" placeholder="55 1234 5678">
+            </mat-form-field>
+            <button mat-stroked-button color="accent" (click)="sendPhoneCode()" [disabled]="sendingPhoneCode">
+              <mat-spinner diameter="16" *ngIf="sendingPhoneCode"></mat-spinner>
+              <span *ngIf="!sendingPhoneCode">Enviar código</span>
+            </button>
+
+            @if (phoneCodeSent) {
+              <div class="otp-wrap">
+                <app-otp-input
+                  [(code)]="phoneCode"
+                  [state]="phoneCodeState"
+                  (codeChange)="onPhoneCodeChange($event)"
+                  (complete)="verifyPhone()"
+                ></app-otp-input>
+              </div>
+              <p class="otp-hint">Se verifica automáticamente al completar el código.</p>
+              <button mat-raised-button color="primary" (click)="verifyPhone()" [disabled]="savingPhone">
+                <mat-spinner diameter="16" *ngIf="savingPhone"></mat-spinner>
+                <span *ngIf="!savingPhone">Verificar número</span>
+              </button>
+            }
+          </div>
+        }
+        <mat-divider></mat-divider>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <mat-icon>security</mat-icon>
+            <div>
+              <span class="setting-title">Verificación en dos pasos</span>
+              <span class="setting-sub">Refuerza la seguridad de tu cuenta pidiendo un código por WhatsApp al iniciar sesión</span>
+            </div>
+          </div>
+          <mat-slide-toggle [(ngModel)]="twoFactor" [disabled]="!phoneVerified"></mat-slide-toggle>
+        </div>
+      </mat-list>
+    </mat-card-content>
+
+    <mat-card-actions align="end">
+      <button mat-raised-button color="primary" (click)="save()" [disabled]="saving">
+        <mat-icon>save</mat-icon>
+        Guardar cambios
+      </button>
+    </mat-card-actions>
+  </mat-card>
+</div>

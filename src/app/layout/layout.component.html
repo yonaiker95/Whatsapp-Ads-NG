@@ -1,0 +1,22 @@
+<div class="layout">
+  <app-header
+    [sidebarCollapsed]="sidebarCollapsed()"
+    [pageTitle]="pageTitle()"
+    [isMobile]="isMobile()"
+    [mobileOpen]="mobileOpen()"
+    (toggleSidebar)="onSidebarToggle()"
+  ></app-header>
+  <app-sidebar
+    [collapsed]="sidebarCollapsed()"
+    [mobileOpen]="mobileOpen()"
+    (toggle)="onSidebarToggle()"
+  ></app-sidebar>
+  @if (mobileOpen()) {
+    <div class="sidebar-overlay" (click)="closeMobile()"></div>
+  }
+  <main class="main-content" [class.collapsed]="sidebarCollapsed()">
+    <div class="content-wrapper">
+      <router-outlet></router-outlet>
+    </div>
+  </main>
+</div>

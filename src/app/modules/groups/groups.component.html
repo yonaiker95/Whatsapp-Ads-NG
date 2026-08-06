@@ -1,0 +1,250 @@
+<div class="page-container">
+  <div class="page-header">
+    <div>
+      <h1>Grupos de WhatsApp</h1>
+      <p class="page-subtitle">Gestiona y sincroniza los grupos de tus instancias</p>
+    </div>
+    <div class="header-actions">
+      <button
+        mat-raised-button
+        color="primary"
+        (click)="syncAll()"
+        [disabled]="syncing || !instances.length"
+        matTooltip="Sincroniza los grupos de todas tus instancias">
+        <mat-spinner diameter="18" *ngIf="syncing"></mat-spinner>
+        <mat-icon *ngIf="!syncing">sync</mat-icon>
+        {{ syncing ? 'Sincronizando...' : 'Sincronizar grupos' }}
+      </button>
+    </div>
+  </div>
+
+  <div class="stats-row" *ngIf="!loading && instances.length > 0">
+    <div class="stat-card">
+      <div class="stat-icon stat-total"><mat-icon>groups</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.total }}</span>
+        <span class="stat-label">Grupos</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-active"><mat-icon>check_circle</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.active }}</span>
+        <span class="stat-label">Activos</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-excluded"><mat-icon>block</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.excluded }}</span>
+        <span class="stat-label">Excluidos</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-instances"><mat-icon>phone_android</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.instances }}</span>
+        <span class="stat-label">Instancias</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <div class="section-header">
+      <div>
+        <h2>Todos los grupos <span class="count-badge">{{ filteredGroups.length }}</span></h2>
+      </div>
+      <div class="filters-row">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="search-field">
+          <mat-label>Buscar grupo</mat-label>
+          <mat-icon matPrefix>search</mat-icon>
+          <input matInput [(ngModel)]="searchQuery" placeholder="Nombre o JID..." aria-label="Buscar grupo">
+          <button *ngIf="searchQuery" matSuffix mat-icon-button aria-label="Limpiar búsqueda" (click)="clearSearch()">
+            <mat-icon>close</mat-icon>
+          </button>
+        </mat-form-field>
+        <div class="status-chips" role="group" aria-label="Filtrar por estado">
+          <button
+            type="button"
+            class="filter-chip"
+            [class.active]="statusFilter === 'all'"
+            [attr.aria-pressed]="statusFilter === 'all'"
+            (click)="setStatusFilter('all')">Todos</button>
+          <button
+            type="button"
+            class="filter-chip"
+            [class.active]="statusFilter === 'active'"
+            [attr.aria-pressed]="statusFilter === 'active'"
+            (click)="setStatusFilter('active')">Activos</button>
+          <button
+            type="button"
+            class="filter-chip"
+            [class.active]="statusFilter === 'excluded'"
+            [attr.aria-pressed]="statusFilter === 'excluded'"
+            (click)="setStatusFilter('excluded')">Excluidos</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="skeleton-loading" *ngIf="loading" aria-label="Cargando grupos">
+      <div class="skeleton-row" *ngFor="let _ of [0, 1, 2]">
+        <div class="skeleton skeleton-avatar"></div>
+        <div class="skeleton-lines">
+          <div class="skeleton skeleton-line w-50"></div>
+          <div class="skeleton skeleton-line w-25"></div>
+        </div>
+        <div class="skeleton skeleton-pill"></div>
+      </div>
+    </div>
+
+    <mat-accordion
+      multi
+      class="instance-accordion"
+      *ngIf="!loading && sections.length > 0">
+      <mat-expansion-panel *ngFor="let section of sections; trackBy: sectionTrackBy" class="instance-panel">
+        <mat-expansion-panel-header>
+          <mat-panel-title>
+            <span class="instance-avatar" [style.background]="avatarColor(section.instanceName)">
+              {{ section.instanceName.charAt(0).toUpperCase() }}
+            </span>
+            <span class="instance-name">{{ section.instanceName }}</span>
+            <span
+              class="status-dot"
+              [class.connected]="section.instanceStatus === 'connected'"
+              [class.connecting]="section.instanceStatus === 'connecting'"
+              [class.qrcoded]="section.instanceStatus === 'qrcoded'"
+              [matTooltip]="instanceStatusLabel(section.instanceStatus)"></span>
+            <span class="instance-count">{{ section.groups.length }}</span>
+          </mat-panel-title>
+          <mat-panel-description>
+            <span class="instance-hint">
+              <mat-icon>phone_android</mat-icon>
+              {{ section.instancePhone || 'Sin número' }}
+            </span>
+          </mat-panel-description>
+          <button
+            mat-icon-button
+            class="panel-sync-btn"
+            (click)="$event.stopPropagation(); syncByInstance(section.instanceId)"
+            matTooltip="Sincronizar grupos de esta instancia"
+            [disabled]="syncing"
+            aria-label="Sincronizar grupos de esta instancia">
+            <mat-spinner diameter="18" *ngIf="syncing && syncingInstanceId === section.instanceId"></mat-spinner>
+            <mat-icon *ngIf="!(syncing && syncingInstanceId === section.instanceId)">sync</mat-icon>
+          </button>
+        </mat-expansion-panel-header>
+
+        <ng-container *ngIf="section.groups.length > 0; else noGroupContent">
+          <div class="table-wrapper">
+            <table mat-table [dataSource]="section.groups">
+              <ng-container matColumnDef="name">
+                <th mat-header-cell *matHeaderCellDef>Grupo</th>
+                <td mat-cell *matCellDef="let group">
+                  <div class="group-cell">
+                    <span class="group-avatar" [style.background]="avatarColor(group.name)">
+                      {{ group.name.charAt(0).toUpperCase() }}
+                    </span>
+                    <div class="group-text">
+                      <div class="group-name">{{ group.name }}</div>
+                      <div class="group-jid">{{ group.jid }}</div>
+                    </div>
+                  </div>
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="participants">
+                <th mat-header-cell *matHeaderCellDef>Participantes</th>
+                <td mat-cell *matCellDef="let group">
+                  <span class="participants-count">
+                    <mat-icon>people</mat-icon>
+                    {{ group.participants || 0 }}
+                  </span>
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="tags">
+                <th mat-header-cell *matHeaderCellDef>Etiquetas</th>
+                <td mat-cell *matCellDef="let group">
+                  <mat-chip-set *ngIf="group.tags?.length">
+                    <mat-chip *ngFor="let tag of group.tags">{{ tag }}</mat-chip>
+                  </mat-chip-set>
+                  <span *ngIf="!group.tags?.length" class="muted">Sin etiquetas</span>
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="campaign">
+                <th mat-header-cell *matHeaderCellDef>En campañas</th>
+                <td mat-cell *matCellDef="let group">
+                  <div class="campaign-cell">
+                    <mat-slide-toggle
+                      color="primary"
+                      [checked]="!group.excluded"
+                      (change)="setCampaignInclusion(group, $event.checked)"
+                      class="campaign-toggle"
+                      [attr.aria-label]="group.excluded ? 'Incluir grupo en campañas' : 'Excluir grupo de campañas'"
+                      [matTooltip]="group.excluded ? 'Haz clic para incluir en campañas' : 'Haz clic para excluir de campañas'">
+                      {{ group.excluded ? 'Excluido' : 'Incluido' }}
+                    </mat-slide-toggle>
+                  </div>
+                </td>
+              </ng-container>
+
+              <ng-container matColumnDef="actions">
+                <th mat-header-cell *matHeaderCellDef>Acciones</th>
+                <td mat-cell *matCellDef="let group">
+                  <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Acciones">
+                    <mat-icon>more_vert</mat-icon>
+                  </button>
+                  <mat-menu #menu="matMenu">
+                    <button mat-menu-item (click)="editGroup(group)">
+                      <mat-icon>edit</mat-icon>
+                      <span>Editar</span>
+                    </button>
+                    <button mat-menu-item (click)="setCampaignInclusion(group, group.excluded)">
+                      <mat-icon>{{ group.excluded ? 'check_circle' : 'block' }}</mat-icon>
+                      <span>{{ group.excluded ? 'Incluir en campañas' : 'Excluir de campañas' }}</span>
+                    </button>
+                    <mat-divider></mat-divider>
+                    <button mat-menu-item (click)="deleteGroup(group)" class="delete-action">
+                      <mat-icon color="warn">delete</mat-icon>
+                      <span>Eliminar</span>
+                    </button>
+                  </mat-menu>
+                </td>
+              </ng-container>
+
+              <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+            </table>
+          </div>
+        </ng-container>
+        <ng-template #noGroupContent>
+          <div class="panel-empty">
+            <mat-icon>groups</mat-icon>
+            <p>Esta instancia aún no tiene grupos sincronizados</p>
+            <button mat-stroked-button color="primary" (click)="syncByInstance(section.instanceId)" [disabled]="syncing">
+              <mat-icon>sync</mat-icon>
+              Sincronizar ahora
+            </button>
+          </div>
+        </ng-template>
+      </mat-expansion-panel>
+    </mat-accordion>
+
+    <div class="empty-state" *ngIf="!loading && groups.length === 0 && instances.length === 0">
+      <div class="empty-icon"><mat-icon>groups</mat-icon></div>
+      <h3>No hay instancias</h3>
+      <p>Crea o conecta una instancia de WhatsApp para sincronizar y gestionar tus grupos aquí</p>
+    </div>
+
+    <div class="no-results" *ngIf="!loading && groups.length > 0 && filteredGroups.length === 0">
+      <mat-icon>search_off</mat-icon>
+      <h3>Sin resultados</h3>
+      <p>No hay grupos que coincidan con tu búsqueda o filtro</p>
+      <button mat-stroked-button (click)="clearSearch(); setStatusFilter('all')">
+        <mat-icon>filter_alt_off</mat-icon>
+        Limpiar filtros
+      </button>
+    </div>
+  </div>
+</div>

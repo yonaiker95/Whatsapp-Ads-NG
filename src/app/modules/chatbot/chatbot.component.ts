@@ -1,0 +1,178 @@
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { CommonModule } from '@angular/common';
+import { MatCardModule } from '@angular/material/card';
+import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
+import { MatTabsModule } from '@angular/material/tabs';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatListModule } from '@angular/material/list';
+import { MatChipsModule } from '@angular/material/chips';
+import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
+import { Subject, takeUntil } from 'rxjs';
+import { ChatbotService } from '../../core/services/chatbot.service';
+import { InstanceService } from '../../core/services/instance.service';
+import { ChatbotConfig, ChatbotPaused } from '../../core/models/chatbot.model';
+import { Instance } from '../../core/models/instance.model';
+
+@Component({
+  selector: 'app-chatbot',
+  standalone: true,
+  imports: [
+    CommonModule, FormsModule, MatCardModule, MatIconModule, MatButtonModule, MatTabsModule,
+    MatFormFieldModule, MatInputModule, MatSelectModule, MatSlideToggleModule,
+    MatProgressSpinnerModule, MatListModule, MatChipsModule, MatSnackBarModule,
+  ],
+  templateUrl: './chatbot.component.html',
+  styleUrls: ['./chatbot.component.scss'],
+})
+export class ChatbotComponent implements OnInit, OnDestroy {
+  instances: Instance[] = [];
+  selectedInstanceId = '';
+  config: ChatbotConfig | null = null;
+  configLoading = false;
+  saving = false;
+
+  systemPrompt = `Eres un vendedor experto de WhatsApp Ads System. Tu objetivo es ayudar a los clientes, resolver sus dudas y guiarlos hacia la contratación de nuestros servicios.
+
+Servicios:
+- Sistema de publicidad para WhatsApp
+- Gestión de campañas masivas
+- Automatización de respuestas
+- Chatbot con IA
+
+Reglas:
+- Sé amable y profesional
+- Responde en el mismo idioma
+- Usa emojis con moderación
+- Si muestran interés ofrece más info
+- Máximo 2-3 oraciones por respuesta
+- Nunca inventes precios`;
+  maxTokens = 200;
+  temperature = 0.7;
+  isActive = false;
+
+  pausedChats: ChatbotPaused[] = [];
+  pausedLoading = false;
+
+  private destroy$ = new Subject<void>();
+
+  constructor(
+    private chatbotService: ChatbotService,
+    private instanceService: InstanceService,
+    private snackBar: MatSnackBar
+  ) {}
+
+  ngOnInit(): void {
+    this.instanceService.getAll().subscribe((instances) => {
+      this.instances = instances;
+      if (instances.length > 0) {
+        this.selectedInstanceId = instances[0].id;
+        this.loadConfig();
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  onInstanceChange(): void {
+    this.loadConfig();
+    this.loadPausedChats();
+  }
+
+  loadConfig(): void {
+    if (!this.selectedInstanceId) return;
+    this.configLoading = true;
+    this.chatbotService.getConfig(this.selectedInstanceId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (config) => {
+          this.config = config;
+          if (config) {
+            this.isActive = config.isActive;
+            this.systemPrompt = config.systemPrompt;
+            this.maxTokens = config.maxTokens;
+            this.temperature = config.temperature;
+          }
+          this.configLoading = false;
+        },
+        error: () => {
+          this.configLoading = false;
+        },
+      });
+  }
+
+  saveConfig(): void {
+    if (!this.selectedInstanceId) {
+      this.snackBar.open('Selecciona una instancia', 'Cerrar', { duration: 3000 });
+      return;
+    }
+    this.saving = true;
+    this.chatbotService
+      .saveConfig({
+        instanceId: this.selectedInstanceId,
+        isActive: this.isActive,
+        systemPrompt: this.systemPrompt,
+        maxTokens: this.maxTokens,
+        temperature: this.temperature,
+      })
+      .subscribe({
+        next: (config) => {
+          this.saving = false;
+          this.config = config;
+          this.snackBar.open('Configuración guardada correctamente', 'Cerrar', { duration: 3000 });
+        },
+        error: (err) => {
+          this.saving = false;
+          this.snackBar.open(err?.error?.error || 'Error al guardar la configuración', 'Cerrar', { duration: 5000 });
+        },
+      });
+  }
+
+  loadPausedChats(): void {
+    if (!this.selectedInstanceId) return;
+    this.pausedLoading = true;
+    this.chatbotService.getPausedChats(this.selectedInstanceId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (chats) => {
+          this.pausedChats = chats;
+          this.pausedLoading = false;
+        },
+        error: () => {
+          this.pausedLoading = false;
+        },
+      });
+  }
+
+  resumeChat(senderJid: string): void {
+    this.chatbotService.toggleChat(this.selectedInstanceId, senderJid, false).subscribe({
+      next: () => {
+        this.snackBar.open('Conversación reanudada, el chatbot volverá a responder', 'Cerrar', { duration: 3000 });
+        this.loadPausedChats();
+      },
+      error: (err) => {
+        this.snackBar.open(err?.error?.error || 'Error al reanudar la conversación', 'Cerrar', { duration: 5000 });
+      },
+    });
+  }
+
+  removePausedChat(senderJid: string): void {
+    this.chatbotService.removePausedChat(this.selectedInstanceId, senderJid).subscribe({
+      next: () => {
+        this.snackBar.open('Conversación eliminada', 'Cerrar', { duration: 3000 });
+        this.loadPausedChats();
+      },
+      error: (err) => {
+        this.snackBar.open(err?.error?.error || 'Error al eliminar la conversación', 'Cerrar', { duration: 5000 });
+      },
+    });
+  }
+}

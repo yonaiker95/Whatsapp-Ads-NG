@@ -1,0 +1,73 @@
+<div class="page-container">
+  <div class="page-header">
+    <h1>Mi perfil</h1>
+    <p class="page-subtitle">Gestiona tus datos personales y la seguridad de tu cuenta</p>
+  </div>
+
+  <div class="profile-layout">
+    <mat-card class="summary-card" appearance="outlined">
+      <mat-card-content>
+        <div class="avatar-circle">
+          <span>{{ (user?.name || 'U')[0] | uppercase }}</span>
+        </div>
+        <div class="summary-info">
+          <span class="summary-name">{{ user?.name || 'Usuario' }}</span>
+          <span class="summary-email">{{ user?.email }}</span>
+        </div>
+        <span class="role-badge" [class.is-admin]="user?.role === 'admin'">
+          <mat-icon>{{ user?.role === 'admin' ? 'admin_panel_settings' : 'person' }}</mat-icon>
+          {{ roleLabel }}
+        </span>
+        <mat-divider></mat-divider>
+        <div class="account-info">
+          <div class="info-row">
+            <mat-icon>verified_user</mat-icon>
+            <span>Cuenta activa</span>
+          </div>
+          <div class="info-row">
+            <mat-icon>calendar_today</mat-icon>
+            <span>Registrado en la plataforma</span>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="form-card" appearance="outlined">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>edit</mat-icon>
+          Datos personales
+        </mat-card-title>
+      </mat-card-header>
+      <mat-divider></mat-divider>
+      <mat-card-content>
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Nombre</mat-label>
+          <input matInput [(ngModel)]="name" placeholder="Tu nombre">
+          <mat-icon matPrefix>person</mat-icon>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Email</mat-label>
+          <input matInput [(ngModel)]="email" type="email" placeholder="tu@email.com">
+          <mat-icon matPrefix>mail</mat-icon>
+        </mat-form-field>
+
+        <h3 class="section-label">Seguridad</h3>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Nueva contraseña</mat-label>
+          <input matInput [(ngModel)]="password" type="password" placeholder="Dejar en blanco para no cambiar">
+          <mat-icon matPrefix>lock</mat-icon>
+          <mat-hint>Mínimo 6 caracteres</mat-hint>
+        </mat-form-field>
+      </mat-card-content>
+      <mat-card-actions align="end">
+        <button mat-raised-button color="primary" (click)="save()">
+          <mat-icon>save</mat-icon>
+          Guardar cambios
+        </button>
+      </mat-card-actions>
+    </mat-card>
+  </div>
+</div>

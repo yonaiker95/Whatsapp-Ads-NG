@@ -1,0 +1,330 @@
+<div class="page-container">
+  <div class="page-header">
+    <h1>Centro de IA</h1>
+    <p class="page-subtitle">Configura la inteligencia artificial para tus agentes y chatbot</p>
+  </div>
+
+  <div class="loading-state" *ngIf="loading">
+    <mat-spinner diameter="32"></mat-spinner>
+    <p>Cargando Centro de IA...</p>
+  </div>
+
+  <div *ngIf="!loading" class="ai-content">
+    <!-- ===================== Configuración ===================== -->
+    <mat-card class="config-card" appearance="outlined">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>settings_suggest</mat-icon>
+          Configuración General
+        </mat-card-title>
+      </mat-card-header>
+      <mat-divider></mat-divider>
+      <mat-card-content>
+        <div class="mode-selector">
+          <span class="field-label">Modo IA</span>
+          <mat-radio-group [(ngModel)]="mode" (ngModelChange)="onModeChange()" class="mode-radios">
+            <mat-radio-button value="saas">
+              <div class="mode-option">
+                <span class="mode-title">SaaS</span>
+                <span class="mode-desc">Usa la clave administrada por la plataforma. Sin API Key propia.</span>
+              </div>
+            </mat-radio-button>
+            <mat-radio-button value="byok">
+              <div class="mode-option">
+                <span class="mode-title">BYOK (Bring Your Own Key)</span>
+                <span class="mode-desc">Usa tu propia API Key y tu propio proveedor.</span>
+              </div>
+            </mat-radio-button>
+          </mat-radio-group>
+        </div>
+
+        <div class="form-grid" *ngIf="mode === 'byok'">
+          <mat-form-field appearance="outline">
+            <mat-label>Proveedor IA</mat-label>
+            <mat-select [(ngModel)]="provider" (ngModelChange)="onProviderChange()">
+              <mat-option *ngFor="let p of catalogue" [value]="p.id">{{ p.label }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Modelo</mat-label>
+            <mat-select [(ngModel)]="model">
+              <mat-option *ngFor="let m of providerModels" [value]="m">{{ providerModelLabel(m) }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+
+        <!-- BYOK: API Key y endpoint -->
+        <div class="byok-fields" *ngIf="mode === 'byok'">
+          <mat-form-field appearance="outline" class="full-row">
+            <mat-label>API Key</mat-label>
+            <input matInput type="password" [(ngModel)]="apiKey" [placeholder]="config?.apiKeyMasked ? 'Clave actual: ' + (config?.apiKeyMasked ?? '') : 'Pega aquí tu API Key'">
+            <mat-icon matSuffix>key</mat-icon>
+          </mat-form-field>
+          <mat-form-field appearance="outline" *ngIf="requiresBaseUrl" class="full-row">
+            <mat-label>Endpoint</mat-label>
+            <input matInput [(ngModel)]="baseUrl" placeholder="{{ currentProvider?.defaultBaseUrl || 'https://...' }}">
+          </mat-form-field>
+          <div class="form-grid" *ngIf="provider === 'openai' || provider === 'azure'">
+            <mat-form-field appearance="outline">
+              <mat-label>Organización</mat-label>
+              <input matInput [(ngModel)]="organization">
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>{{ provider === 'azure' ? 'Deployment / proyecto' : 'Proyecto' }}</mat-label>
+              <input matInput [(ngModel)]="project">
+            </mat-form-field>
+          </div>
+
+          <mat-form-field appearance="outline" class="full-row">
+            <mat-label>Límite de uso mensual (USD)</mat-label>
+            <input matInput type="number" [(ngModel)]="monthlyQuota">
+            <mat-hint>Referencia para controlar tu gasto estimado de IA.</mat-hint>
+          </mat-form-field>
+        </div>
+
+        <!-- SaaS: límite definido por el plan contratado (no editable) -->
+        <div class="saas-fields" *ngIf="mode === 'saas'">
+          <div class="saas-quota">
+            <div class="saas-quota-info">
+              <span class="field-label">Límite de uso mensual (USD)</span>
+              <span class="saas-quota-value">{{ saasQuota | number:'1.2-2' }} USD</span>
+            </div>
+            <mat-icon>verified</mat-icon>
+          </div>
+          <div class="saas-note">
+            <mat-icon>info</mat-icon>
+            <span>El límite mensual del modo SaaS está definido por tu plan contratado (incluye la cuota de IA extra). Para personalizarlo, usa el modo BYOK con tu propia API Key.</span>
+          </div>
+        </div>
+
+        <div class="action-row" *ngIf="mode === 'byok'">
+          <button mat-raised-button color="primary" (click)="validateConnection()" [disabled]="validating">
+            <mat-spinner diameter="18" *ngIf="validating"></mat-spinner>
+            <mat-icon *ngIf="!validating">check_circle</mat-icon>
+            {{ validating ? 'Validando...' : 'Validar conexión' }}
+          </button>
+          <button mat-raised-button color="accent" (click)="saveConfig()" [disabled]="saving">
+            <mat-spinner diameter="18" *ngIf="saving"></mat-spinner>
+            <mat-icon *ngIf="!saving">save</mat-icon>
+            {{ saving ? 'Guardando...' : 'Guardar' }}
+          </button>
+          <button mat-stroked-button color="primary" (click)="testAi()" [disabled]="testing || !config">
+            <mat-spinner diameter="18" *ngIf="testing"></mat-spinner>
+            <mat-icon *ngIf="!testing">smart_toy</mat-icon>
+            {{ testing ? 'Probando...' : 'Probar IA' }}
+          </button>
+        </div>
+
+        <div class="validation-result" *ngIf="validationMessage && mode === 'byok'">
+          <mat-icon [class.ok]="validationOk" [class.err]="!validationOk">
+            {{ validationOk ? 'check_circle' : 'error' }}
+          </mat-icon>
+          <span>{{ validationMessage }}</span>
+        </div>
+
+        <div class="test-result" *ngIf="testResult && mode === 'byok'">
+          <span class="test-label">Respuesta de prueba:</span>
+          <p>{{ testResult }}</p>
+        </div>
+
+        <mat-divider class="status-divider" *ngIf="mode === 'byok'"></mat-divider>
+
+        <!-- Estado -->
+        <div class="status-grid" *ngIf="mode === 'byok'">
+          <div class="status-item">
+            <span class="status-label">Estado</span>
+            <mat-chip [class.status-ok]="config?.status === 'connected'" [class.status-err]="config?.status === 'error' || config?.status === 'invalid'">
+              <mat-icon *ngIf="config?.status === 'connected'">check_circle</mat-icon>
+              <mat-icon *ngIf="config?.status === 'error' || config?.status === 'invalid'">error</mat-icon>
+              {{ statusLabel }}
+            </mat-chip>
+            <span class="status-error" *ngIf="config?.lastError">{{ config?.lastError }}</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Modelo disponible</span>
+            <span class="status-value">{{ config?.model || '—' }}</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Fecha de validación</span>
+            <span class="status-value">{{ (config?.lastValidatedAt | date:'dd MMM yyyy HH:mm') || '—' }}</span>
+          </div>
+        </div>
+
+        <div class="key-summary" *ngIf="config?.apiKeyMasked && mode === 'byok'">
+          <span class="key-label">API Key actual:</span>
+          <code class="key-masked">{{ config?.apiKeyMasked }}</code>
+          <button mat-stroked-button color="primary" (click)="rotateKey()" *ngIf="mode === 'byok'">
+            <mat-icon>sync</mat-icon>
+            Rotar
+          </button>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- ===================== Consumo ===================== -->
+    <mat-card class="usage-card" appearance="outlined">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>donut_small</mat-icon>
+          Consumo mensual
+        </mat-card-title>
+        <span class="quota-chip" *ngIf="mode === 'saas'">
+          {{ usage?.monthly?.saasCost | number:'1.2-2' }} / {{ saasQuota | number:'1.2-2' }} USD
+        </span>
+      </mat-card-header>
+      <mat-divider></mat-divider>
+      <mat-card-content>
+        <mat-progress-bar mode="determinate" [value]="quotaPercent" [color]="quotaColor(quotaPercent)" *ngIf="mode === 'saas'"></mat-progress-bar>
+
+        <div class="usage-stats">
+          <div class="usage-stat">
+            <span class="stat-value">{{ usage?.monthly?.requests || 0 }}</span>
+            <span class="stat-label">Solicitudes</span>
+          </div>
+          <div class="usage-stat">
+            <span class="stat-value">{{ usage?.monthly?.ok || 0 }}</span>
+            <span class="stat-label">Exitosas</span>
+          </div>
+          <div class="usage-stat">
+            <span class="stat-value">{{ usage?.monthly?.failed || 0 }}</span>
+            <span class="stat-label">Fallidas</span>
+          </div>
+          <div class="usage-stat">
+            <span class="stat-value">{{ usage?.monthly?.inputTokens || 0 }}</span>
+            <span class="stat-label">Tokens entrada</span>
+          </div>
+          <div class="usage-stat">
+            <span class="stat-value">{{ usage?.monthly?.outputTokens || 0 }}</span>
+            <span class="stat-label">Tokens salida</span>
+          </div>
+          <div class="usage-stat">
+            <span class="stat-value">{{ usage?.monthly?.totalCost | number:'1.4-4' }}</span>
+            <span class="stat-label">Costo estimado (USD)</span>
+          </div>
+        </div>
+
+        <div class="recent-usage" *ngIf="usage?.recent?.length">
+          <h3>Actividad reciente</h3>
+          <div class="table-wrapper">
+            <table mat-table [dataSource]="usage!.recent">
+              <ng-container matColumnDef="action">
+                <th mat-header-cell *matHeaderCellDef>Acción</th>
+                <td mat-cell *matCellDef="let u">{{ actionLabel(u.action) }}</td>
+              </ng-container>
+              <ng-container matColumnDef="provider">
+                <th mat-header-cell *matHeaderCellDef>Proveedor</th>
+                <td mat-cell *matCellDef="let u">{{ u.mode === 'saas' ? 'System IA' : providerLabel(u.provider) }}</td>
+              </ng-container>
+              <ng-container matColumnDef="mode">
+                <th mat-header-cell *matHeaderCellDef>Modo</th>
+                <td mat-cell *matCellDef="let u">
+                  <mat-chip class="mode-saas" *ngIf="u.mode === 'saas'">SaaS</mat-chip>
+                  <mat-chip class="mode-byok" *ngIf="u.mode === 'byok'">BYOK</mat-chip>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="tokens">
+                <th mat-header-cell *matHeaderCellDef>Tokens</th>
+                <td mat-cell *matCellDef="let u">{{ u.inputTokens }} / {{ u.outputTokens }}</td>
+              </ng-container>
+              <ng-container matColumnDef="cost">
+                <th mat-header-cell *matHeaderCellDef>Costo</th>
+                <td mat-cell *matCellDef="let u">{{ u.estimatedCost | number:'1.4-4' }} USD</td>
+              </ng-container>
+              <ng-container matColumnDef="status">
+                <th mat-header-cell *matHeaderCellDef>Estado</th>
+                <td mat-cell *matCellDef="let u">
+                  <mat-chip [class.status-ok]="u.status === 'ok'" [class.status-err]="u.status !== 'ok'">
+                    {{ u.status === 'ok' ? 'OK' : 'Error' }}
+                  </mat-chip>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="date">
+                <th mat-header-cell *matHeaderCellDef>Fecha</th>
+                <td mat-cell *matCellDef="let u">{{ u.createdAt | date:'dd MMM HH:mm' }}</td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="usageColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: usageColumns"></tr>
+            </table>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- ===================== Ayuda ===================== -->
+    <mat-card class="help-card" appearance="outlined">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>help_outline</mat-icon>
+          Cómo obtener tu API Key
+        </mat-card-title>
+      </mat-card-header>
+      <mat-divider></mat-divider>
+      <mat-card-content>
+        <mat-accordion>
+          <mat-expansion-panel *ngFor="let p of catalogue">
+            <mat-expansion-panel-header>
+              <mat-panel-title>{{ p.label }}</mat-panel-title>
+            </mat-expansion-panel-header>
+            <ol class="help-steps">
+              <li *ngFor="let step of p.helpGuide">{{ step }}</li>
+            </ol>
+          </mat-expansion-panel>
+        </mat-accordion>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- ===================== Admin: claves del sistema ===================== -->
+    <mat-card class="saas-admin-card" appearance="outlined" *ngIf="isAdmin">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>admin_panel_settings</mat-icon>
+          Claves del sistema (modo SaaS)
+        </mat-card-title>
+        <span class="admin-badge">Admin</span>
+      </mat-card-header>
+      <mat-divider></mat-divider>
+      <mat-card-content>
+        <p class="saas-admin-desc">
+          Estas claves las usan automáticamente todos los clientes que activan el modo SaaS para el proveedor correspondiente.
+          Se almacenan cifradas y nunca se muestran completas.
+        </p>
+
+        <div class="saas-key-form">
+          <mat-form-field appearance="outline">
+            <mat-label>Proveedor</mat-label>
+            <mat-select [(ngModel)]="saasProvider">
+              <mat-option *ngFor="let p of catalogue" [value]="p.id">{{ p.label }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="saas-key-input">
+            <mat-label>API Key del sistema</mat-label>
+            <input matInput type="password" [(ngModel)]="saasApiKey" placeholder="Clave del proveedor">
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Etiqueta</mat-label>
+            <input matInput [(ngModel)]="saasLabel" placeholder="Ej: Gemini principal">
+          </mat-form-field>
+          <button mat-raised-button color="primary" (click)="saveSaaSKey()">
+            <mat-icon>add</mat-icon>
+            Guardar clave
+          </button>
+        </div>
+
+        <div class="saas-key-list" *ngIf="saasKeys.length > 0">
+          <div class="saas-key-row" *ngFor="let key of saasKeys">
+            <div class="saas-key-icon"><mat-icon>key</mat-icon></div>
+            <div class="saas-key-info">
+              <span class="saas-key-name">{{ key.providerLabel }}</span>
+              <code class="key-masked">{{ key.apiKeyMasked }}</code>
+              <mat-chip class="mode-saas" *ngIf="key.isActive">Activa</mat-chip>
+            </div>
+            <button mat-icon-button color="warn" (click)="removeSaaSKey(key)">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </div>
+</div>

@@ -1,0 +1,97 @@
+<div class="legal-container">
+      <div class="legal-header">
+        <h1>Seguridad</h1>
+        <p class="last-updated">Última actualización: {{ lastUpdated }}</p>
+      </div>
+
+      <div class="legal-content">
+        <section>
+          <h2>1. Nuestro compromiso</h2>
+          <p>En WhatsApp Ads, la seguridad de tus datos es nuestra máxima prioridad. Implementamos un programa integral de seguridad que abarca infraestructura, aplicación, procesos y personas.</p>
+        </section>
+
+        <section>
+          <h2>2. Infraestructura</h2>
+          <div class="security-grid">
+            <div class="security-card">
+              <mat-icon>cloud</mat-icon>
+              <h3>Hosting seguro</h3>
+              <p>Todo el servicio se aloja en AWS (Amazon Web Services) con certificaciones SOC 2, ISO 27001 y PCI DSS. Centros de datos en la UE (Frankfurt, Irlanda).</p>
+            </div>
+            <div class="security-card">
+              <mat-icon>encrypted</mat-icon>
+              <h3>Cifrado en tránsito</h3>
+              <p>Todas las comunicaciones viajan por TLS 1.3 con certificados SSL/TLS de 256 bits. Sin excepciones.</p>
+            </div>
+            <div class="security-card">
+              <mat-icon>lock</mat-icon>
+              <h3>Cifrado en reposo</h3>
+              <p>Los datos se cifran con AES-256 tanto en bases de datos como en backups. Las claves se rotan automáticamente cada 90 días.</p>
+            </div>
+            <div class="security-card">
+              <mat-icon>backup</mat-icon>
+              <h3>Backups y DRP</h3>
+              <p>Backups automáticos cada 6 horas con retención de 30 días. Plan de recuperación ante desastres con RTO de 4 horas y RPO de 1 hora.</p>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>3. Seguridad de la aplicación</h2>
+          <ul>
+            <li><strong>OWASP Top 10:</strong> revisión continua contra vulnerabilidades web.</li>
+            <li><strong>Autenticación:</strong> contraseñas con hash bcrypt + salt, MFA disponible, sesiones con JWT y refresh tokens.</li>
+            <li><strong>Rate limiting:</strong> protección contra fuerza bruta y ataques DDoS a nivel de API.</li>
+            <li><strong>WAF:</strong> Web Application Firewall en Cloudflare bloqueando tráfico malicioso.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>4. Control de acceso</h2>
+          <ul>
+            <li>Principio de mínimo privilegio: cada servicio y usuario accede solo a lo necesario.</li>
+            <li>Autenticación multifactor (MFA) para acceso administrativo.</li>
+            <li>Auditoría de accesos con registro detallado de cada operación.</li>
+            <li>Revocación inmediata de accesos al finalizar la relación laboral o contractual.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>5. Cumplimiento y certificaciones</h2>
+          <ul>
+            <li>RGPD (Reglamento General de Protección de Datos de la UE).</li>
+            <li>LOPDGDD (Ley Orgánica de Protección de Datos española).</li>
+            <li>ISO 27001 (Gestión de Seguridad de la Información) — en curso.</li>
+            <li>Certificación Meta Business Partner.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>6. Auditorías y pruebas</h2>
+          <ul>
+            <li>Auditorías de seguridad externas anuales.</li>
+            <li>Pruebas de penetración (pentesting) trimestrales.</li>
+            <li>Escaneo de vulnerabilidades automatizado semanal.</li>
+            <li>Programa de bug bounty para investigadores de seguridad.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>7. Notificación de incidentes</h2>
+          <p>En caso de violación de datos, notificaremos a los afectados y a las autoridades competentes (AEPD) dentro de las 72 horas siguientes, conforme al RGPD. Mantenemos un registro detallado de todos los incidentes.</p>
+        </section>
+
+        <section>
+          <h2>8. Reportar vulnerabilidades</h2>
+          <p>Si descubres una vulnerabilidad de seguridad, escríbenos a <a href="mailto:security&#64;whatsappads.com">security&#64;whatsappads.com</a>. Nos comprometemos a responder en un plazo de 48 horas y a resolver los problemas críticos en un máximo de 7 días. No emprendemos acciones legales contra investigadores de buena fe.</p>
+        </section>
+
+        <section>
+          <h2>9. Contacto de seguridad</h2>
+          <ul class="contact-list">
+            <li><mat-icon>email</mat-icon> <a href="mailto:security&#64;whatsappads.com">security&#64;whatsappads.com</a></li>
+            <li><mat-icon>lock</mat-icon> PGP Key: Disponible bajo solicitud</li>
+          </ul>
+        </section>
+      </div>
+  </div>

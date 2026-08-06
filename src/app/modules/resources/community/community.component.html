@@ -1,0 +1,42 @@
+<div class="legal-container">
+  <div class="legal-header">
+    <mat-icon class="header-icon">diversity_3</mat-icon>
+    <h1>Comunidad</h1>
+    <p class="last-updated">Únete a miles de profesionales que ya automatizan su WhatsApp</p>
+  </div>
+
+  <div class="community-stats">
+    <div class="stat-card" *ngFor="let h of highlights">
+      <span class="stat-number">{{ h.stat }}</span>
+      <span class="stat-label">{{ h.label }}</span>
+    </div>
+  </div>
+
+  <section class="community-channels">
+    <h2>Canales de la comunidad</h2>
+    <div class="channels-grid">
+      <a *ngFor="let ch of channels" [href]="ch.link" class="channel-card">
+        <div class="channel-icon">
+          <mat-icon>{{ ch.icon }}</mat-icon>
+        </div>
+        <div class="channel-info">
+          <h3>{{ ch.title }}</h3>
+          <p>{{ ch.desc }}</p>
+        </div>
+        <div class="channel-meta">
+          <span class="members">{{ ch.members }}</span>
+          <mat-icon>arrow_forward</mat-icon>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <section class="community-cta">
+    <mat-icon>celebration</mat-icon>
+    <h2>¿Eres desarrollador?</h2>
+    <p>Contribuye a nuestra documentación, crea integraciones y participa en los hackatones mensuales.</p>
+    <a mat-raised-button class="cta-btn">
+      <mat-icon>code</mat-icon> Programa de partners
+    </a>
+  </section>
+</div>

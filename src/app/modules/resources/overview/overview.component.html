@@ -1,0 +1,19 @@
+<div class="legal-container">
+  <div class="legal-header">
+    <h1>Recursos</h1>
+    <p class="last-updated">Todo lo que necesitas para sacar el máximo partido a WhatsApp Ads</p>
+  </div>
+
+  <div class="resources-grid">
+    <a *ngFor="let r of resources" [routerLink]="r.link" class="resource-card">
+      <div class="resource-icon" [style.background]="r.color + '15'" [style.color]="r.color">
+        <mat-icon>{{ r.icon }}</mat-icon>
+      </div>
+      <h3>{{ r.title }}</h3>
+      <p>{{ r.description }}</p>
+      <span class="resource-arrow">
+        <mat-icon>arrow_forward</mat-icon>
+      </span>
+    </a>
+  </div>
+</div>

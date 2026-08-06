@@ -1,0 +1,52 @@
+<h2 mat-dialog-title>{{ id ? 'Editar respuesta' : 'Nueva respuesta automática' }}</h2>
+
+<mat-dialog-content>
+  <div class="form-column">
+    <mat-form-field appearance="outline">
+      <mat-label>Instancia *</mat-label>
+      <mat-select [(ngModel)]="formData.instanceId" required>
+        <mat-option *ngFor="let inst of instances" [value]="inst.id">{{ inst.name }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Nombre</mat-label>
+      <input matInput [(ngModel)]="formData.name" placeholder="Ej: Saludo inicial">
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Palabra clave *</mat-label>
+      <input matInput [(ngModel)]="formData.trigger" placeholder="Ej: hola, buenos días, precio">
+      <mat-hint>La respuesta se dispara cuando un mensaje contiene esta palabra o frase</mat-hint>
+    </mat-form-field>
+
+    <mat-checkbox [(ngModel)]="formData.useAi" class="ai-toggle">
+      Generar respuesta con IA
+    </mat-checkbox>
+    <mat-hint class="ai-hint" *ngIf="formData.useAi">
+      La IA redactará la respuesta usando la configuración del Centro de IA (proveedor y modelo activos).
+    </mat-hint>
+
+    <mat-form-field appearance="outline" *ngIf="formData.useAi">
+      <mat-label>Instrucciones para la IA</mat-label>
+      <textarea matInput [(ngModel)]="formData.aiInstructions" rows="3"
+        placeholder="Ej: Ofrece el precio del plan y pide su número. Sé amable y breve."></textarea>
+      <mat-hint>Opcional: guía a la IA sobre cómo responder</mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" *ngIf="!formData.useAi">
+      <mat-label>Respuesta *</mat-label>
+      <textarea matInput [(ngModel)]="formData.response" rows="4" placeholder="Texto que se enviará automáticamente"></textarea>
+    </mat-form-field>
+
+    <mat-checkbox [(ngModel)]="formData.isActive">Respuesta activa</mat-checkbox>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()">Cancelar</button>
+  <button mat-raised-button color="primary" (click)="save()" [disabled]="saving">
+    <mat-progress-spinner diameter="18" *ngIf="saving"></mat-progress-spinner>
+    {{ saving ? 'Guardando...' : 'Guardar' }}
+  </button>
+</mat-dialog-actions>

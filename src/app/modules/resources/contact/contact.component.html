@@ -1,0 +1,69 @@
+<div class="legal-container">
+  <div class="legal-header">
+    <h1>Contacto</h1>
+    <p class="last-updated">Estamos aquí para ayudarte. Escríbenos y te responderemos en menos de 24 horas.</p>
+  </div>
+
+  <div class="contact-grid">
+    <div class="contact-info">
+      <div class="info-card">
+        <mat-icon>support_agent</mat-icon>
+        <div>
+          <h3>Soporte</h3>
+          <p>Problemas técnicos y dudas sobre la plataforma</p>
+          <span>support&#64;whatsappads.com</span>
+        </div>
+      </div>
+      <div class="info-card">
+        <mat-icon>sell</mat-icon>
+        <div>
+          <h3>Ventas</h3>
+          <p>Planes personalizados y cuentas empresariales</p>
+          <span>ventas&#64;whatsappads.com</span>
+        </div>
+      </div>
+      <div class="info-card">
+        <mat-icon>handshake</mat-icon>
+        <div>
+          <h3>Partners</h3>
+          <p>Agencias y resellers que quieran colaborar</p>
+          <span>partners&#64;whatsappads.com</span>
+        </div>
+      </div>
+    </div>
+
+    <form class="contact-form" (ngSubmit)="onSubmit()" #contactForm="ngForm">
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Nombre</mat-label>
+        <input matInput [(ngModel)]="name" name="name" required placeholder="Tu nombre">
+        <mat-icon matPrefix>person</mat-icon>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Email</mat-label>
+        <input matInput [(ngModel)]="email" name="email" required type="email" placeholder="tu@correo.com">
+        <mat-icon matPrefix>email</mat-icon>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Asunto</mat-label>
+        <mat-select [(ngModel)]="subject" name="subject">
+          <mat-option value="Soporte">Soporte técnico</mat-option>
+          <mat-option value="Ventas">Ventas / Planes</mat-option>
+          <mat-option value="Facturación">Facturación</mat-option>
+          <mat-option value="Otro">Otro</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Mensaje</mat-label>
+        <textarea matInput [(ngModel)]="message" name="message" required rows="5" placeholder="Cuéntanos en qué podemos ayudarte..."></textarea>
+      </mat-form-field>
+
+      <button mat-raised-button color="primary" type="submit" class="submit-btn" [disabled]="contactForm.invalid">
+        <mat-icon>send</mat-icon>
+        Enviar mensaje
+      </button>
+    </form>
+  </div>
+</div>

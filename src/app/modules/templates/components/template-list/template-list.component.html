@@ -1,0 +1,189 @@
+<div class="page-container">
+  <div class="page-header">
+    <div>
+      <h1>Plantillas de WhatsApp</h1>
+      <p class="page-subtitle">Crea y gestiona plantillas para tus campañas de mensajería</p>
+    </div>
+    <div class="header-actions">
+      <button mat-raised-button color="primary" (click)="createTemplate()">
+        <mat-icon>add</mat-icon>
+        Nueva plantilla
+      </button>
+    </div>
+  </div>
+
+  <div class="stats-row" *ngIf="!loading && templates.length > 0">
+    <div class="stat-card">
+      <div class="stat-icon stat-total"><mat-icon>description</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.total }}</span>
+        <span class="stat-label">Plantillas</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-categories"><mat-icon>category</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.categories }}</span>
+        <span class="stat-label">Categorías</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-variables"><mat-icon>alternate_email</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.withVariables }}</span>
+        <span class="stat-label">Con variables</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-media"><mat-icon>attach_file</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.withMedia }}</span>
+        <span class="stat-label">Con medios</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <div class="section-header">
+      <div>
+        <h2>Todas las plantillas <span class="count-badge">{{ filteredTemplates.length }}</span></h2>
+      </div>
+      <div class="filters-row">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="search-field">
+          <mat-label>Buscar plantilla</mat-label>
+          <mat-icon matPrefix>search</mat-icon>
+          <input matInput [(ngModel)]="searchQuery" placeholder="Nombre o texto..." aria-label="Buscar plantilla">
+          <button *ngIf="searchQuery" matSuffix mat-icon-button aria-label="Limpiar búsqueda" (click)="clearSearch()">
+            <mat-icon>close</mat-icon>
+          </button>
+        </mat-form-field>
+        <div class="status-chips" role="group" aria-label="Filtrar por categoría">
+          <button
+            type="button"
+            class="filter-chip"
+            [class.active]="categoryFilter === 'all'"
+            [attr.aria-pressed]="categoryFilter === 'all'"
+            (click)="setCategoryFilter('all')">Todos</button>
+          <button
+            *ngFor="let cat of categories"
+            type="button"
+            class="filter-chip"
+            [class.active]="categoryFilter === cat"
+            [attr.aria-pressed]="categoryFilter === cat"
+            (click)="setCategoryFilter(cat)">{{ categoryLabel(cat) }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="skeleton-loading" *ngIf="loading" aria-label="Cargando plantillas">
+      <div class="skeleton-row" *ngFor="let _ of [0, 1, 2]">
+        <div class="skeleton skeleton-avatar"></div>
+        <div class="skeleton-lines">
+          <div class="skeleton skeleton-line w-50"></div>
+          <div class="skeleton skeleton-line w-25"></div>
+        </div>
+        <div class="skeleton skeleton-pill"></div>
+      </div>
+    </div>
+
+    <div class="table-wrapper" *ngIf="!loading && filteredTemplates.length > 0">
+      <table mat-table [dataSource]="filteredTemplates" class="templates-table">
+        <ng-container matColumnDef="name">
+          <th mat-header-cell *matHeaderCellDef> Nombre </th>
+          <td mat-cell *matCellDef="let template">
+            <div class="name-cell">
+              <span class="template-avatar" [style.background]="avatarColor(template.name)">
+                {{ template.name.charAt(0).toUpperCase() }}
+              </span>
+              <div class="name-text">
+                <div class="template-name">{{ template.name }}</div>
+                <div class="template-meta">
+                  <mat-icon>schedule</mat-icon>
+                  {{ template.updatedAt | date: 'dd MMM yyyy' }}
+                </div>
+              </div>
+            </div>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="category">
+          <th mat-header-cell *matHeaderCellDef> Categoría </th>
+          <td mat-cell *matCellDef="let template">
+            <span
+              class="category-chip"
+              [style.background]="categoryStyle(template.category).bg"
+              [style.color]="categoryStyle(template.category).color">
+              {{ categoryLabel(template.category) }}
+            </span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="variables">
+          <th mat-header-cell *matHeaderCellDef> Variables </th>
+          <td mat-cell *matCellDef="let template">
+            <div class="variables-cell">
+              <span
+                class="variable-tag"
+                *ngFor="let v of template.variables"
+                [matTooltip]="'Variable: ' + v">{{ '{' + v + '}' }}</span>
+              <span class="muted" *ngIf="template.variables.length === 0">Sin variables</span>
+            </div>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="preview">
+          <th mat-header-cell *matHeaderCellDef> Vista previa </th>
+          <td mat-cell *matCellDef="let template">
+            <div class="preview-bubble" [class.has-media]="hasMedia(template)">
+              <mat-icon class="preview-media-icon" *ngIf="hasMedia(template)">{{ mediaIcon(template) }}</mat-icon>
+              <span class="preview-text">{{ previewText(template) || 'Sin texto' }}</span>
+            </div>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef> Acciones </th>
+          <td mat-cell *matCellDef="let template">
+            <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Acciones">
+              <mat-icon>more_vert</mat-icon>
+            </button>
+            <mat-menu #menu="matMenu">
+              <button mat-menu-item (click)="editTemplate(template)">
+                <mat-icon>edit</mat-icon>
+                <span>Editar</span>
+              </button>
+              <mat-divider></mat-divider>
+              <button mat-menu-item (click)="deleteTemplate(template)" class="delete-action">
+                <mat-icon>delete</mat-icon>
+                <span>Eliminar</span>
+              </button>
+            </mat-menu>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+      </table>
+    </div>
+
+    <div class="empty-state" *ngIf="!loading && templates.length === 0">
+      <div class="empty-icon"><mat-icon>description</mat-icon></div>
+      <h3>No hay plantillas</h3>
+      <p>Crea tu primera plantilla de mensaje para usarla en tus campañas</p>
+      <button mat-raised-button color="primary" (click)="createTemplate()">
+        <mat-icon>add</mat-icon>
+        Crear plantilla
+      </button>
+    </div>
+
+    <div class="no-results" *ngIf="!loading && templates.length > 0 && filteredTemplates.length === 0">
+      <mat-icon>search_off</mat-icon>
+      <h3>Sin resultados</h3>
+      <p>No hay plantillas que coincidan con tu búsqueda o filtro</p>
+      <button mat-stroked-button (click)="clearSearch(); setCategoryFilter('all')">
+        <mat-icon>filter_alt_off</mat-icon>
+        Limpiar filtros
+      </button>
+    </div>
+  </div>
+</div>

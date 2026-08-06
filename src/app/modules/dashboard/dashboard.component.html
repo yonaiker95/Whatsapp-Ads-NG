@@ -1,0 +1,177 @@
+<div class="dashboard">
+  <div class="dashboard-header">
+    <div>
+      <h1>Dashboard</h1>
+      <p class="dashboard-subtitle">Resumen de tu actividad de WhatsApp</p>
+    </div>
+    <div class="header-actions">
+      <button mat-stroked-button (click)="loadDashboardData()">
+        <mat-icon>refresh</mat-icon>
+        Actualizar
+      </button>
+    </div>
+  </div>
+
+  @if (!loadingOrg && !hasOrganization) {
+    <mat-card class="onboarding-banner" appearance="outlined">
+      <mat-card-content>
+        <div class="ob-banner-icon"><mat-icon>rocket_launch</mat-icon></div>
+        <div class="ob-banner-text">
+          <h2>Completa tu configuración</h2>
+          <p>Organiza tu equipo, conecta WhatsApp y crea tu primera campaña.</p>
+        </div>
+        <div class="ob-banner-actions">
+          <button mat-raised-button color="primary" routerLink="/onboarding">
+            <mat-icon>arrow_forward</mat-icon>
+            Completar onboarding
+          </button>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  }
+
+  @if (loading) {
+    <div class="stats-grid">
+      @for (item of [1,2,3,4,5,6,7,8]; track item) {
+        <mat-card class="skeleton-card" appearance="outlined">
+          <mat-card-content>
+            <div class="stat-content">
+              <div class="stat-info">
+                <div class="skeleton-line w-50 h-24"></div>
+                <div class="skeleton-line w-75 h-32" style="margin-top: 8px;"></div>
+              </div>
+              <div class="skeleton-icon"></div>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      }
+    </div>
+  } @else {
+    <div class="stats-grid">
+      @for (card of statCards; track card.key; let i = $index) {
+        <mat-card class="stat-card" appearance="outlined" [style.--delay]="i * 0.05 + 's'">
+          <mat-card-content>
+            <div class="stat-content">
+              <div class="stat-info">
+                <span class="stat-label">{{ card.label }}</span>
+                <div class="stat-value">{{ getMetricValue(card.key) | number }}</div>
+              </div>
+              <div class="stat-icon" [style.background]="card.gradient">
+                <mat-icon>{{ card.icon }}</mat-icon>
+              </div>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      }
+    </div>
+  }
+
+  <div class="metrics-section">
+    <div class="section-header">
+      <h2>Métricas</h2>
+    </div>
+    @if (loading) {
+      <div class="stats-grid">
+        @for (item of [1,2,3,4,5]; track item) {
+          <mat-card class="skeleton-card" appearance="outlined">
+            <mat-card-content>
+              <div class="stat-content">
+                <div class="stat-info">
+                  <div class="skeleton-line w-50 h-24"></div>
+                  <div class="skeleton-line w-75 h-32" style="margin-top: 8px;"></div>
+                </div>
+                <div class="skeleton-icon"></div>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        }
+      </div>
+    } @else {
+      <div class="stats-grid">
+        @for (card of metricCards; track card.key; let i = $index) {
+          <mat-card class="stat-card metric-card" appearance="outlined" [style.--delay]="i * 0.05 + 's'">
+            <mat-card-content>
+              <div class="stat-content">
+                <div class="stat-info">
+                  <span class="stat-label">{{ card.label }}</span>
+                  <div class="stat-value">{{ getMetricValue(card.key) | number }}</div>
+                </div>
+                <div class="stat-icon" [style.background]="card.gradient">
+                  <mat-icon>{{ card.icon }}</mat-icon>
+                </div>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        }
+      </div>
+    }
+  </div>
+
+  <div class="dashboard-sections">
+    <section class="recent-campaigns-section">
+      <div class="section-header">
+        <h2>Campañas recientes</h2>
+        <a routerLink="/app/campaigns" class="view-all">Ver todas</a>
+      </div>
+
+      @if (loading) {
+        <mat-card class="skeleton-card" appearance="outlined">
+          <mat-card-content>
+            @for (item of [1,2,3]; track item) {
+              <div class="skeleton-row">
+                <div class="skeleton-line w-50 h-24"></div>
+                <div class="skeleton-line w-25 h-24" style="margin-top: 4px;"></div>
+              </div>
+            }
+          </mat-card-content>
+        </mat-card>
+      } @else if (recentCampaigns.length > 0) {
+        <div class="campaigns-list">
+          @for (campaign of recentCampaigns; track campaign.id) {
+            <mat-card class="campaign-card" appearance="outlined" [routerLink]="['/app/campaigns', campaign.id]">
+              <mat-card-content>
+                <div class="campaign-info">
+                  <div class="campaign-main">
+                    <h3>{{ campaign.name }}</h3>
+                    <span class="status-badge {{ getStatusInfo(campaign.status).class }}">
+                      {{ getStatusInfo(campaign.status).label }}
+                    </span>
+                  </div>
+                  <div class="campaign-meta">
+                    <span>
+                      <mat-icon>schedule</mat-icon>
+                      {{ campaign.createdAt | date:'dd MMM, HH:mm' }}
+                    </span>
+                    <span>
+                      <mat-icon>send</mat-icon>
+                      {{ campaign.totalSent || 0 }} enviados
+                    </span>
+                    @if (campaign.totalFailed && campaign.totalFailed > 0) {
+                      <span class="failed">
+                        <mat-icon>error</mat-icon>
+                        {{ campaign.totalFailed }} fallidos
+                      </span>
+                    }
+                  </div>
+                </div>
+                <mat-icon class="chevron">chevron_right</mat-icon>
+              </mat-card-content>
+            </mat-card>
+          }
+        </div>
+      } @else {
+        <mat-card class="empty-state-card" appearance="outlined">
+          <mat-card-content>
+            <div class="empty-icon"><mat-icon>campaign</mat-icon></div>
+            <h3>No hay campañas</h3>
+            <p>Crea tu primera campaña para empezar a enviar mensajes</p>
+            <button mat-raised-button color="primary" routerLink="/app/campaigns/new">
+              <mat-icon>add</mat-icon>
+              Crear campaña
+            </button>
+          </mat-card-content>
+        </mat-card>
+      }
+    </section>
+  </div>
+</div>

@@ -1,0 +1,67 @@
+<header class="header">
+  <mat-toolbar class="toolbar">
+    <div class="header-left">
+      <button mat-icon-button class="menu-btn" (click)="onToggle()" [attr.aria-label]="isMobile() && mobileOpen() ? 'Cerrar menú' : 'Abrir menú'">
+        @if (isMobile()) {
+          <mat-icon>{{ mobileOpen() ? 'close' : 'menu' }}</mat-icon>
+        } @else {
+          <mat-icon>{{ sidebarCollapsed() ? 'menu_open' : 'menu' }}</mat-icon>
+        }
+      </button>
+
+      <div class="breadcrumb" *ngIf="pageTitle()">
+        <span class="breadcrumb-current">{{ pageTitle() }}</span>
+      </div>
+    </div>
+
+    <span class="spacer"></span>
+
+    <div class="header-actions">
+      <button
+        mat-icon-button
+        class="theme-btn"
+        (click)="toggleTheme()"
+        aria-label="Cambiar tema"
+        [attr.aria-pressed]="themeService.isDark()"
+      >
+        @if (themeService.isDark()) {
+          <mat-icon>light_mode</mat-icon>
+        } @else {
+          <mat-icon>dark_mode</mat-icon>
+        }
+      </button>
+
+      <button mat-icon-button class="notif-btn" matBadge="3" matBadgeColor="warn" aria-label="Notifications">
+        <mat-icon>notifications</mat-icon>
+      </button>
+
+      <button mat-icon-button [matMenuTriggerFor]="userMenu" class="avatar-btn" aria-label="User menu">
+        <div class="avatar-circle">
+          <span>{{ (authService.currentUser()?.name || 'U')[0] | uppercase }}</span>
+        </div>
+      </button>
+      <mat-menu #userMenu="matMenu" xPosition="before">
+        <div class="menu-header" mat-menu-item disabled>
+          <div class="menu-user-info">
+            <div class="menu-user-name">{{ authService.currentUser()?.name || 'Usuario' }}</div>
+            <div class="menu-user-email">{{ authService.currentUser()?.email }}</div>
+          </div>
+        </div>
+        <mat-divider></mat-divider>
+        <button mat-menu-item routerLink="/app/profile">
+          <mat-icon>person</mat-icon>
+          <span>Mi perfil</span>
+        </button>
+        <button mat-menu-item routerLink="/app/settings">
+          <mat-icon>settings</mat-icon>
+          <span>Configuración</span>
+        </button>
+        <mat-divider></mat-divider>
+        <button mat-menu-item (click)="logout()">
+          <mat-icon>logout</mat-icon>
+          <span>Cerrar sesión</span>
+        </button>
+      </mat-menu>
+    </div>
+  </mat-toolbar>
+</header>

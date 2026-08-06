@@ -1,0 +1,365 @@
+<div class="setup-page">
+  <div class="setup-bg-shapes">
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+    <div class="shape shape-3"></div>
+  </div>
+
+  <div class="setup-shell">
+    <aside class="setup-sidebar">
+      <div class="setup-brand">
+        <div class="brand-icon">
+          <mat-icon>chat_bubble</mat-icon>
+        </div>
+        <div class="brand-text">
+          <strong>WhatsApp Ads</strong>
+          <span>Instalación</span>
+        </div>
+      </div>
+
+      <ol class="setup-steps">
+        <li
+          *ngFor="let s of steps"
+          [class.active]="step === s.key"
+          [class.complete]="isComplete(s.key)"
+          [class.clickable]="isStepBefore(s.key)"
+          (click)="goToStep(s.key)"
+        >
+          <span class="step-dot">
+            <mat-icon *ngIf="isComplete(s.key)">check</mat-icon>
+            <mat-icon *ngIf="!isComplete(s.key) && step === s.key" class="pulse-icon">{{ s.icon }}</mat-icon>
+            <mat-icon *ngIf="!isComplete(s.key) && step !== s.key">{{ s.icon }}</mat-icon>
+          </span>
+          <span class="step-text">{{ s.label }}</span>
+        </li>
+      </ol>
+
+      <div class="setup-sidebar-foot">
+        <mat-icon>help_outline</mat-icon>
+        <span>¿Necesitas ayuda? Consulta la documentación durante la instalación.</span>
+      </div>
+    </aside>
+
+    <main class="setup-content">
+      <div class="setup-card">
+        <!-- ==================== BIENVENIDA ==================== -->
+        <ng-container *ngIf="step === 'welcome'">
+          <div class="welcome-hero">
+            <div class="welcome-icon">
+              <mat-icon>rocket_launch</mat-icon>
+            </div>
+            <h1>Bienvenido a WhatsApp Ads</h1>
+            <p class="welcome-sub">
+              Configura tu plataforma en unos minutos: base de datos, servicios
+              externos y la cuenta de administrador. Todo desde este asistente.
+            </p>
+          </div>
+
+          <div class="requirements">
+            <h3>Requisitos</h3>
+            <div class="req-row"><mat-icon class="ok">check_circle</mat-icon><span>Servidor Node.js ejecutándose correctamente</span></div>
+            <div class="req-row"><mat-icon class="ok">check_circle</mat-icon><span>PostgreSQL accesible con usuario y contraseña</span></div>
+            <div class="req-row"><mat-icon class="ok">check_circle</mat-icon><span>Evolution API y n8n funcionando, con sus API keys a mano</span></div>
+          </div>
+
+          <div class="card-actions">
+            <button mat-flat-button color="primary" class="primary-btn" (click)="step = 'database'">
+              Comenzar la instalación
+              <mat-icon>arrow_forward</mat-icon>
+            </button>
+          </div>
+        </ng-container>
+
+        <!-- ==================== BASE DE DATOS ==================== -->
+        <ng-container *ngIf="step === 'database'">
+          <div class="step-head">
+            <span class="step-chip">Paso 1 de 4</span>
+            <h2>Base de datos</h2>
+            <p>WhatsApp Ads guarda su información en PostgreSQL. Ingresa los datos de conexión.</p>
+          </div>
+
+          <div class="form-grid two">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Host</mat-label>
+              <input matInput type="text" [(ngModel)]="db.host" name="dbHost" autocomplete="off" placeholder="localhost">
+              <mat-icon matPrefix>dns</mat-icon>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Puerto</mat-label>
+              <input matInput type="number" [(ngModel)]="db.port" name="dbPort" autocomplete="off" placeholder="5432">
+              <mat-icon matPrefix>numbers</mat-icon>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Usuario</mat-label>
+              <input matInput type="text" [(ngModel)]="db.user" name="dbUser" autocomplete="off" placeholder="postgres">
+              <mat-icon matPrefix>person</mat-icon>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Contraseña</mat-label>
+              <input matInput [type]="showPassword ? 'text' : 'password'" [(ngModel)]="db.password" name="dbPassword" autocomplete="off" placeholder="••••••••">
+              <mat-icon matPrefix>lock</mat-icon>
+              <button mat-icon-button matSuffix type="button" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+                <mat-icon>{{ showPassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+              </button>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Base de datos</mat-label>
+              <input matInput type="text" [(ngModel)]="db.database" name="dbDatabase" autocomplete="off" placeholder="whatsapp_ads">
+              <mat-icon matPrefix>storage</mat-icon>
+            </mat-form-field>
+          </div>
+
+          <div class="test-row">
+            <button mat-stroked-button (click)="testDb()" [disabled]="dbTesting || !dbValid">
+              <mat-icon>{{ dbTest?.ok === true ? 'refresh' : 'play_arrow' }}</mat-icon>
+              {{ dbTesting ? 'Probando…' : 'Probar conexión' }}
+            </button>
+
+            <div class="test-result" *ngIf="dbTest" [class.ok]="dbTest.ok || dbTest.willCreate" [class.err]="dbTest.ok === false && !dbTest.willCreate">
+              <mat-icon>{{ dbTest.ok ? 'check_circle' : 'auto_awesome' }}</mat-icon>
+              <span *ngIf="dbTest.ok">Conexión exitosa{{ dbTest.version ? ' · PostgreSQL ' + dbTest.version : '' }}</span>
+              <span *ngIf="!dbTest.ok && !dbTest.willCreate">{{ dbTest.error }}</span>
+              <span *ngIf="!dbTest.ok && dbTest.willCreate">La base de datos no existe. Se creará automáticamente durante la instalación.</span>
+            </div>
+          </div>
+
+          <div class="card-actions between">
+            <button mat-button (click)="step = 'welcome'">
+              <mat-icon>arrow_back</mat-icon> Volver
+            </button>
+            <button mat-flat-button color="primary" class="primary-btn" [disabled]="!dbCanContinue" (click)="step = 'services'">
+              Continuar <mat-icon>arrow_forward</mat-icon>
+            </button>
+          </div>
+        </ng-container>
+
+        <!-- ==================== SERVICIOS EXTERNOS ==================== -->
+        <ng-container *ngIf="step === 'services'">
+          <div class="step-head">
+            <span class="step-chip">Paso 2 de 4</span>
+            <h2>Servicios externos</h2>
+            <p>Configura Evolution API y n8n. Ambos son obligatorios para la instalación.</p>
+          </div>
+
+          <div class="service-block">
+            <div class="service-title">
+              <span class="service-badge">evo</span>
+              <div>
+                <h3>Evolution API</h3>
+                <p>Envío de mensajes y códigos OTP de WhatsApp.</p>
+              </div>
+            </div>
+            <div class="form-grid two">
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>URL de Evolution API</mat-label>
+                <input matInput type="text" [(ngModel)]="evolution.url" name="evoUrl" autocomplete="off" placeholder="http://localhost:3100">
+                <mat-icon matPrefix>link</mat-icon>
+                <mat-error *ngIf="!evolution.url.trim()">La URL es requerida</mat-error>
+              </mat-form-field>
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>API key</mat-label>
+                <input matInput type="text" [(ngModel)]="evolution.apiKey" name="evoKey" autocomplete="off" placeholder="evolution_api_…">
+                <mat-icon matPrefix>vpn_key</mat-icon>
+                <mat-error *ngIf="!evolution.apiKey.trim()">La API key es obligatoria</mat-error>
+              </mat-form-field>
+            </div>
+            <div class="test-row">
+              <button mat-stroked-button (click)="testService('evolution')" [disabled]="evoTesting || !evolution.apiKey.trim()">
+                <mat-icon>{{ evoTest?.ok === true ? 'refresh' : 'play_arrow' }}</mat-icon>
+                {{ evoTesting ? 'Probando…' : 'Probar Evolution API' }}
+              </button>
+              <div class="test-result" *ngIf="evoTest" [class.ok]="evoTest.ok" [class.err]="!evoTest.ok">
+                <mat-icon>{{ evoTest.ok ? 'check_circle' : 'error' }}</mat-icon>
+                <span>{{ evoTest.ok ? 'Evolution API alcanzable' : evoTest.error }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="service-block">
+            <div class="service-title">
+              <span class="service-badge n8n">n8n</span>
+              <div>
+                <h3>n8n</h3>
+                <p>Automatizaciones y flujos de trabajo.</p>
+              </div>
+            </div>
+            <div class="form-grid two">
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>URL de n8n</mat-label>
+                <input matInput type="text" [(ngModel)]="n8n.url" name="n8nUrl" autocomplete="off" placeholder="http://localhost:5678">
+                <mat-icon matPrefix>link</mat-icon>
+                <mat-error *ngIf="!n8n.url.trim()">La URL es requerida</mat-error>
+              </mat-form-field>
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>API key (X-N8N-API-KEY)</mat-label>
+                <input matInput type="text" [(ngModel)]="n8n.apiKey" name="n8nKey" autocomplete="off" placeholder="eyJhbGciOi…">
+                <mat-icon matPrefix>vpn_key</mat-icon>
+                <mat-error *ngIf="!n8n.apiKey.trim()">La API key es obligatoria</mat-error>
+              </mat-form-field>
+            </div>
+            <div class="test-row">
+              <button mat-stroked-button (click)="testService('n8n')" [disabled]="n8nTesting || !n8n.apiKey.trim()">
+                <mat-icon>{{ n8nTest?.ok === true ? 'refresh' : 'play_arrow' }}</mat-icon>
+                {{ n8nTesting ? 'Probando…' : 'Probar n8n' }}
+              </button>
+              <div class="test-result" *ngIf="n8nTest" [class.ok]="n8nTest.ok" [class.err]="!n8nTest.ok">
+                <mat-icon>{{ n8nTest.ok ? 'check_circle' : 'error' }}</mat-icon>
+                <span>{{ n8nTest.ok ? 'n8n alcanzable' : n8nTest.error }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card-actions between">
+            <button mat-button (click)="step = 'database'">
+              <mat-icon>arrow_back</mat-icon> Volver
+            </button>
+            <button mat-flat-button color="primary" class="primary-btn" [disabled]="!servicesCanContinue" (click)="step = 'admin'">
+              Continuar <mat-icon>arrow_forward</mat-icon>
+            </button>
+          </div>
+        </ng-container>
+
+        <!-- ==================== ADMINISTRADOR ==================== -->
+        <ng-container *ngIf="step === 'admin'">
+          <div class="step-head">
+            <span class="step-chip">Paso 3 de 4</span>
+            <h2>Cuenta de administrador</h2>
+            <p>Estas credenciales te darán acceso completo a la plataforma.</p>
+          </div>
+
+          <div class="form-grid">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Nombre</mat-label>
+              <input matInput type="text" [(ngModel)]="admin.name" name="admName" autocomplete="name" placeholder="Tu nombre">
+              <mat-icon matPrefix>person</mat-icon>
+              <mat-error *ngIf="!admin.name.trim()">El nombre es requerido</mat-error>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Correo electrónico</mat-label>
+              <input matInput type="email" [(ngModel)]="admin.email" name="admEmail" autocomplete="email" placeholder="admin@tudominio.com">
+              <mat-icon matPrefix>email</mat-icon>
+              <mat-error *ngIf="emailInvalid">Correo inválido</mat-error>
+            </mat-form-field>
+
+            <div class="form-grid two">
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Contraseña</mat-label>
+                <input matInput [type]="showPassword ? 'text' : 'password'" [(ngModel)]="admin.password" name="admPass" autocomplete="new-password" placeholder="Mínimo 8 caracteres">
+                <mat-icon matPrefix>lock</mat-icon>
+                <button mat-icon-button matSuffix type="button" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+                  <mat-icon>{{ showPassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+                </button>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Confirmar contraseña</mat-label>
+                <input matInput [type]="showPassword ? 'text' : 'password'" [(ngModel)]="admin.confirm" name="admConfirm" autocomplete="new-password" placeholder="Repite la contraseña">
+                <mat-icon matPrefix>lock_outline</mat-icon>
+              </mat-form-field>
+            </div>
+
+            <div class="strength" *ngIf="admin.password.length > 0">
+              <div class="strength-track">
+                <div class="strength-bar" [style.width]="(passwordStrength().level / 3) * 100 + '%'" [style.background]="passwordStrength().color"></div>
+              </div>
+              <span class="strength-label" [style.color]="passwordStrength().color">Contraseña {{ passwordStrength().label }}</span>
+              <ul class="strength-errors" *ngIf="passwordErrors().length">
+                <li *ngFor="let err of passwordErrors()">{{ err }}</li>
+              </ul>
+            </div>
+
+            <div class="phone-row">
+              <app-country-code-selector [(country)]="phoneCountry"></app-country-code-selector>
+              <mat-form-field appearance="outline" class="full-width phone-field">
+                <mat-label>WhatsApp para OTP</mat-label>
+                <input matInput type="tel" [(ngModel)]="admin.phone" name="admPhone" autocomplete="off" placeholder="55 1234 5678">
+                <mat-icon matPrefix>smartphone</mat-icon>
+                <mat-hint>Se usará para códigos de verificación y notificaciones ({{ fullPhone }})</mat-hint>
+              </mat-form-field>
+            </div>
+          </div>
+
+          <div class="card-actions between">
+            <button mat-button (click)="step = 'services'">
+              <mat-icon>arrow_back</mat-icon> Volver
+            </button>
+            <button mat-flat-button color="primary" class="primary-btn" [disabled]="!adminStepValid || installing" (click)="install()">
+              <mat-icon>install_desktop</mat-icon> Instalar WhatsApp Ads
+            </button>
+          </div>
+        </ng-container>
+
+        <!-- ==================== INSTALANDO / FINALIZADO ==================== -->
+        <ng-container *ngIf="step === 'installing'">
+          <div class="step-head" *ngIf="!done">
+            <span class="step-chip">Paso 4 de 4</span>
+            <h2>Instalando WhatsApp Ads</h2>
+            <p>Creando todo lo necesario. Esto puede tardar unos segundos.</p>
+          </div>
+
+          <div class="install-progress" *ngIf="!done">
+            <mat-progress-bar mode="indeterminate" *ngIf="installing"></mat-progress-bar>
+            <ul class="progress-list">
+              <li *ngFor="let item of progress" [class.active]="item.state === 'active'" [class.done]="item.state === 'done'">
+                <span class="p-dot">
+                  <mat-icon *ngIf="item.state === 'done'">check_circle</mat-icon>
+                  <mat-icon *ngIf="item.state === 'active'">hourglass_top</mat-icon>
+                  <mat-icon *ngIf="item.state === 'pending'">radio_button_unchecked</mat-icon>
+                </span>
+                {{ item.label }}
+              </li>
+            </ul>
+            <div class="install-error" *ngIf="installError">
+              <mat-icon>error</mat-icon>
+              <span>{{ installError }}</span>
+            </div>
+            <div class="card-actions center" *ngIf="installError">
+              <button mat-stroked-button (click)="step = 'database'">
+                <mat-icon>arrow_back</mat-icon> Revisar configuración
+              </button>
+            </div>
+          </div>
+
+          <div class="done-view" *ngIf="done">
+            <div class="done-icon">
+              <mat-icon>check_circle</mat-icon>
+            </div>
+            <h2>¡Instalación completada!</h2>
+            <p class="done-sub">
+              La plataforma está lista. Inicia sesión con
+              <strong>{{ adminEmail }}</strong> y la contraseña que elegiste.
+            </p>
+            <ul class="done-list">
+              <li><mat-icon>check</mat-icon> Base de datos configurada y conectada</li>
+              <li><mat-icon>check</mat-icon> Servicios externos guardados</li>
+              <li><mat-icon>check</mat-icon> Cuenta de administrador creada</li>
+            </ul>
+            <button mat-flat-button color="primary" class="primary-btn big" (click)="goLogin()">
+              Iniciar sesión
+              <mat-icon>arrow_forward</mat-icon>
+            </button>
+          </div>
+        </ng-container>
+
+        <!-- ==================== YA INSTALADO ==================== -->
+        <ng-container *ngIf="installed && step === 'welcome' && !done">
+          <div class="step-head center-head">
+            <h2>Esta instalación ya está completa</h2>
+            <p>La plataforma ya fue configurada anteriormente.</p>
+          </div>
+          <div class="card-actions center">
+            <button mat-flat-button color="primary" class="primary-btn" (click)="goLogin()">
+              Ir a iniciar sesión
+              <mat-icon>arrow_forward</mat-icon>
+            </button>
+          </div>
+        </ng-container>
+      </div>
+    </main>
+  </div>
+</div>

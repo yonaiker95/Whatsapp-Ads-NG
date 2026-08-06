@@ -1,0 +1,41 @@
+<h2 mat-dialog-title>
+  <mat-icon class="dialog-icon">price_change</mat-icon>
+  Precios de adicionales
+</h2>
+
+<mat-dialog-content class="content">
+  <div class="loading" *ngIf="loading">
+    <mat-spinner diameter="32"></mat-spinner>
+    <p>Cargando adicionales...</p>
+  </div>
+
+  <form [formGroup]="form" class="prices-form" *ngIf="!loading">
+    <p class="note">
+      Los adicionales se suman al precio base del plan con costo mensual. El precio que edites aquí se aplica a
+      todos los usuarios en "Gestionar plan".
+    </p>
+
+    <div formArrayName="rows" class="rows">
+      <div class="row" *ngFor="let group of rows.controls; let i = index" [formGroupName]="i">
+        <div class="row-info">
+          <span class="row-label">{{ group.get('label')?.value }}</span>
+          <span class="row-unit">por {{ group.get('unitLabel')?.value }}</span>
+        </div>
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="price-field">
+          <mat-label>USD / {{ group.get('unitLabel')?.value }}</mat-label>
+          <input matInput type="number" min="0" step="0.01" formControlName="unitAmount" />
+          <mat-icon matPrefix>attach_money</mat-icon>
+          <mat-error *ngIf="group.get('unitAmount')?.invalid">Precio inválido</mat-error>
+        </mat-form-field>
+      </div>
+    </div>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()" [disabled]="saving">Cancelar</button>
+  <button mat-raised-button color="primary" (click)="save()" [disabled]="saving || loading || !hasChanges">
+    <mat-icon>save</mat-icon>
+    {{ saving ? 'Guardando...' : 'Guardar precios' }}
+  </button>
+</mat-dialog-actions>

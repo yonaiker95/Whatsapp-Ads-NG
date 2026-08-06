@@ -1,0 +1,165 @@
+<h2 mat-dialog-title>
+  <mat-icon class="dialog-icon">{{ isEdit ? 'edit' : 'add_card' }}</mat-icon>
+  {{ title }}
+</h2>
+<mat-dialog-content>
+  <form [formGroup]="form" class="plan-form">
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Nombre del plan</mat-label>
+        <input matInput formControlName="name" placeholder="Profesional" required />
+        <mat-icon matPrefix>sell</mat-icon>
+        <mat-error *ngIf="form.get('name')?.hasError('required')">El nombre es obligatorio</mat-error>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Slug</mat-label>
+        <input matInput formControlName="slug" placeholder="profesional" />
+        <mat-hint>Opcional. Se genera automáticamente si queda vacío.</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Descripción</mat-label>
+      <textarea matInput formControlName="description" rows="2" placeholder="Para negocios que escalan en WhatsApp"></textarea>
+    </mat-form-field>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Precio mensual (USD)</mat-label>
+        <input matInput type="number" min="0" formControlName="priceMonthly" placeholder="49" />
+        <mat-icon matPrefix>calendar_month</mat-icon>
+        <mat-error *ngIf="form.get('priceMonthly')?.hasError('required')">Precio mensual obligatorio</mat-error>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Precio anual (USD/mes)</mat-label>
+        <input matInput type="number" min="0" formControlName="priceYearly" placeholder="39" />
+        <mat-icon matPrefix>event_repeat</mat-icon>
+        <mat-hint>Precio mensual equivalente con pago anual.</mat-hint>
+        <mat-error *ngIf="form.get('priceYearly')?.hasError('required')">Precio anual obligatorio</mat-error>
+      </mat-form-field>
+    </div>
+
+    <h3 class="section-title">
+      <mat-icon>tune</mat-icon>
+      Límites del plan
+    </h3>
+    <p class="section-note">Los límites se aplican por usuario. Un valor de <strong>0</strong> significa <strong>ilimitado</strong>.</p>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Instancias máximas</mat-label>
+        <input matInput type="number" min="0" formControlName="maxInstances" placeholder="5" />
+        <mat-icon matPrefix>smartphone</mat-icon>
+        <mat-hint>0 = ilimitado</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Mensajes / mes</mat-label>
+        <input matInput type="number" min="0" formControlName="maxMessages" placeholder="50000" />
+        <mat-icon matPrefix>chat</mat-icon>
+        <mat-hint>0 = ilimitado</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Campañas activas máximas</mat-label>
+        <input matInput type="number" min="0" formControlName="maxCampaigns" placeholder="10" />
+        <mat-icon matPrefix>campaign</mat-icon>
+        <mat-hint>0 = ilimitado</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Grupos máximos</mat-label>
+        <input matInput type="number" min="0" formControlName="maxGroups" placeholder="500" />
+        <mat-icon matPrefix>groups</mat-icon>
+        <mat-hint>0 = ilimitado</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Auto-respuestas máximas</mat-label>
+        <input matInput type="number" min="0" formControlName="maxAutoReplies" placeholder="20" />
+        <mat-icon matPrefix>reply</mat-icon>
+        <mat-hint>0 = ilimitado</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Cuota de IA (USD/mes)</mat-label>
+        <input matInput type="number" min="0" step="0.01" formControlName="aiQuota" placeholder="20" />
+        <mat-icon matPrefix>auto_awesome</mat-icon>
+        <mat-hint>Crédito SaaS mensual. 0 = sin créditos.</mat-hint>
+      </mat-form-field>
+    </div>
+
+    <div class="form-options">
+      <mat-slide-toggle formControlName="chatbotEnabled">Chatbot con IA incluido</mat-slide-toggle>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Características</mat-label>
+      <mat-chip-grid #chipGrid formControlName="features">
+        @for (feature of form.get('features')?.value || []; track feature) {
+          <mat-chip-row (removed)="removeFeature(feature)">
+            {{ feature }}
+            <button matChipRemove aria-label="Quitar característica">
+              <mat-icon>cancel</mat-icon>
+            </button>
+          </mat-chip-row>
+        }
+        <input
+          [matChipInputFor]="chipGrid"
+          matChipInputAddOnBlur="true"
+          (matChipInputTokenEnd)="addFeature($event)"
+          placeholder="Escribe una característica y presiona Enter"
+        />
+      </mat-chip-grid>
+    </mat-form-field>
+
+    <div class="form-row">
+      <mat-form-field appearance="outline">
+        <mat-label>Texto del botón (CTA)</mat-label>
+        <input matInput formControlName="cta" placeholder="Empezar ahora" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline">
+        <mat-label>Orden</mat-label>
+        <input matInput type="number" min="0" formControlName="sortOrder" placeholder="2" />
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Color del plan</mat-label>
+      <div class="color-field">
+        <input matInput formControlName="color" placeholder="#25D366" class="color-input" />
+        <div class="color-presets">
+          <button
+            type="button"
+            class="color-swatch"
+            *ngFor="let c of colorPresets"
+            [style.background]="c"
+            [class.selected]="form.get('color')?.value === c"
+            (click)="form.get('color')?.setValue(c)"
+            [attr.aria-label]="'Color ' + c"
+          ></button>
+        </div>
+      </div>
+    </mat-form-field>
+
+    <div class="form-options">
+      <mat-checkbox formControlName="popular">Marcar como más popular</mat-checkbox>
+      <mat-slide-toggle formControlName="isActive">Plan activo</mat-slide-toggle>
+    </div>
+  </form>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()">Cancelar</button>
+  <button mat-raised-button color="primary" (click)="save()" [disabled]="submitting">
+    <mat-icon>save</mat-icon>
+    {{ saveLabel }}
+  </button>
+</mat-dialog-actions>

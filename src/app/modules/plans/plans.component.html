@@ -1,0 +1,194 @@
+<div class="page-container">
+  <div class="page-header">
+    <div>
+      <h1>Administración de planes</h1>
+      <p class="page-subtitle">Gestiona los planes mensual y anual que se muestran en el landing page</p>
+    </div>
+    <div class="header-actions">
+      <button mat-stroked-button (click)="openAddonPrices()">
+        <mat-icon>price_change</mat-icon>
+        Precios de adicionales
+      </button>
+      <button mat-raised-button color="primary" (click)="create()">
+        <mat-icon>add</mat-icon>
+        Nuevo plan
+      </button>
+    </div>
+  </div>
+
+  <div class="hint-card">
+    <mat-icon>info</mat-icon>
+    <p>
+      Los cambios se reflejan automáticamente en la sección de precios del landing page. El toggle mensual/anual usa
+      el <strong>precio mensual</strong> y el <strong>precio anual</strong> de cada plan.
+    </p>
+  </div>
+
+  <div class="plans-stats" *ngIf="!loading">
+    <mat-card class="stat-mini" appearance="outlined">
+      <mat-card-content>
+        <div class="stat-mini-icon"><mat-icon>sell</mat-icon></div>
+        <div>
+          <span class="stat-mini-label">Total de planes</span>
+          <span class="stat-mini-value">{{ plans.length }}</span>
+        </div>
+      </mat-card-content>
+    </mat-card>
+    <mat-card class="stat-mini" appearance="outlined">
+      <mat-card-content>
+        <div class="stat-mini-icon"><mat-icon>visibility</mat-icon></div>
+        <div>
+          <span class="stat-mini-label">Activos</span>
+          <span class="stat-mini-value">{{ activeCount }}</span>
+        </div>
+      </mat-card-content>
+    </mat-card>
+    <mat-card class="stat-mini" appearance="outlined">
+      <mat-card-content>
+        <div class="stat-mini-icon"><mat-icon>visibility_off</mat-icon></div>
+        <div>
+          <span class="stat-mini-label">Inactivos</span>
+          <span class="stat-mini-value">{{ plans.length - activeCount }}</span>
+        </div>
+      </mat-card-content>
+    </mat-card>
+    <mat-card class="stat-mini" appearance="outlined">
+      <mat-card-content>
+        <div class="stat-mini-icon"><mat-icon>trending_up</mat-icon></div>
+        <div>
+          <span class="stat-mini-label">Precio máx. mensual</span>
+          <span class="stat-mini-value">${{ maxMonthlyPrice }}</span>
+        </div>
+      </mat-card-content>
+    </mat-card>
+  </div>
+
+  <div class="plans-toolbar" *ngIf="!loading && plans.length > 0">
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="plans-search">
+      <mat-label>Buscar plan</mat-label>
+      <input matInput [(ngModel)]="searchQuery" placeholder="Nombre o descripción...">
+      <mat-icon matPrefix>search</mat-icon>
+    </mat-form-field>
+    <span class="plans-count">{{ filteredPlans.length }} de {{ plans.length }} planes</span>
+  </div>
+
+  <div class="loading-state" *ngIf="loading">
+    <mat-spinner diameter="32"></mat-spinner>
+    <p>Cargando planes...</p>
+  </div>
+
+  <div class="plans-grid" *ngIf="!loading && filteredPlans.length > 0">
+    <mat-card class="plan-admin-card" [class.inactive]="!plan.isActive" *ngFor="let plan of filteredPlans">
+      <div class="plan-accent" [style.background]="plan.color || 'var(--primary)'"></div>
+      <div class="plan-top">
+        <div class="plan-swatch" [style.background]="plan.color" [style.color]="swatchTextColor(plan.color)">{{ plan.name[0] }}</div>
+        <div class="plan-identity">
+          <div class="plan-name-row">
+            <h3>{{ plan.name }}</h3>
+            <mat-chip class="popular-chip" *ngIf="plan.popular">Más popular</mat-chip>
+            <mat-chip class="inactive-chip" *ngIf="!plan.isActive">Inactivo</mat-chip>
+          </div>
+          <p class="plan-description">{{ plan.description }}</p>
+        </div>
+        <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Acciones del plan">
+          <mat-icon>more_vert</mat-icon>
+        </button>
+        <mat-menu #menu="matMenu">
+          <button mat-menu-item (click)="edit(plan)">
+            <mat-icon>edit</mat-icon>
+            <span>Editar</span>
+          </button>
+          <button mat-menu-item (click)="toggleActive(plan)">
+            <mat-icon>{{ plan.isActive ? 'visibility_off' : 'visibility' }}</mat-icon>
+            <span>{{ plan.isActive ? 'Desactivar' : 'Activar' }}</span>
+          </button>
+          <mat-divider></mat-divider>
+          <button mat-menu-item (click)="delete(plan)">
+            <mat-icon color="warn">delete</mat-icon>
+            <span>Eliminar</span>
+          </button>
+        </mat-menu>
+      </div>
+
+      <div class="plan-prices">
+        <div class="price-box">
+          <span class="price-label">Mensual</span>
+          <span class="price-value">
+            <ng-container *ngIf="isFree(plan); else pricedM">Gratis</ng-container>
+            <ng-template #pricedM><span class="currency">$</span>{{ plan.priceMonthly }}</ng-template>
+          </span>
+        </div>
+        <div class="price-box">
+          <span class="price-label">Anual</span>
+          <span class="price-value">
+            <ng-container *ngIf="isFree(plan); else pricedY">Gratis</ng-container>
+            <ng-template #pricedY><span class="currency">$</span>{{ plan.priceYearly }}<span class="per">/mes</span></ng-template>
+          </span>
+        </div>
+        <mat-chip class="cta-chip" [style.--chip-color]="plan.color">{{ plan.cta }}</mat-chip>
+      </div>
+
+      <div class="plan-features">
+        <span class="feature-item" *ngFor="let feature of plan.features">
+          <mat-icon>check</mat-icon>
+          {{ feature }}
+        </span>
+      </div>
+
+      <div class="plan-limits" *ngIf="plan.maxInstances !== undefined || plan.chatbotEnabled !== undefined">
+        <div class="limit-label"><mat-icon>tune</mat-icon> Límites por usuario</div>
+        <div class="limits-grid">
+          <div class="limit-item">
+            <span><mat-icon>smartphone</mat-icon> Instancias</span>
+            <strong>{{ isUnlimited(plan.maxInstances) ? 'Ilimitadas' : plan.maxInstances }}</strong>
+          </div>
+          <div class="limit-item">
+            <span><mat-icon>send</mat-icon> Mensajes / mes</span>
+            <strong>{{ isUnlimited(plan.maxMessages) ? 'Ilimitados' : plan.maxMessages }}</strong>
+          </div>
+          <div class="limit-item">
+            <span><mat-icon>campaign</mat-icon> Campañas activas</span>
+            <strong>{{ isUnlimited(plan.maxCampaigns) ? 'Ilimitadas' : plan.maxCampaigns }}</strong>
+          </div>
+          <div class="limit-item">
+            <span><mat-icon>groups</mat-icon> Grupos</span>
+            <strong>{{ isUnlimited(plan.maxGroups) ? 'Ilimitados' : plan.maxGroups }}</strong>
+          </div>
+          <div class="limit-item">
+            <span><mat-icon>reply</mat-icon> Auto-respuestas</span>
+            <strong>{{ isUnlimited(plan.maxAutoReplies) ? 'Ilimitadas' : plan.maxAutoReplies }}</strong>
+          </div>
+          <div class="limit-item">
+            <span><mat-icon>chat</mat-icon> Chatbot IA</span>
+            <strong>{{ plan.chatbotEnabled ? 'Incluido' : 'No incluido' }}</strong>
+          </div>
+          <div class="limit-item" *ngIf="plan.aiQuota && plan.aiQuota > 0">
+            <span><mat-icon>auto_awesome</mat-icon> Cuota de IA</span>
+            <strong>${{ plan.aiQuota }}/mes</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="plan-meta">
+        <span><mat-icon>sort</mat-icon> Orden: {{ plan.sortOrder }}</span>
+        <span *ngIf="plan.slug"><mat-icon>link</mat-icon> Slug: {{ plan.slug }}</span>
+      </div>
+    </mat-card>
+  </div>
+
+  <div class="empty-state" *ngIf="!loading && plans.length === 0">
+    <div class="empty-icon"><mat-icon>sell</mat-icon></div>
+    <h3>No hay planes</h3>
+    <p>Crea tu primer plan para mostrarlo en el landing page.</p>
+    <button mat-raised-button color="primary" (click)="create()">
+      <mat-icon>add</mat-icon>
+      Crear plan
+    </button>
+  </div>
+
+  <div class="empty-state" *ngIf="!loading && plans.length > 0 && filteredPlans.length === 0">
+    <div class="empty-icon"><mat-icon>search_off</mat-icon></div>
+    <h3>Sin resultados</h3>
+    <p>No hay planes que coincidan con "{{ searchQuery }}".</p>
+  </div>
+</div>

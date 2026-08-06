@@ -1,0 +1,549 @@
+<div class="page-container">
+  <div class="page-header">
+    <h1>Facturación</h1>
+    <p class="page-subtitle">Gestiona tu plan mensual y tus pagos</p>
+  </div>
+
+  <div class="loading-state" *ngIf="loading">
+    <mat-spinner diameter="32"></mat-spinner>
+    <p>Cargando información de facturación...</p>
+  </div>
+
+  <mat-card class="billing-alert" appearance="outlined" *ngIf="!loading && hasBlockingIssue && billing">
+    <mat-card-content>
+      <div class="alert-icon">
+        <mat-icon>{{ billing.status === 'blocked' ? 'block' : 'schedule' }}</mat-icon>
+      </div>
+      <div class="alert-text">
+        <h2 *ngIf="billing.status === 'blocked'">Tu plan está suspendido</h2>
+        <h2 *ngIf="billing.status === 'overdue'">Tu plan está vencido</h2>
+        <p *ngIf="billing.status === 'blocked'">
+          La cuenta fue bloqueada por falta de pago. Realiza un pago y repórtalo para reactivar el servicio.
+        </p>
+        <p *ngIf="billing.status === 'overdue'">
+          Tu período finalizó el {{ billing.nextBillingDate | date:'dd MMM yyyy' }}. Tienes {{ billing.graceDays }} días de
+          gracia; realiza tu pago para continuar sin interrupciones.
+        </p>
+      </div>
+      <div class="alert-actions">
+        <button mat-raised-button color="primary" (click)="openReportForm()">
+          <mat-icon>payment</mat-icon>
+          Reportar un pago
+        </button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <mat-tab-group *ngIf="!loading" animationDuration="200ms">
+    <mat-tab label="Resumen">
+      <div class="billing-content" *ngIf="billing">
+        <div class="billing-summary">
+          <mat-card class="bs-card" appearance="outlined">
+            <mat-card-content>
+              <div class="bs-icon"><mat-icon>workspace_premium</mat-icon></div>
+              <div>
+                <span class="bs-label">Plan actual</span>
+                <span class="bs-value">{{ billing.plan }}</span>
+              </div>
+            </mat-card-content>
+          </mat-card>
+          <mat-card class="bs-card" appearance="outlined">
+            <mat-card-content>
+              <div class="bs-icon"><mat-icon>event</mat-icon></div>
+              <div>
+                <span class="bs-label">Próximo cobro</span>
+                <span class="bs-value">{{ (billing.nextBillingDate | date:'dd MMM yyyy') || '—' }}</span>
+              </div>
+            </mat-card-content>
+          </mat-card>
+          <mat-card class="bs-card" appearance="outlined">
+            <mat-card-content>
+              <div class="bs-icon"><mat-icon>payments</mat-icon></div>
+              <div>
+                <span class="bs-label">Total mensual</span>
+                <span class="bs-value">{{ billing.currency }} {{ billing.amount }}</span>
+              </div>
+            </mat-card-content>
+          </mat-card>
+          <mat-card class="bs-card" appearance="outlined">
+            <mat-card-content>
+              <div class="bs-icon"><mat-icon>verified_user</mat-icon></div>
+              <div>
+                <span class="bs-label">Estado</span>
+                <span class="bs-value" [class.status-active]="billing.status === 'active' || billing.status === 'trial'"
+                  [class.status-overdue]="billing.status === 'overdue'" [class.status-blocked]="billing.status === 'blocked'">
+                  {{ statusLabel }}
+                </span>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        </div>
+
+        <mat-card class="plan-card" appearance="outlined">
+          <mat-card-header>
+            <mat-card-title>
+              <mat-icon>workspace_premium</mat-icon>
+              Plan Actual
+            </mat-card-title>
+            <button mat-flat-button color="primary" (click)="openPlanManager()" [disabled]="managingPlan">
+              <mat-icon>tune</mat-icon>
+              Gestionar plan
+            </button>
+            <button mat-stroked-button color="primary" (click)="loadBilling()">
+              <mat-icon>refresh</mat-icon>
+              Actualizar
+            </button>
+          </mat-card-header>
+          <mat-divider></mat-divider>
+          <mat-card-content>
+            <div class="plan-info">
+              <div class="plan-detail">
+                <span class="plan-name">{{ billing.plan }}</span>
+                <span class="plan-period">Facturación mensual</span>
+              </div>
+              <div class="plan-price">
+                <span class="amount">{{ billing.currency }} {{ billing.amount }}</span>
+                <span class="period">/mes</span>
+              </div>
+            </div>
+
+            <div class="extras-breakdown" *ngIf="billing.basePrice !== undefined">
+              <div class="extras-row">
+                <span>{{ billing.plan }}</span>
+                <span>{{ billing.currency }} {{ billing.basePrice }}</span>
+              </div>
+              <div class="extras-row" *ngFor="let addon of billing.addons">
+                <span>{{ addon.label }} <span class="extras-qty">×{{ addon.quantity }}</span></span>
+                <span>{{ billing.currency }} {{ addon.total }}</span>
+              </div>
+              <div class="extras-row extras-total">
+                <span>Total mensual</span>
+                <span>{{ billing.currency }} {{ billing.amount }}</span>
+              </div>
+            </div>
+
+            <div class="usage-section">
+              <h3>Uso del plan</h3>
+              <div class="usage-item">
+                <div class="usage-label">
+                  <span>Mensajes enviados</span>
+                  <span class="usage-value">{{ usageLabel(billing.currentUsage.messages, billing.currentUsage.maxMessages) }}</span>
+                </div>
+                <mat-progress-bar *ngIf="!isUnlimited(billing.currentUsage.maxMessages)" mode="determinate" [value]="usagePercent(billing.currentUsage.messages, billing.currentUsage.maxMessages)" [color]="usageColor(usagePercent(billing.currentUsage.messages, billing.currentUsage.maxMessages))"></mat-progress-bar>
+              </div>
+              <div class="usage-item">
+                <div class="usage-label">
+                  <span>Instancias activas</span>
+                  <span class="usage-value">{{ usageLabel(billing.currentUsage.instances, billing.currentUsage.maxInstances) }}</span>
+                </div>
+                <mat-progress-bar *ngIf="!isUnlimited(billing.currentUsage.maxInstances)" mode="determinate" [value]="usagePercent(billing.currentUsage.instances, billing.currentUsage.maxInstances)" [color]="usageColor(usagePercent(billing.currentUsage.instances, billing.currentUsage.maxInstances))"></mat-progress-bar>
+              </div>
+              <div class="usage-item">
+                <div class="usage-label">
+                  <span>Campañas / mes</span>
+                  <span class="usage-value">{{ usageLabel(billing.currentUsage.campaigns, billing.currentUsage.maxCampaigns) }}</span>
+                </div>
+                <mat-progress-bar *ngIf="!isUnlimited(billing.currentUsage.maxCampaigns)" mode="determinate" [value]="usagePercent(billing.currentUsage.campaigns, billing.currentUsage.maxCampaigns)" [color]="usageColor(usagePercent(billing.currentUsage.campaigns, billing.currentUsage.maxCampaigns))"></mat-progress-bar>
+              </div>
+              <div class="usage-item" *ngIf="billing.currentUsage.chatbotEnabled !== undefined">
+                <div class="usage-label">
+                  <span>Chatbot con IA</span>
+                  <span class="usage-value">{{ billing.currentUsage.chatbotEnabled ? 'Incluido' : 'No incluido' }}</span>
+                </div>
+              </div>
+              <div class="usage-item" *ngIf="billing.currentUsage.aiQuota !== undefined">
+                <div class="usage-label">
+                  <span>Cuota de IA</span>
+                  <span class="usage-value">{{ billing.currentUsage.aiQuota > 0 ? billing.currency + ' ' + billing.currentUsage.aiQuota + '/mes' : 'No incluida' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <mat-divider></mat-divider>
+
+            <div class="billing-info">
+              <div class="info-row">
+                <span class="info-label">Próximo cobro</span>
+                <span class="info-value">{{ (billing.nextBillingDate | date:'dd MMM yyyy') || '—' }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Estado</span>
+                <span class="info-value"
+                  [class.status-active]="billing.status === 'active' || billing.status === 'trial'"
+                  [class.status-overdue]="billing.status === 'overdue'"
+                  [class.status-blocked]="billing.status === 'blocked'">
+                  {{ statusLabel }}
+                </span>
+              </div>
+            </div>
+          </mat-card-content>
+        </mat-card>
+
+        <mat-card class="upgrade-card" appearance="outlined">
+          <mat-card-content>
+            <div class="upgrade-content">
+              <div class="upgrade-icon">
+                <mat-icon>star</mat-icon>
+              </div>
+              <div>
+                <h3>Plan mensual</h3>
+                <p>Pago recurrente de {{ billing.currency }} {{ billing.amount }} cada mes. Realiza tu pago y repórtalo en la pestaña "Dónde pagar".</p>
+              </div>
+              <button mat-raised-button color="primary" (click)="openReportForm()" *ngIf="!isAdmin">
+                <mat-icon>payment</mat-icon>
+                Reportar un pago
+              </button>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      </div>
+    </mat-tab>
+
+    <mat-tab label="Facturas">
+      <div class="invoices-content">
+        <div class="section-header">
+          <h2>Historial de facturas <span class="count-badge">{{ invoices.length }}</span></h2>
+        </div>
+
+        <div class="invoice-stats" *ngIf="invoices.length > 0">
+          <div class="inv-stat">
+            <span class="inv-stat-label">Total facturado</span>
+            <span class="inv-stat-value">{{ billing?.currency }} {{ invoiceTotal | number:'1.2-2' }}</span>
+          </div>
+          <div class="inv-stat">
+            <span class="inv-stat-label">Pagadas</span>
+            <span class="inv-stat-value inv-ok">{{ paidInvoices }}</span>
+          </div>
+          <div class="inv-stat">
+            <span class="inv-stat-label">Pendientes</span>
+            <span class="inv-stat-value inv-warn">{{ pendingInvoices }}</span>
+          </div>
+          <div class="inv-stat">
+            <span class="inv-stat-label">Vencidas</span>
+            <span class="inv-stat-value inv-err">{{ overdueInvoices }}</span>
+          </div>
+        </div>
+
+        <div class="table-wrapper" *ngIf="invoices.length > 0">
+          <table mat-table [dataSource]="invoices">
+            <ng-container matColumnDef="number">
+              <th mat-header-cell *matHeaderCellDef>Factura</th>
+              <td mat-cell *matCellDef="let inv">{{ inv.number }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="period">
+              <th mat-header-cell *matHeaderCellDef>Periodo</th>
+              <td mat-cell *matCellDef="let inv">{{ inv.period }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="date">
+              <th mat-header-cell *matHeaderCellDef>Fecha</th>
+              <td mat-cell *matCellDef="let inv">{{ inv.date | date:'dd MMM yyyy' }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="amount">
+              <th mat-header-cell *matHeaderCellDef>Monto</th>
+              <td mat-cell *matCellDef="let inv">{{ billing?.currency }} {{ inv.amount }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="status">
+              <th mat-header-cell *matHeaderCellDef>Estado</th>
+              <td mat-cell *matCellDef="let inv">
+                <mat-chip [class.status-sent]="inv.status === 'paid'" [class.status-failed]="inv.status !== 'paid'">
+                  {{ inv.status === 'paid' ? 'Pagada' : inv.status === 'overdue' ? 'Vencida' : 'Pendiente' }}
+                </mat-chip>
+              </td>
+            </ng-container>
+
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef>Acciones</th>
+              <td mat-cell *matCellDef="let inv">
+                <button
+                  mat-raised-button
+                  color="primary"
+                  (click)="payInvoice(inv)"
+                  *ngIf="inv.status !== 'paid' && isAdmin"
+                  [disabled]="payingId === inv.id">
+                  <mat-spinner diameter="18" *ngIf="payingId === inv.id"></mat-spinner>
+                  <mat-icon *ngIf="payingId !== inv.id">payment</mat-icon>
+                  {{ payingId === inv.id ? 'Pagando...' : 'Pagar' }}
+                </button>
+                <button
+                  mat-stroked-button
+                  color="primary"
+                  (click)="openReportForm()"
+                  *ngIf="inv.status !== 'paid' && !isAdmin">
+                  <mat-icon>send</mat-icon>
+                  Reportar pago
+                </button>
+                <mat-chip class="status-sent" *ngIf="inv.status === 'paid'">
+                  <mat-icon>check</mat-icon>
+                  Pagada
+                </mat-chip>
+              </td>
+            </ng-container>
+
+            <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+          </table>
+        </div>
+
+        <div class="empty-state" *ngIf="invoices.length === 0">
+          <div class="empty-icon"><mat-icon>receipt_long</mat-icon></div>
+          <h3>Sin facturas</h3>
+          <p>No tienes facturas emitidas todavía</p>
+        </div>
+      </div>
+    </mat-tab>
+
+    <mat-tab label="Dónde pagar">
+      <div class="payments-content">
+        <div class="section-header">
+          <h2>Métodos de pago disponibles <span class="count-badge">{{ destinations.length }}</span></h2>
+          <button mat-stroked-button color="primary" (click)="openReportForm()" *ngIf="!isAdmin">
+            <mat-icon>{{ showReportForm ? 'close' : 'add' }}</mat-icon>
+            {{ showReportForm ? 'Cancelar' : 'Reportar un pago' }}
+          </button>
+        </div>
+
+        <form [formGroup]="reportForm" class="payment-form report-form" *ngIf="showReportForm && !isAdmin">
+          <mat-form-field appearance="outline" class="rep-destination">
+            <mat-label>Método de pago</mat-label>
+            <mat-select formControlName="destinationId">
+              <mat-option *ngFor="let dest of destinations" [value]="dest.id">{{ dest.name }}</mat-option>
+            </mat-select>
+            <mat-error *ngIf="reportForm.get('destinationId')?.hasError('required')">Selecciona un método</mat-error>
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="rep-amount">
+            <mat-label>Monto (USD)</mat-label>
+            <input matInput formControlName="amount" type="number" placeholder="{{ billing?.amount || 29.99 }}">
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="rep-reference">
+            <mat-label>Referencia / comprobante</mat-label>
+            <input matInput formControlName="reference" placeholder="N° de operación o comprobante">
+            <mat-error *ngIf="reportForm.get('reference')?.hasError('required')">Ingresa la referencia</mat-error>
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="rep-date">
+            <mat-label>Fecha del pago</mat-label>
+            <input matInput formControlName="paymentDate" type="date">
+          </mat-form-field>
+          <button mat-raised-button color="primary" class="save-method-btn" (click)="submitReport()" [disabled]="reporting">
+            <mat-spinner diameter="18" *ngIf="reporting"></mat-spinner>
+            <mat-icon *ngIf="!reporting">send</mat-icon>
+            {{ reporting ? 'Enviando...' : 'Reportar pago' }}
+          </button>
+        </form>
+
+        <div class="destination-list" *ngIf="destinations.length > 0">
+          <mat-card class="payment-method-card" appearance="outlined" *ngFor="let dest of destinations" [class.inactive]="!dest.isActive">
+            <mat-card-content>
+              <div class="pm-icon" [class]="'pm-' + dest.type">
+                <mat-icon>{{ destIcon(dest.type) }}</mat-icon>
+              </div>
+              <div class="pm-info">
+                <div class="pm-name-row">
+                  <span class="pm-name">{{ dest.name }}</span>
+                  <mat-chip class="pm-status" [class.active]="dest.isActive" [class.disabled]="!dest.isActive">
+                    {{ dest.isActive ? 'Activo' : 'Inactivo' }}
+                  </mat-chip>
+                </div>
+                <span class="pm-exp">{{ destinationTypeLabel(dest) }}</span>
+                <span class="pm-detail" *ngIf="dest.holder"><mat-icon>person</mat-icon> Titular: {{ dest.holder }}</span>
+                <span class="pm-detail" *ngIf="dest.detail"><mat-icon>pin</mat-icon> {{ dest.detail }}
+                  <button mat-icon-button class="copy-btn" (click)="copyDetail(dest)" matTooltip="Copiar datos" aria-label="Copiar datos">
+                    <mat-icon>content_copy</mat-icon>
+                  </button>
+                </span>
+                <span class="pm-detail" *ngIf="dest.instructions"><mat-icon>info</mat-icon> {{ dest.instructions }}</span>
+              </div>
+              <div class="pm-actions" *ngIf="isAdmin">
+                <button mat-stroked-button color="primary" (click)="editDestination(dest)">
+                  <mat-icon>edit</mat-icon>
+                  Editar
+                </button>
+                <button mat-icon-button color="warn" (click)="removeDestination(dest)">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        </div>
+
+        <div class="empty-state" *ngIf="destinations.length === 0">
+          <div class="empty-icon"><mat-icon>credit_card</mat-icon></div>
+          <h3>Sin métodos de pago</h3>
+          <p *ngIf="isAdmin">Agrega métodos de pago para que los usuarios sepan dónde pagar.</p>
+          <p *ngIf="!isAdmin">El administrador aún no configuró métodos de pago.</p>
+        </div>
+
+        <div class="destination-admin" *ngIf="isAdmin">
+          <div class="section-header" style="margin-top: 28px;">
+            <h2>Gestionar métodos de pago</h2>
+            <button mat-stroked-button color="primary" (click)="toggleDestinationForm()">
+              <mat-icon>{{ showDestinationForm ? 'close' : 'add' }}</mat-icon>
+              {{ showDestinationForm ? 'Cancelar' : 'Agregar método de pago' }}
+            </button>
+          </div>
+
+          <form [formGroup]="destinationForm" class="payment-form destination-form" *ngIf="showDestinationForm">
+            <div class="destination-form-header">
+              <mat-icon>{{ editingDestinationId ? 'edit' : 'add_card' }}</mat-icon>
+              <span>{{ editingDestinationId ? 'Editar método de pago' : 'Nuevo método de pago' }}</span>
+            </div>
+            <mat-form-field appearance="outline">
+              <mat-label>Tipo</mat-label>
+              <mat-select formControlName="type">
+                <mat-option value="banco">Banco</mat-option>
+                <mat-option value="billetera">Billetera</mat-option>
+                <mat-option value="pagomovil">Pago móvil</mat-option>
+                <mat-option value="binance_usdt">Binance USDT</mat-option>
+                <mat-option value="otro">Personalizado</mat-option>
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="custom-type-row" *ngIf="destinationForm.get('type')?.value === 'otro'">
+              <mat-label>Tipo personalizado</mat-label>
+              <input matInput formControlName="customType" placeholder="Ej: Zelle, PayPal, Wise...">
+              <mat-error *ngIf="destinationForm.get('customType')?.hasError('required')">Indica el tipo personalizado</mat-error>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Nombre</mat-label>
+              <input matInput formControlName="name" placeholder="Ej: Banco Ejemplo">
+              <mat-error *ngIf="destinationForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Titular</mat-label>
+              <input matInput formControlName="holder" placeholder="Nombre del titular">
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Datos (CBU / CVU / alias / número)</mat-label>
+              <input matInput formControlName="detail" placeholder="CBU 0000003100000000000000">
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="full-row">
+              <mat-label>Instrucciones</mat-label>
+              <textarea matInput formControlName="instructions" rows="2" placeholder="Instrucciones para el pago..."></textarea>
+            </mat-form-field>
+            <div class="form-inline">
+              <mat-slide-toggle formControlName="isActive">Activo</mat-slide-toggle>
+              <mat-form-field appearance="outline" class="sort-input">
+                <mat-label>Orden</mat-label>
+                <input matInput formControlName="sortOrder" type="number">
+              </mat-form-field>
+            </div>
+            <button mat-raised-button color="primary" class="save-method-btn" (click)="saveDestination()" [disabled]="savingDestination">
+              <mat-spinner diameter="18" *ngIf="savingDestination"></mat-spinner>
+              <mat-icon *ngIf="!savingDestination">save</mat-icon>
+              {{ savingDestination ? 'Guardando...' : (editingDestinationId ? 'Guardar cambios' : 'Guardar') }}
+            </button>
+          </form>
+        </div>
+
+        <div class="my-payments" *ngIf="!isAdmin && reportedPayments.length > 0">
+          <div class="section-header" style="margin-top: 28px;">
+            <h2>Mis pagos reportados</h2>
+          </div>
+          <div class="table-wrapper">
+            <table mat-table [dataSource]="reportedPayments">
+              <ng-container matColumnDef="destination">
+                <th mat-header-cell *matHeaderCellDef>Método</th>
+                <td mat-cell *matCellDef="let p">{{ p.destinationName }}</td>
+              </ng-container>
+              <ng-container matColumnDef="amount">
+                <th mat-header-cell *matHeaderCellDef>Monto</th>
+                <td mat-cell *matCellDef="let p">{{ billing?.currency }} {{ p.amount }}</td>
+              </ng-container>
+              <ng-container matColumnDef="reference">
+                <th mat-header-cell *matHeaderCellDef>Referencia</th>
+                <td mat-cell *matCellDef="let p">{{ p.reference }}</td>
+              </ng-container>
+              <ng-container matColumnDef="date">
+                <th mat-header-cell *matHeaderCellDef>Fecha</th>
+                <td mat-cell *matCellDef="let p">{{ p.paymentDate | date:'dd MMM yyyy' }}</td>
+              </ng-container>
+              <ng-container matColumnDef="status">
+                <th mat-header-cell *matHeaderCellDef>Estado</th>
+                <td mat-cell *matCellDef="let p">
+                  <mat-chip [class.status-sent]="p.status === 'verified'" [class.status-failed]="p.status === 'rejected'">
+                    {{ p.status === 'verified' ? 'Confirmado' : p.status === 'rejected' ? 'Rechazado' : 'Pendiente' }}
+                  </mat-chip>
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="['destination','amount','reference','date','status']"></tr>
+              <tr mat-row *matRowDef="let row; columns: ['destination','amount','reference','date','status']"></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </mat-tab>
+
+    <mat-tab label="Pagos recibidos" *ngIf="isAdmin">
+      <div class="payments-content">
+        <div class="section-header">
+          <h2>Pagos reportados por usuarios <span class="count-badge">{{ reportedPayments.length }}</span></h2>
+        </div>
+
+        <div class="table-wrapper" *ngIf="reportedPayments.length > 0">
+          <table mat-table [dataSource]="reportedPayments">
+            <ng-container matColumnDef="user">
+              <th mat-header-cell *matHeaderCellDef>Usuario</th>
+              <td mat-cell *matCellDef="let p">{{ p.userName }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="destination">
+              <th mat-header-cell *matHeaderCellDef>Método</th>
+              <td mat-cell *matCellDef="let p">{{ p.destinationName }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="amount">
+              <th mat-header-cell *matHeaderCellDef>Monto</th>
+              <td mat-cell *matCellDef="let p">{{ billing?.currency }} {{ p.amount }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="reference">
+              <th mat-header-cell *matHeaderCellDef>Referencia</th>
+              <td mat-cell *matCellDef="let p">{{ p.reference }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="date">
+              <th mat-header-cell *matHeaderCellDef>Fecha</th>
+              <td mat-cell *matCellDef="let p">{{ p.paymentDate | date:'dd MMM yyyy' }}</td>
+            </ng-container>
+
+            <ng-container matColumnDef="status">
+              <th mat-header-cell *matHeaderCellDef>Estado</th>
+              <td mat-cell *matCellDef="let p">
+                <mat-chip [class.status-sent]="p.status === 'verified'" [class.status-failed]="p.status === 'rejected'">
+                  {{ p.status === 'verified' ? 'Confirmado' : p.status === 'rejected' ? 'Rechazado' : 'Pendiente' }}
+                </mat-chip>
+                <span class="reject-note" *ngIf="p.note">· {{ p.note }}</span>
+              </td>
+            </ng-container>
+
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef>Acciones</th>
+              <td mat-cell *matCellDef="let p">
+                <button mat-raised-button color="primary" (click)="verifyPayment(p)" *ngIf="p.status === 'pending'" [disabled]="verifyingId === p.id">
+                  <mat-spinner diameter="18" *ngIf="verifyingId === p.id"></mat-spinner>
+                  <mat-icon *ngIf="verifyingId !== p.id">check</mat-icon>
+                  Confirmar
+                </button>
+                <button mat-stroked-button color="warn" (click)="rejectPayment(p)" *ngIf="p.status === 'pending'">
+                  <mat-icon>close</mat-icon>
+                  Rechazar
+                </button>
+              </td>
+            </ng-container>
+
+            <tr mat-header-row *matHeaderRowDef="displayedPaymentColumns"></tr>
+            <tr mat-row *matRowDef="let row; columns: displayedPaymentColumns"></tr>
+          </table>
+        </div>
+
+        <div class="empty-state" *ngIf="reportedPayments.length === 0">
+          <div class="empty-icon"><mat-icon>payments</mat-icon></div>
+          <h3>Sin pagos reportados</h3>
+          <p>Cuando los usuarios reporten un pago aparecerá aquí para que lo confirmes.</p>
+        </div>
+      </div>
+    </mat-tab>
+  </mat-tab-group>
+</div>

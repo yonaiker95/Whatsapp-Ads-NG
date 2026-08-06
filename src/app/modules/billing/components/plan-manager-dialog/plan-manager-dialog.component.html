@@ -1,0 +1,96 @@
+<div class="plan-manager">
+  <div class="header">
+    <h2 mat-dialog-title>Gestionar plan</h2>
+    <p class="subtitle">Cambia tu plan o añade extras con costo mensual. Los cambios se aplican de inmediato.</p>
+  </div>
+
+  <mat-dialog-content class="content">
+    <div *ngIf="loading" class="loading">
+      <mat-spinner diameter="36"></mat-spinner>
+    </div>
+
+    <ng-container *ngIf="!loading && info">
+      <section class="section">
+        <h3 class="section-title">Plan</h3>
+        <div class="plans">
+          <button
+            type="button"
+            class="plan-card"
+            *ngFor="let plan of info.plans"
+            [class.selected]="plan.slug === selectedSlug"
+            (click)="selectedSlug = plan.slug"
+          >
+            <div class="plan-card-top">
+              <span class="plan-name">{{ plan.name }}</span>
+              <div class="plan-card-top-right">
+                <span class="current-badge" *ngIf="plan.slug === info.current.planSlug">Actual</span>
+                <mat-icon *ngIf="plan.slug === selectedSlug" class="check">check_circle</mat-icon>
+              </div>
+            </div>
+            <div class="plan-price">
+              <span class="amount">{{ plan.priceMonthly | number:'1.2-2' }}</span>
+              <span class="currency">USD/mes</span>
+            </div>
+            <div class="plan-limits">{{ limitLabel(plan) }}</div>
+          </button>
+        </div>
+      </section>
+
+      <section class="section" *ngIf="info.addonCatalog.length">
+        <h3 class="section-title">Extras mensuales</h3>
+        <div class="addons">
+          <div class="addon" *ngFor="let addon of info.addonCatalog">
+            <div class="addon-info">
+              <span class="addon-label">{{ addon.label }}</span>
+              <span class="addon-unit">{{ addon.unitAmount | number:'1.2-2' }} USD / {{ addon.unitLabel }}</span>
+            </div>
+            <div class="stepper">
+              <button type="button" mat-mini-fab class="step-btn" [disabled]="qtyOf(addon.key) <= 0" (click)="dec(addon.key)">
+                <mat-icon>remove</mat-icon>
+              </button>
+              <span class="qty">{{ qtyOf(addon.key) }}</span>
+              <button type="button" mat-mini-fab class="step-btn" (click)="inc(addon.key)">
+                <mat-icon>add</mat-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section summary">
+        <h3 class="section-title">Resumen</h3>
+        <div class="summary-row">
+          <span>Plan base</span>
+          <span>{{ basePrice | number:'1.2-2' }} USD</span>
+        </div>
+        <div class="summary-row">
+          <span>Extras</span>
+          <span>{{ addonsTotal | number:'1.2-2' }} USD</span>
+        </div>
+        <mat-divider></mat-divider>
+        <div class="summary-row total">
+          <span>Total mensual</span>
+          <span>{{ total | number:'1.2-2' }} USD</span>
+        </div>
+        <div class="summary-note" *ngIf="hasChanges && diff > 0">
+          Al guardar se generará una factura pendiente por {{ diff | number:'1.2-2' }} USD.
+        </div>
+        <div class="summary-note ok" *ngIf="hasChanges && diff < 0">
+          El nuevo total es menor. La diferencia se reflejará en el próximo cobro.
+        </div>
+      </section>
+    </ng-container>
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button mat-button (click)="cancel()" [disabled]="saving">Cancelar</button>
+    <button
+      mat-flat-button
+      color="primary"
+      [disabled]="saving || loading || !hasChanges"
+      (click)="save()"
+    >
+      {{ saving ? 'Guardando...' : 'Guardar cambios' }}
+    </button>
+  </mat-dialog-actions>
+</div>

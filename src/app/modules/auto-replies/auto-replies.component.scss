@@ -1,0 +1,50 @@
+:host {
+  display: block;
+}
+
+.trigger-chip {
+  background: var(--info-bg);
+  color: var(--info);
+  font-weight: 600;
+}
+
+.ai-chip {
+  background: rgba(108, 99, 255, 0.12);
+  color: var(--primary, #6c63ff);
+  font-weight: 600;
+  margin-right: 8px;
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.response-cell {
+  max-width: 360px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+
+  &.ai-generated {
+    color: var(--primary, #6c63ff);
+    font-style: italic;
+  }
+}
+
+.instance-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+
+  mat-icon {
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+  }
+}

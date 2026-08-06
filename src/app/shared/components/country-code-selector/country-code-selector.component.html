@@ -1,0 +1,65 @@
+<button
+  #btn
+  type="button"
+  class="cc-btn"
+  (click)="toggle()"
+  [attr.aria-label]="'Código de país: ' + country.name"
+>
+  <span class="cc-flag">{{ flagEmoji(country.iso2) }}</span>
+  <span class="cc-dial">+{{ country.dial }}</span>
+  <mat-icon class="cc-caret">{{ open ? 'expand_less' : 'expand_more' }}</mat-icon>
+</button>
+
+@if (open) {
+  <div class="cc-backdrop" (click)="onBackdropClick()"></div>
+  <div #panel class="cc-panel">
+    <div class="cc-head">
+      <div class="cc-current">
+        <span class="cc-current-flag">{{ flagEmoji(country.iso2) }}</span>
+        <div class="cc-current-info">
+          <span class="cc-current-label">Código de país</span>
+          <span class="cc-current-name">{{ country.name }}</span>
+        </div>
+        <span class="cc-current-dial">+{{ country.dial }}</span>
+      </div>
+      <div class="cc-search-wrap">
+        <mat-icon>search</mat-icon>
+        <input
+          class="cc-search"
+          type="text"
+          [(ngModel)]="filter"
+          placeholder="Buscar país o código…"
+          inputmode="search"
+        >
+        @if (filter) {
+          <button type="button" class="cc-clear" (click)="filter = ''" aria-label="Limpiar búsqueda">
+            <mat-icon>close</mat-icon>
+          </button>
+        }
+      </div>
+    </div>
+
+    <div class="cc-list">
+      @for (c of filteredCountries; track c.iso2) {
+        <button
+          type="button"
+          class="cc-row"
+          [class.selected]="country.iso2 === c.iso2"
+          (click)="select(c)"
+        >
+          <span class="cc-flag-tile">{{ flagEmoji(c.iso2) }}</span>
+          <span class="cc-name">{{ c.name }}</span>
+          @if (country.iso2 === c.iso2) {
+            <mat-icon class="cc-check">check_circle</mat-icon>
+          }
+          <span class="cc-code">+{{ c.dial }}</span>
+        </button>
+      } @empty {
+        <div class="cc-empty">
+          <mat-icon>travel_explore</mat-icon>
+          <span>Sin resultados para «{{ filter }}»</span>
+        </div>
+      }
+    </div>
+  </div>
+}

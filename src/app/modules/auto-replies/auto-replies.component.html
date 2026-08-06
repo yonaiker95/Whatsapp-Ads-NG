@@ -1,0 +1,109 @@
+<div class="page-container">
+  <div class="page-header">
+    <div>
+      <h1>Respuestas automáticas</h1>
+      <p class="page-subtitle">Configura respuestas automáticas por palabras clave</p>
+    </div>
+    <button mat-raised-button color="primary" (click)="create()" [disabled]="!instances.length">
+      <mat-icon>add</mat-icon>
+      Nueva respuesta
+    </button>
+  </div>
+
+  <div class="section-card">
+    <div class="section-header">
+      <h2>Todas las respuestas <span class="count-badge">{{ filteredAutoReplies.length }}</span></h2>
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Buscar respuesta</mat-label>
+        <input matInput [(ngModel)]="searchQuery" placeholder="Palabra clave, nombre o texto...">
+        <mat-icon matPrefix>search</mat-icon>
+      </mat-form-field>
+    </div>
+
+    <div class="loading-state" *ngIf="loading">
+      <mat-spinner diameter="32"></mat-spinner>
+      <p>Cargando respuestas...</p>
+    </div>
+
+    <div class="table-wrapper" *ngIf="!loading && filteredAutoReplies.length > 0">
+      <table mat-table [dataSource]="filteredAutoReplies">
+        <ng-container matColumnDef="trigger">
+          <th mat-header-cell *matHeaderCellDef>Disparador</th>
+          <td mat-cell *matCellDef="let reply">
+            <mat-chip class="trigger-chip">{{ reply.trigger }}</mat-chip>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="response">
+          <th mat-header-cell *matHeaderCellDef>Respuesta</th>
+          <td mat-cell *matCellDef="let reply">
+            <mat-chip class="ai-chip" *ngIf="reply.useAi">
+              <mat-icon matChipIcon>auto_awesome</mat-icon>
+              IA
+            </mat-chip>
+            <div class="response-cell" [class.ai-generated]="reply.useAi">
+              <ng-container *ngIf="reply.useAi">{{ reply.aiInstructions || 'Generada con IA' }}</ng-container>
+              <ng-container *ngIf="!reply.useAi">{{ reply.response }}</ng-container>
+            </div>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="instance">
+          <th mat-header-cell *matHeaderCellDef>Instancia</th>
+          <td mat-cell *matCellDef="let reply">
+            <span class="instance-name">
+              <mat-icon>phone_android</mat-icon>
+              {{ reply.instanceName || reply.instanceId || '—' }}
+            </span>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="isActive">
+          <th mat-header-cell *matHeaderCellDef>Estado</th>
+          <td mat-cell *matCellDef="let reply">
+            <mat-chip [class.status-sent]="reply.isActive" [class.status-failed]="!reply.isActive">
+              {{ reply.isActive ? 'Activa' : 'Inactiva' }}
+            </mat-chip>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="actions">
+          <th mat-header-cell *matHeaderCellDef>Acciones</th>
+          <td mat-cell *matCellDef="let reply">
+            <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Acciones">
+              <mat-icon>more_vert</mat-icon>
+            </button>
+            <mat-menu #menu="matMenu">
+              <button mat-menu-item (click)="edit(reply)">
+                <mat-icon>edit</mat-icon>
+                <span>Editar</span>
+              </button>
+              <button mat-menu-item (click)="toggleActive(reply)">
+                <mat-icon>{{ reply.isActive ? 'pause_circle' : 'play_circle' }}</mat-icon>
+                <span>{{ reply.isActive ? 'Pausar' : 'Activar' }}</span>
+              </button>
+              <mat-divider></mat-divider>
+              <button mat-menu-item (click)="delete(reply)">
+                <mat-icon color="warn">delete</mat-icon>
+                <span>Eliminar</span>
+              </button>
+            </mat-menu>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+        <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+      </table>
+    </div>
+
+    <div class="empty-state" *ngIf="!loading && filteredAutoReplies.length === 0">
+      <div class="empty-icon"><mat-icon>auto_awesome</mat-icon></div>
+      <h3>{{ autoReplies.length === 0 ? 'No hay respuestas automáticas' : 'Sin resultados' }}</h3>
+      <p>{{ autoReplies.length === 0 ? 'Crea reglas para que tu instancia responda automáticamente según palabras clave o eventos' : 'No hay respuestas que coincidan con tu búsqueda' }}</p>
+      <button mat-raised-button color="primary" (click)="create()" *ngIf="autoReplies.length === 0" [disabled]="!instances.length">
+        <mat-icon>add</mat-icon>
+        Crear respuesta
+      </button>
+    </div>
+  </div>
+</div>

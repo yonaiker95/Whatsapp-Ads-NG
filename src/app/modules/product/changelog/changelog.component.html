@@ -1,0 +1,49 @@
+<div class="changelog-page">
+  <header class="changelog-header">
+    <span class="changelog-badge"><mat-icon>update</mat-icon> Changelog</span>
+    <h1>Novedades y mejoras</h1>
+    <p>Cada semana lanzamos nuevas funcionalidades y optimizaciones. Este es el historial completo.</p>
+    <div class="changelog-actions">
+      <a routerLink="/blog" mat-stroked-button>
+        <mat-icon>article</mat-icon>
+        Ir al blog
+      </a>
+      <a href="https://twitter.com" target="_blank" rel="noopener" mat-stroked-button>
+        <mat-icon>campaign</mat-icon>
+        Seguir novedades
+      </a>
+    </div>
+  </header>
+
+  <div class="changelog-timeline">
+    <div class="timeline-item" *ngFor="let release of releases">
+      <div class="timeline-marker" [class]="release.type">
+        <mat-icon>{{ release.type === 'fix' ? 'build' : release.type === 'improvement' ? 'speed' : 'rocket_launch' }}</mat-icon>
+      </div>
+      <div class="release-card">
+        <div class="release-top">
+          <div class="release-version">
+            <code>{{ release.version }}</code>
+            <span class="release-type" [class]="release.type">
+              {{ release.type === 'fix' ? 'Corrección' : release.type === 'improvement' ? 'Mejora' : 'Novedad' }}
+            </span>
+          </div>
+          <span class="release-date"><mat-icon>calendar_today</mat-icon> {{ release.date }}</span>
+        </div>
+        <h3>{{ release.title }}</h3>
+        <ul>
+          <li *ngFor="let h of release.highlights">{{ h }}</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <section class="changelog-cta">
+    <h2>¿Quieres sugerir una mejora?</h2>
+    <p>Tu feedback define nuestra hoja de ruta.</p>
+    <a routerLink="/contact" mat-raised-button color="primary">
+      <mat-icon>feedback</mat-icon>
+      Enviar sugerencia
+    </a>
+  </section>
+</div>

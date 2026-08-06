@@ -1,0 +1,82 @@
+<div class="press-page">
+  <header class="press-header">
+    <span class="press-badge"><mat-icon>campaign</mat-icon> Sala de prensa</span>
+    <h1>WhatsApp Ads en los medios</h1>
+    <p>Noticias, recursos y contacto para periodistas y medios de comunicación.</p>
+    <div class="press-actions">
+      <a href="mailto:prensa@whatsappads.com" mat-raised-button color="primary">
+        <mat-icon>mail</mat-icon>
+        Contactar a prensa
+      </a>
+      <a href="mailto:media@whatsappads.com" mat-stroked-button>
+        <mat-icon>download</mat-icon>
+        Descargar kit de medios
+      </a>
+    </div>
+  </header>
+
+  <section class="media-logos">
+    <span class="logos-label">Aparecemos en</span>
+    <div class="logos-strip">
+      <span class="media-logo" *ngFor="let logo of logos">{{ logo }}</span>
+    </div>
+  </section>
+
+  <section class="releases-section">
+    <span class="section-badge center">Comunicados</span>
+    <h2 class="section-title">Últimas noticias</h2>
+    <div class="releases-list">
+      <a class="release-item" href="mailto:prensa@whatsappads.com" *ngFor="let release of releases">
+        <div class="release-date">
+          <mat-icon>calendar_today</mat-icon>
+          {{ release.date }}
+        </div>
+        <div class="release-content">
+          <span class="release-category">{{ release.category }}</span>
+          <h3>{{ release.title }}</h3>
+          <p>{{ release.summary }}</p>
+        </div>
+        <div class="release-arrow">
+          <mat-icon>arrow_forward</mat-icon>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <section class="facts-section">
+    <span class="section-badge center">Datos clave</span>
+    <h2 class="section-title">WhatsApp Ads en números</h2>
+    <div class="facts-grid">
+      <div class="fact-card">
+        <span class="fact-value">2,000+</span>
+        <span class="fact-label">Empresas activas</span>
+      </div>
+      <div class="fact-card">
+        <span class="fact-value">12M+</span>
+        <span class="fact-label">Mensajes enviados/mes</span>
+      </div>
+      <div class="fact-card">
+        <span class="fact-value">40+</span>
+        <span class="fact-label">Integraciones</span>
+      </div>
+      <div class="fact-card">
+        <span class="fact-value">8</span>
+        <span class="fact-label">Países con equipo</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="press-contacts">
+    <span class="section-badge center">Contacto</span>
+    <h2 class="section-title">Equipo de comunicación</h2>
+    <div class="contacts-grid">
+      <div class="contact-card" *ngFor="let contact of pressContacts">
+        <mat-icon>{{ contact.icon }}</mat-icon>
+        <div>
+          <h3>{{ contact.label }}</h3>
+          <a href="mailto:{{ contact.value }}">{{ contact.value }}</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>

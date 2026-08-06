@@ -1,0 +1,56 @@
+<div class="integrations-page">
+  <header class="integrations-hero">
+    <div class="hero-badge"><mat-icon>extension</mat-icon> Integraciones</div>
+    <h1>Conecta WhatsApp Ads con tus herramientas</h1>
+    <p>Más de 40 integraciones nativas para que tu WhatsApp trabaje en sincronía con el resto de tu stack.</p>
+    <div class="hero-actions">
+      <a routerLink="/contact" mat-raised-button color="primary">
+        <mat-icon>code</mat-icon>
+        Solicitar una integración
+      </a>
+      <a routerLink="/changelog" mat-stroked-button>
+        <mat-icon>history</mat-icon>
+        Ver novedades
+      </a>
+    </div>
+  </header>
+
+  <section class="integrations-section">
+    <div class="category-tabs">
+      <button
+        *ngFor="let cat of categories"
+        class="category-tab"
+        [class.active]="selectedCategory === cat"
+        (click)="selectCategory(cat)">
+        {{ cat }}
+      </button>
+    </div>
+
+    <div class="integrations-grid">
+      <mat-card class="integration-card" *ngFor="let integration of filtered">
+        <div class="integration-icon" [style.background]="integration.color + '1a'" [style.color]="integration.color">
+          <mat-icon>{{ integration.icon }}</mat-icon>
+        </div>
+        <div class="integration-info">
+          <div class="integration-top">
+            <h3>{{ integration.name }}</h3>
+            <span class="category-chip">{{ integration.category }}</span>
+          </div>
+          <p>{{ integration.description }}</p>
+        </div>
+        <div class="integration-status">
+          <span class="status-dot"></span>
+          Conectada
+        </div>
+      </mat-card>
+    </div>
+  </section>
+
+  <section class="cta-banner">
+    <div>
+      <h2>¿No encuentras tu herramienta?</h2>
+      <p>Nuestra API abierta te permite construir cualquier integración en minutos.</p>
+    </div>
+    <a routerLink="/contact" mat-raised-button color="primary">Hablar con ventas</a>
+  </section>
+</div>

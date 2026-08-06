@@ -1,0 +1,1029 @@
+@import '@angular/material/prebuilt-themes/azure-blue.css';
+:root {
+  --primary: #075E54;
+  --primary-light: #0B6E63;
+  --primary-dark: #053d37;
+  --secondary: #25D366;
+  --secondary-light: #6fcf97;
+  --text-on-primary: #ffffff;
+  --text-on-secondary: #052e1f;
+  --accent: #06B6D4;
+  --background: #f0f2f5;
+  --surface: #ffffff;
+  --surface-hover: #f8fafc;
+  --surface-alt: #f8fafc;
+  --text-primary: #1a1a2e;
+  --text-secondary: #64748b;
+  --text-muted: #6b7280;
+  --border: #e2e8f0;
+  --border-light: #f1f5f9;
+  --error: #dc2626;
+  --error-bg: #fef2f2;
+  --success: #15803d;
+  --success-bg: #f0fdf4;
+  --warning: #b45309;
+  --warning-bg: #fffbeb;
+  --info: #1d4ed8;
+  --info-bg: #eff6ff;
+
+  --sidebar-width: 260px;
+  --sidebar-collapsed: 72px;
+  --header-height: 64px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 350ms ease;
+}
+
+/* =====================================================================
+   Dark Mode: se activa con data-theme="dark" sobre <html>
+   ===================================================================== */
+html[data-theme='dark'] {
+  color-scheme: dark;
+
+  --primary: #25D366;
+  --primary-light: #4ade80;
+  --primary-dark: #0e7a5f;
+  --secondary: #25D366;
+  --secondary-light: #6fcf97;
+  --text-on-primary: #052e1f;
+  --text-on-secondary: #052e1f;
+  --accent: #22d3ee;
+  --background: #0b1220;
+  --surface: #111a2c;
+  --surface-hover: #1a2740;
+  --surface-alt: #0f1a33;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #94a3b8;
+  --border: #243248;
+  --border-light: #1b2739;
+  --error: #f87171;
+  --error-bg: #3b1f24;
+  --success: #4ade80;
+  --success-bg: #12261c;
+  --warning: #fbbf24;
+  --warning-bg: #33260f;
+  --info: #60a5fa;
+  --info-bg: #12273f;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.45), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.35);
+
+  ::-webkit-scrollbar-thumb {
+    background: #334155;
+
+    &:hover {
+      background: #475569;
+    }
+  }
+
+  ::selection {
+    background: rgba(37, 211, 102, 0.25);
+    color: #f1f5f9;
+  }
+
+  .skeleton,
+  .skeleton-line,
+  .skeleton-avatar,
+  .skeleton-icon,
+  .skeleton-pill {
+    background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%) !important;
+    background-size: 200% 100% !important;
+  }
+
+  /* Overrides Material (M3) para superficies oscuras */
+  --mat-app-background-color: var(--background);
+  --mat-app-surface-color: var(--surface);
+  --mat-app-text-color: var(--text-primary);
+  --mat-app-on-surface: var(--text-primary);
+  --mat-app-on-surface-variant: var(--text-secondary);
+  --mat-app-on-surface-subtle: var(--text-muted);
+  --mat-app-outline-variant: var(--border);
+  --mat-app-outline: var(--border);
+
+  .mat-mdc-card {
+    background: var(--surface);
+    color: var(--text-primary);
+  }
+
+  .mat-mdc-dialog-container .mdc-dialog__surface {
+    background: var(--surface);
+    color: var(--text-primary);
+  }
+
+  /* Header dark mode fix (global, avoids view encapsulation issues) */
+  .header {
+    background: rgba(17, 26, 44, 0.85);
+  }
+
+  .mat-mdc-menu-panel,
+  .mat-mdc-select-panel,
+  .mat-datepicker-content .mat-calendar,
+  .mat-mdc-autocomplete-panel {
+    background: var(--surface) !important;
+    color: var(--text-primary) !important;
+    --mat-select-panel-background-color: var(--surface);
+    --mat-select-disabled-trigger-text-color: var(--text-secondary);
+    --mat-option-label-text-color: var(--text-primary);
+    --mat-option-hover-state-label-text-color: var(--text-primary);
+    --mat-option-focus-state-label-text-color: var(--text-primary);
+    --mat-option-selected-state-label-text-color: var(--text-primary);
+    --mat-option-active-state-label-text-color: var(--text-primary);
+    --mat-optgroup-label-text-color: var(--text-secondary);
+  }
+
+  .mat-mdc-menu-panel .mat-mdc-menu-item,
+  .mat-mdc-option {
+    color: var(--text-primary) !important;
+
+    &:hover,
+    &.mat-mdc-option-active {
+      background: var(--surface-hover) !important;
+    }
+  }
+
+  /* Select: opción seleccionada/activa legible sobre superficie oscura */
+  .mat-mdc-option {
+    --mat-option-selected-state-layer-color: rgba(37, 211, 102, 0.16);
+    --mat-option-selected-state-label-text-color: var(--text-primary);
+    --mat-option-hover-state-layer-color: rgba(148, 163, 184, 0.14);
+    --mat-option-focus-state-layer-color: rgba(148, 163, 184, 0.12);
+
+    &.mat-mdc-option-selected,
+    &.mdc-list-item--selected {
+      color: var(--text-primary) !important;
+
+      .mat-pseudo-checkbox,
+      .mat-pseudo-checkbox::after {
+        color: var(--primary);
+      }
+    }
+  }
+
+  /* Select (cerrado): el valor mostrado y la flecha siempre claros */
+  .mat-mdc-form-field .mat-mdc-select-value-text,
+  .mat-mdc-form-field.mat-focused .mat-mdc-select-value-text,
+  .mat-mdc-form-field:hover .mat-mdc-select-value-text {
+    color: var(--text-primary) !important;
+  }
+
+  .mat-mdc-form-field .mat-mdc-select-arrow {
+    color: var(--text-secondary) !important;
+  }
+
+  /* Radios: texto del label claro */
+  .mat-mdc-radio-button {
+    --mat-radio-label-text-color: var(--text-primary);
+    --mdc-form-field-label-text-color: var(--text-primary);
+    --mat-radio-hover-state-layer-color: rgba(148, 163, 184, 0.12);
+  }
+
+  /* Checkbox: label y caja claros (evita que hover/check oscurezcan el texto) */
+  .mat-mdc-checkbox {
+    --mat-checkbox-label-text-color: var(--text-primary);
+    --mdc-form-field-label-text-color: var(--text-primary);
+    --mdc-checkbox-unselected-icon-color: var(--text-secondary);
+    --mdc-checkbox-unselected-hover-icon-color: var(--text-primary);
+    --mdc-checkbox-unselected-focus-icon-color: var(--text-primary);
+    --mat-checkbox-hover-state-layer-color: rgba(148, 163, 184, 0.12);
+
+    .mdc-form-field > label {
+      color: var(--text-primary);
+    }
+  }
+
+  /* Slide toggle: label claro */
+  .mat-mdc-slide-toggle {
+    --mat-slide-toggle-label-text-color: var(--text-primary);
+    --mdc-form-field-label-text-color: var(--text-primary);
+  }
+
+  /* Filas de tablas: hover que aclara la superficie en vez de oscurecerla */
+  .mat-mdc-table .mat-mdc-row:hover {
+    background: var(--surface-hover);
+  }
+
+  /* Expansion panels (grupos / ayuda): superficie oscura y texto claro */
+  .mat-expansion-panel {
+    background: var(--surface);
+    color: var(--text-primary);
+    --mat-expansion-container-background-color: var(--surface);
+    --mat-expansion-container-text-color: var(--text-primary);
+    --mat-expansion-header-text-color: var(--text-primary);
+    --mat-expansion-header-description-color: var(--text-secondary);
+    --mat-expansion-header-indicator-color: var(--text-secondary);
+
+    .mat-expansion-panel-header {
+      color: var(--text-primary);
+
+      .mat-expansion-panel-header-title {
+        color: var(--text-primary);
+      }
+
+      .mat-expansion-panel-header-description {
+        color: var(--text-secondary);
+      }
+    }
+  }
+
+  /* Títulos de diálogos y tarjetas siempre legibles */
+  .mat-mdc-dialog-title,
+  .mat-mdc-card-title {
+    color: var(--text-primary);
+  }
+
+  .mat-mdc-card-subtitle {
+    color: var(--text-secondary);
+  }
+
+  /* Iconos de cabecera de diálogos con fondo verde en modo oscuro */
+  .dialog-icon {
+    background: var(--success-bg);
+    color: var(--success);
+
+    mat-icon {
+      color: inherit;
+    }
+  }
+
+  /* Formularios tipo panel de pago/administración */
+  .payment-form,
+  .saas-key-form {
+    background: var(--surface-alt);
+    border-color: var(--border);
+  }
+
+  .mat-mdc-form-field .mdc-text-field {
+    background: var(--surface) !important;
+  }
+
+  .mat-mdc-form-field .mat-mdc-input-element,
+  .mat-mdc-form-field textarea,
+  .mat-mdc-form-field .mat-mdc-select-value-text,
+  .mat-mdc-form-field .mdc-floating-label,
+  .mat-mdc-form-field .mat-mdc-select-arrow {
+    color: var(--text-primary);
+    caret-color: var(--primary);
+  }
+
+  .mat-mdc-form-field .mdc-text-field mat-icon[matPrefix],
+  .mat-mdc-form-field .mdc-text-field mat-icon[matSuffix] {
+    color: var(--text-secondary);
+  }
+
+  .mat-mdc-form-field .mdc-text-field--outlined .mdc-floating-label--float-above {
+    color: var(--text-secondary);
+  }
+
+  /* En hover el tema claro aplica colores oscuros sobre superficie oscura:
+     forzamos label/select a quedar claros */
+  .mat-mdc-form-field:hover:not(.mat-form-field-disabled) .mdc-floating-label,
+  .mat-mdc-form-field:not(.mat-form-field-disabled) .mdc-floating-label {
+    color: var(--text-secondary);
+  }
+
+  .mat-mdc-form-field.mat-focused .mdc-floating-label {
+    color: var(--primary) !important;
+  }
+
+  .mat-mdc-form-field:hover .mat-mdc-select-value-text,
+  .mat-mdc-form-field:hover .mat-mdc-select-arrow {
+    color: var(--text-primary);
+  }
+
+  /* Select deshabilitado (grupos): el texto sigue siendo legible */
+  .mat-mdc-form-field.mat-form-field-disabled .mat-mdc-select-value-text,
+  .mat-mdc-form-field .mat-mdc-select-disabled .mat-mdc-select-value-text {
+    color: var(--text-secondary) !important;
+    -webkit-text-fill-color: var(--text-secondary);
+  }
+
+  /* Selector de fecha nativo: icono claro sobre el campo oscuro */
+  input[type='date']::-webkit-calendar-picker-indicator {
+    filter: invert(1) brightness(1.4);
+    cursor: pointer;
+  }
+
+  .mat-mdc-table {
+    .mat-mdc-header-cell,
+    .mat-mdc-cell {
+      color: var(--text-primary);
+    }
+  }
+
+  .mat-mdc-chip {
+    --mdc-chip-elevated-container-color: var(--surface-hover);
+    --mdc-chip-label-text-color: var(--text-primary);
+  }
+
+  .mat-mdc-tab .mdc-tab__text-label {
+    color: var(--text-secondary);
+  }
+
+  .mat-mdc-paginator {
+    color: var(--text-secondary);
+  }
+
+  .mat-mdc-snack-bar-container {
+    --mdc-snackbar-container-color: #1f2937;
+    --mdc-snackbar-supporting-text-color: #f1f5f9;
+  }
+
+  .mat-mdc-icon-button:not(.mat-mdc-button-disabled) {
+    color: var(--text-secondary);
+  }
+
+  .mat-mdc-raised-button.mat-primary:hover,
+  .mat-mdc-unelevated-button.mat-primary:hover {
+    --mdc-protected-button-container-color: var(--primary);
+    --mdc-filled-button-container-color: var(--primary);
+  }
+
+  .mat-mdc-progress-spinner circle,
+  .mat-progress-spinner circle {
+    stroke: var(--primary);
+  }
+
+  /* Estados de chips / badges en modo oscuro */
+  .status-badge.draft,
+  .status-badge.inactive,
+  .status-badge.disconnected,
+  .status-disconnected {
+    background: #1e293b;
+    color: #cbd5e1;
+  }
+
+  .status-badge.scheduled,
+  .status-badge.connecting,
+  .status-badge.qrcoded,
+  .status-connecting {
+    background: #1e2a44;
+    color: #93c5fd;
+  }
+
+  .status-badge.sending,
+  .status-badge.partial,
+  .status-badge.pending,
+  .status-partial,
+  .status-overdue {
+    background: #3a2e16;
+    color: #fcd34d;
+  }
+
+  .status-badge.sent,
+  .status-badge.active,
+  .status-badge.connected,
+  .status-sent,
+  .status-active {
+    background: #122b1f;
+    color: #6ee7b7;
+  }
+
+  .status-badge.failed,
+  .status-failed {
+    background: #3b1f24;
+    color: #fca5a5;
+  }
+
+  /* Tarjetas de autenticación: se oscurecen con el tema */
+  .login-card {
+    background: rgba(17, 26, 44, 0.92);
+  }
+
+  /* Estadísticas con tarjeta blanca */
+  .stat-card {
+    box-shadow: none;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--background);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+
+  &:hover {
+    background: #94a3b8;
+  }
+}
+
+::selection {
+  background: rgba(7, 94, 84, 0.15);
+  color: var(--primary-dark);
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+
+  &:hover {
+    color: var(--primary-light);
+  }
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input, textarea, select {
+  font-family: inherit;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.mat-mdc-card {
+  box-shadow: var(--shadow-sm) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  transition: all var(--transition-normal);
+}
+
+.mat-mdc-card:hover {
+  box-shadow: var(--shadow-md) !important;
+}
+
+.mat-mdc-form-field {
+  .mdc-text-field {
+    background: var(--surface) !important;
+    border-radius: var(--radius-sm) !important;
+  }
+
+  .mdc-text-field--outlined {
+    --mdc-outlined-text-field-outline-color: var(--border);
+    --mdc-outlined-text-field-hover-outline-color: var(--primary);
+    --mdc-outlined-text-field-focus-outline-color: var(--primary);
+    --mdc-outlined-text-field-outline-width: 1.5px;
+  }
+
+  .mat-mdc-form-field-focus-overlay {
+    background: transparent !important;
+  }
+}
+
+.mat-mdc-raised-button.mat-primary {
+  --mdc-protected-button-container-color: var(--primary);
+  --mdc-protected-button-label-text-color: var(--text-on-primary);
+  border-radius: var(--radius-sm) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+  transition: all var(--transition-fast) !important;
+
+  &:hover {
+    --mdc-protected-button-container-color: var(--primary-dark) !important;
+  }
+}
+
+.mat-mdc-stroked-button.mat-primary {
+  --mdc-outlined-button-outline-color: var(--primary);
+  --mdc-outlined-button-label-text-color: var(--primary);
+  border-radius: var(--radius-sm) !important;
+  font-weight: 600 !important;
+}
+
+.mat-mdc-unelevated-button.mat-primary {
+  --mdc-filled-button-container-color: var(--primary);
+  --mdc-filled-button-label-text-color: var(--text-on-primary);
+  border-radius: var(--radius-sm) !important;
+}
+
+.mat-mdc-icon-button {
+  transition: all var(--transition-fast) !important;
+  border-radius: 50%;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.05) !important;
+  }
+}
+
+/* =====================================================================
+   Overrides globales de Material (styles.scss ya es global: no usar
+   ::ng-deep, que se emite tal cual en el CSS de producción y el navegador
+   descarta esos selectores)
+   ===================================================================== */
+
+.mat-mdc-tab-group {
+  .mat-mdc-tab-header {
+    border-bottom: 1px solid var(--border);
+  }
+  .mdc-tab-indicator__content--underline {
+    border-color: var(--primary) !important;
+  }
+  .mat-mdc-tab.mdc-tab--active {
+    .mdc-tab__text-label {
+      color: var(--primary) !important;
+      font-weight: 600;
+    }
+  }
+}
+
+.mat-mdc-chip {
+  font-size: 12px;
+  height: 28px;
+  border-radius: 6px !important;
+}
+
+.mat-mdc-table {
+  background: transparent !important;
+
+  .mat-mdc-header-row {
+    background: var(--surface-hover);
+  }
+
+  .mat-mdc-header-cell {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom-color: var(--border) !important;
+  }
+
+  .mat-mdc-cell {
+    font-size: 14px;
+    color: var(--text-primary);
+    border-bottom-color: var(--border-light) !important;
+  }
+
+  .mat-mdc-row {
+    transition: background var(--transition-fast);
+
+    &:hover {
+      background: rgba(7, 94, 84, 0.03);
+    }
+
+    &:last-child .mat-mdc-cell {
+      border-bottom: none;
+    }
+  }
+}
+
+.mat-mdc-paginator {
+  border-top: 1px solid var(--border);
+  background: transparent !important;
+}
+
+.mat-mdc-menu-panel {
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+  border: 1px solid var(--border) !important;
+  margin-top: 4px;
+}
+
+.mat-mdc-dialog-container .mdc-dialog__surface {
+  border-radius: var(--radius-lg) !important;
+  padding: 0 !important;
+}
+
+.mat-mdc-snack-bar-container {
+  --mdc-snackbar-container-color: #1a1a2e;
+  --mdc-snackbar-supporting-text-color: white;
+  border-radius: var(--radius-md) !important;
+}
+
+/* ========== Clases de utilidad ========== */
+
+.page-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  animation: pageEnter 0.3s ease-out;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .page-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+}
+
+.section-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0;
+    }
+  }
+}
+
+.filters-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+
+  .mat-mdc-form-field {
+    margin-bottom: 0;
+  }
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px;
+  text-align: center;
+
+  .empty-icon {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--surface-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+
+    mat-icon {
+      font-size: 32px;
+      width: 32px;
+      height: 32px;
+      color: var(--text-muted);
+    }
+  }
+
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 8px;
+  }
+
+  p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0 0 20px;
+    max-width: 360px;
+    line-height: 1.6;
+  }
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+
+  &.draft { background: #f3f4f6; color: #374151; }
+  &.scheduled { background: #dbeafe; color: #1e40af; }
+  &.sending { background: #fef3c7; color: #92400e; }
+  &.sent { background: #d1fae5; color: #065f46; }
+  &.failed { background: #fee2e2; color: #991b1b; }
+  &.partial { background: #fef3c7; color: #92400e; }
+
+  &.active { background: #d1fae5; color: #065f46; }
+  &.inactive { background: #f3f4f6; color: #374151; }
+  &.pending { background: #fef3c7; color: #92400e; }
+  &.connected { background: #d1fae5; color: #065f46; }
+  &.disconnected { background: #fee2e2; color: #991b1b; }
+}
+
+/* ========== Utilidades de tablas / listas ========== */
+
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+
+  .mat-mdc-table {
+    width: 100%;
+    background: transparent;
+  }
+
+  .mat-mdc-row {
+    &:hover {
+      background: var(--surface-hover);
+    }
+  }
+
+  .num-cell {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .muted {
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  .truncate {
+    max-width: 260px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  gap: 16px;
+  color: var(--text-secondary);
+
+  p {
+    margin: 0;
+    font-size: 14px;
+  }
+}
+
+.section-title-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.instance-selector {
+  width: 240px;
+}
+
+.status-sent { background: #d1fae5; color: #065f46; }
+.status-failed { background: #fee2e2; color: #991b1b; }
+.status-partial { background: #fef3c7; color: #92400e; }
+.status-active { background: #d1fae5; color: #065f46; }
+.status-overdue { background: #fee2e2; color: #991b1b; }
+
+
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+.skeleton-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+
+  .skeleton-line {
+    height: 14px;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 6px;
+    margin-bottom: 12px;
+
+    &.w-25 { width: 25%; }
+    &.w-50 { width: 50%; }
+    &.w-75 { width: 75%; }
+    &.w-100 { width: 100%; }
+    &.h-24 { height: 24px; }
+    &.h-32 { height: 32px; }
+    &.h-48 { height: 48px; }
+  }
+
+  .skeleton-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+}
+
+/* ========== Animaciones ========== */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes fadeInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.fade-in-up {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+.scale-in {
+  animation: scaleIn 0.25s ease-out;
+}
+
+/* ========== Responsivo ========== */
+
+@media (max-width: 768px) {
+  .page-container {
+    padding: 0;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .section-card {
+    padding: 16px;
+    border-radius: var(--radius-sm);
+  }
+
+  .filters-row {
+    width: 100%;
+
+    .mat-mdc-form-field {
+      width: 100%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ========== Responsivo global ========== */
+
+/* Diálogos: a pantalla (casi) completa en móvil */
+@media (max-width: 640px) {
+  .custom-dialog-panel {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+
+    .mdc-dialog__surface {
+      max-height: calc(100vh - 40px) !important;
+    }
+  }
+
+  .mat-mdc-dialog-container .mdc-dialog__surface {
+    border-radius: var(--radius-md) !important;
+  }
+}
+
+/* Formularios en columnas: una sola columna en pantallas pequeñas */
+@media (max-width: 768px) {
+  .mat-mdc-form-field {
+    width: 100% !important;
+  }
+
+  .form-grid,
+  .dialog-form-grid,
+  .form-row {
+    grid-template-columns: 1fr !important;
+    flex-direction: column !important;
+  }
+
+  .page-header {
+    .header-actions {
+      width: 100%;
+
+      button {
+        flex: 1;
+      }
+    }
+  }
+}
+
+/* Evitar scroll horizontal por contenido no ajustado */
+body {
+  overflow-x: hidden;
+}
+
+@media (max-width: 1024px) {
+  .content-wrapper {
+    padding: 16px;
+  }
+}

@@ -1,0 +1,335 @@
+.careers-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  animation: pageEnter 0.4s ease-out;
+}
+
+.careers-hero {
+  text-align: center;
+  padding: 10px 0 48px;
+
+  .careers-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary);
+    margin-bottom: 16px;
+
+    mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  h1 {
+    font-size: clamp(30px, 4vw, 42px);
+    font-weight: 800;
+    margin: 0 auto 16px;
+    max-width: 700px;
+    letter-spacing: -0.02em;
+  }
+
+  p {
+    font-size: 17px;
+    color: var(--text-secondary);
+    max-width: 640px;
+    margin: 0 auto 28px;
+    line-height: 1.7;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 36px;
+  }
+
+  .hero-stats {
+    display: flex;
+    gap: 32px;
+    justify-content: center;
+    flex-wrap: wrap;
+
+    span {
+      font-size: 14px;
+      color: var(--text-secondary);
+
+      strong {
+        font-size: 22px;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin-right: 6px;
+      }
+    }
+  }
+}
+
+.section-badge {
+  display: inline-block;
+  padding: 5px 14px;
+  background: var(--success-bg);
+  color: var(--success);
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+
+  &.center {
+    display: block;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+}
+
+.section-title {
+  text-align: center;
+  font-size: 30px;
+  font-weight: 800;
+  margin: 0 0 36px;
+  letter-spacing: -0.02em;
+}
+
+.benefits-section {
+  margin-bottom: 56px;
+}
+
+.benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.benefit-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 26px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .benefit-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: var(--success-bg);
+    color: var(--secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+
+    mat-icon {
+      font-size: 22px;
+      width: 22px;
+      height: 22px;
+    }
+  }
+
+  h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  p {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+}
+
+.culture-section {
+  margin-bottom: 56px;
+
+  .culture-quote {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+    border-radius: var(--radius-xl);
+    padding: 48px;
+    text-align: center;
+    color: var(--text-on-primary);
+
+    .quote-icon {
+      font-size: 40px;
+      width: 40px;
+      height: 40px;
+      opacity: 0.5;
+      margin-bottom: 12px;
+    }
+
+    blockquote {
+      font-size: 22px;
+      font-weight: 600;
+      line-height: 1.5;
+      margin: 0 auto 16px;
+      max-width: 640px;
+      color: var(--text-on-primary);
+    }
+
+    cite {
+      font-style: normal;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+  }
+}
+
+.jobs-section {
+  margin-bottom: 32px;
+}
+
+.jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.job-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: all 0.3s ease;
+
+  &:hover {
+    border-color: var(--secondary);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+
+    .job-cta {
+      background: var(--secondary);
+      color: var(--text-on-secondary);
+    }
+  }
+
+  .job-left {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .job-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    mat-icon {
+      font-size: 22px;
+      width: 22px;
+      height: 22px;
+    }
+  }
+
+  .job-info {
+    min-width: 0;
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .job-meta {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+
+      span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+
+      mat-icon {
+        font-size: 15px;
+        width: 15px;
+        height: 15px;
+        color: var(--text-muted);
+      }
+    }
+
+    .job-tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+
+      ::ng-deep .mat-mdc-chip {
+        height: 24px;
+        font-size: 11px;
+        --mdc-chip-elevated-container-color: var(--surface-hover);
+        --mdc-chip-label-text-color: var(--text-secondary);
+      }
+    }
+  }
+
+  .job-cta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 18px;
+    border-radius: 50px;
+    background: var(--surface-hover);
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all 0.3s ease;
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+  }
+}
+
+.jobs-note {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+
+  a {
+    color: var(--secondary);
+    font-weight: 600;
+  }
+}
+
+@media (max-width: 768px) {
+  .job-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .culture-quote blockquote {
+    font-size: 18px;
+  }
+}

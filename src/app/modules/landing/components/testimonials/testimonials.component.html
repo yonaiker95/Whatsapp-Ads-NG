@@ -1,0 +1,47 @@
+<section class="testimonials" id="testimonials" aria-label="Testimonios de clientes">
+  <div class="container">
+    <header class="section-header">
+      <span class="section-badge">Confiado por +500 empresas</span>
+      <h2>Lo que dicen nuestros clientes</h2>
+      <p>Resultados reales de empresas que escalaron sus ventas con WhatsApp Ads</p>
+    </header>
+
+    <div class="testimonials-grid">
+      @for (testimonial of testimonials; track $index) {
+        <mat-card class="testimonial-card" [class.featured]="testimonial.featured"
+                  [style.--card-color]="testimonial.color">
+          <mat-card-content>
+            <div class="card-head">
+              <div class="stars" [attr.aria-label]="'Calificación ' + testimonial.rating + ' estrellas'">
+                @for (star of [1,2,3,4,5]; track $index) {
+                  <mat-icon class="filled" [class.off]="$index >= testimonial.rating">star</mat-icon>
+                }
+              </div>
+              @if (testimonial.result) {
+                <span class="result-badge">
+                  <mat-icon>trending_up</mat-icon>
+                  <span>{{ testimonial.result }}</span>
+                </span>
+              }
+            </div>
+
+            <div class="quote-wrap">
+              <span class="quote-mark" aria-hidden="true">&ldquo;</span>
+              <blockquote class="quote">{{ testimonial.quote }}</blockquote>
+            </div>
+
+            <footer class="author">
+              <div class="avatar" [style.background]="testimonial.color" [style.color]="textColor(testimonial.color)">
+                {{ testimonial.avatar }}
+              </div>
+              <div class="author-info">
+                <cite class="author-name">{{ testimonial.author }}</cite>
+                <p class="author-role">{{ testimonial.role }} &#64; {{ testimonial.company }}</p>
+              </div>
+            </footer>
+          </mat-card-content>
+        </mat-card>
+      }
+    </div>
+  </div>
+</section>

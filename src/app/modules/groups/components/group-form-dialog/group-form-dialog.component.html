@@ -1,0 +1,64 @@
+<div class="dialog-header">
+  <div class="dialog-icon">
+    <mat-icon>edit</mat-icon>
+  </div>
+  <div class="dialog-title">
+    <h2>Editar grupo</h2>
+    <p>Actualiza la información del grupo sincronizado</p>
+  </div>
+</div>
+
+<mat-dialog-content>
+  <div class="form-column">
+    <mat-form-field appearance="outline">
+      <mat-label>Instancia</mat-label>
+      <mat-select [(ngModel)]="formData.instanceId" disabled required>
+        <mat-option *ngFor="let inst of instances" [value]="inst.id">{{ inst.name }}</mat-option>
+      </mat-select>
+      <mat-hint>Los grupos provienen de la instancia conectada</mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Nombre *</mat-label>
+      <input matInput [(ngModel)]="formData.name" placeholder="Nombre del grupo">
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>JID del grupo</mat-label>
+      <input matInput [(ngModel)]="formData.jid" placeholder="grupo@g.us" disabled>
+      <mat-hint>El JID se asigna desde la instancia al sincronizar</mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Descripción</mat-label>
+      <textarea matInput [(ngModel)]="formData.description" rows="3"></textarea>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="tags-field">
+      <mat-label>Etiquetas</mat-label>
+      <mat-chip-grid #tagGrid aria-label="Etiquetas">
+        <mat-chip-row *ngFor="let tag of formData.tags" (removed)="removeTag(tag)">
+          {{ tag }}
+          <button matChipRemove>
+            <mat-icon>cancel</mat-icon>
+          </button>
+        </mat-chip-row>
+        <input
+          placeholder="Agregar etiqueta..."
+          [matChipInputFor]="tagGrid"
+          (matChipInputTokenEnd)="addTag($event)" />
+      </mat-chip-grid>
+      <mat-hint>Usa las etiquetas para clasificar tus grupos en campañas</mat-hint>
+    </mat-form-field>
+
+    <mat-checkbox [(ngModel)]="formData.excluded">Excluir de envíos</mat-checkbox>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="cancel()">Cancelar</button>
+  <button mat-raised-button color="primary" (click)="save()" [disabled]="saving">
+    <mat-progress-spinner diameter="18" *ngIf="saving"></mat-progress-spinner>
+    {{ saving ? 'Guardando...' : 'Guardar' }}
+  </button>
+</mat-dialog-actions>

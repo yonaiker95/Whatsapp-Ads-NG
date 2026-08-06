@@ -1,0 +1,68 @@
+<nav class="navbar" [class.scrolled]="isScrolled" role="navigation" aria-label="Navegación principal">
+  <mat-toolbar class="toolbar">
+    <a class="logo" routerLink="/" aria-label="WhatsApp Ads - Inicio" (click)="closeMenu()">
+      <mat-icon class="logo-icon">chat_bubble</mat-icon>
+      <span class="logo-text">WhatsApp Ads</span>
+    </a>
+
+    <div class="nav-links desktop-only">
+      <a routerLink="#features" class="nav-link" fragment="features">Características</a>
+      <a routerLink="#pricing" class="nav-link" fragment="pricing">Precios</a>
+      <a routerLink="#testimonials" class="nav-link" fragment="testimonials">Testimonios</a>
+    </div>
+
+    <div class="nav-actions desktop-only">
+      <a routerLink="/auth/login" mat-button class="btn-login">Iniciar sesión</a>
+      <a routerLink="/auth/register" mat-raised-button color="primary" class="btn-register">
+        <mat-icon>send</mat-icon>
+        Empezar gratis
+      </a>
+    </div>
+
+    <button
+      mat-icon-button
+      class="theme-btn"
+      (click)="toggleTheme()"
+      aria-label="Cambiar tema"
+      [attr.aria-pressed]="themeService.isDark()"
+    >
+      @if (themeService.isDark()) {
+        <mat-icon>light_mode</mat-icon>
+      } @else {
+        <mat-icon>dark_mode</mat-icon>
+      }
+    </button>
+
+    <button
+      mat-icon-button
+      class="mobile-menu-btn"
+      (click)="toggleMenu()"
+      [attr.aria-expanded]="mobileMenuOpen"
+      aria-controls="landing-mobile-menu"
+      [attr.aria-label]="mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'"
+    >
+      @if (mobileMenuOpen) {
+        <mat-icon>close</mat-icon>
+      } @else {
+        <mat-icon>menu</mat-icon>
+      }
+    </button>
+  </mat-toolbar>
+
+  <div class="menu-backdrop" [class.open]="mobileMenuOpen" (click)="closeMenu()"></div>
+
+  <div id="landing-mobile-menu" class="mobile-menu" [class.open]="mobileMenuOpen">
+    <div class="mobile-menu-inner">
+      <a routerLink="#features" fragment="features" class="mobile-nav-link" (click)="closeMenu()">Características</a>
+      <a routerLink="#pricing" fragment="pricing" class="mobile-nav-link" (click)="closeMenu()">Precios</a>
+      <a routerLink="#testimonials" fragment="testimonials" class="mobile-nav-link" (click)="closeMenu()">Testimonios</a>
+      <div class="mobile-actions">
+        <a routerLink="/auth/login" mat-button class="btn-login" (click)="closeMenu()">Iniciar sesión</a>
+        <a routerLink="/auth/register" mat-raised-button color="primary" class="btn-register" (click)="closeMenu()">
+          <mat-icon>send</mat-icon>
+          Empezar gratis
+        </a>
+      </div>
+    </div>
+  </div>
+</nav>

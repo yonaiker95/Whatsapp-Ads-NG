@@ -1,0 +1,77 @@
+.legal-container { max-width: 800px; margin: 0 auto; animation: pageEnter 0.4s ease-out; }
+
+.legal-header {
+  text-align: center; margin-bottom: 40px;
+  .header-icon { font-size: 48px; width: 48px; height: 48px; color: var(--error); margin-bottom: 12px; }
+  h1 { font-size: 36px; font-weight: 700; color: var(--text-primary); margin: 0 0 8px; }
+  .last-updated { color: var(--text-secondary); font-size: 16px; margin: 0; }
+}
+
+.status-summary {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px 24px; margin-bottom: 32px; flex-wrap: wrap; gap: 8px;
+}
+
+.summary-badge {
+  display: flex; align-items: center; gap: 8px; font-weight: 600;
+  &.operational { color: var(--success); }
+  mat-icon { color: var(--success); }
+}
+
+.summary-update { font-size: 13px; color: var(--text-muted); }
+
+.status-services { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 40px; }
+
+.service-row {
+  display: grid; grid-template-columns: 1fr 120px 100px 80px;
+  padding: 14px 20px; align-items: center; font-size: 14px;
+  &:nth-child(even) { background: var(--surface-hover); }
+  &:hover { background: var(--surface-hover); }
+}
+
+.service-name { display: flex; align-items: center; gap: 10px; font-weight: 500; color: var(--text-primary); }
+
+.status-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  &.operational { background: var(--success); box-shadow: 0 0 6px var(--success-bg); }
+  &.degraded { background: var(--warning); box-shadow: 0 0 6px var(--warning-bg); }
+}
+
+.service-status { font-size: 13px; color: var(--text-secondary); }
+.service-uptime { font-size: 13px; color: var(--text-muted); }
+.service-latency { font-size: 13px; color: var(--text-secondary); text-align: right; font-family: monospace; }
+
+section { margin-bottom: 40px; }
+h2 { font-size: 20px; font-weight: 600; color: var(--text-primary); margin: 0 0 16px; }
+
+.incident-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px; margin-bottom: 12px;
+}
+
+.incident-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.incident-badge { font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 4px;
+  &.investigating { background: var(--warning-bg); color: var(--warning); }
+  &.resolved { background: var(--success-bg); color: var(--success); }
+}
+.incident-date { font-size: 13px; color: var(--text-muted); }
+
+.incident-card h3 { font-size: 15px; font-weight: 600; color: var(--text-primary); margin: 0 0 6px; }
+.incident-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.6; margin: 0; }
+
+.status-subscribe {
+  text-align: center; background: linear-gradient(135deg, var(--error), var(--error));
+  border-radius: 16px; padding: 40px 32px; color: white;
+  mat-icon { font-size: 40px; width: 40px; height: 40px; margin-bottom: 8px; opacity: 0.9; }
+  h2 { color: white; }
+  p { color: rgba(255,255,255,0.8); margin-bottom: 20px; font-size: 15px; }
+  .subscribe-btn { background: var(--surface) !important; color: var(--error) !important; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+}
+
+@media (max-width: 768px) {
+  .legal-main { padding: 100px 16px 40px; }
+  .legal-header h1 { font-size: 28px; }
+  .service-row { grid-template-columns: 1fr 1fr; gap: 4px; }
+  .service-uptime, .service-latency { text-align: left; }
+}

@@ -1,0 +1,124 @@
+<div class="login-page">
+  <div class="login-bg-shapes">
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+    <div class="shape shape-3"></div>
+  </div>
+
+  <div class="login-container">
+    <div class="login-brand">
+      <div class="brand-icon">
+        <mat-icon>chat_bubble</mat-icon>
+      </div>
+      <h1>WhatsApp Ads</h1>
+      <p class="brand-subtitle">Crea tu cuenta y empieza a automatizar</p>
+    </div>
+
+    <mat-card class="login-card">
+      <div class="login-header">
+        <h2>Crear cuenta</h2>
+        <p>Completa el formulario para registrarte</p>
+      </div>
+
+      <form [formGroup]="registerForm" (ngSubmit)="onSubmit()" class="login-form">
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Nombre</mat-label>
+          <input matInput type="text" formControlName="name" autocomplete="name" placeholder="Tu nombre">
+          <mat-icon matPrefix>person</mat-icon>
+          <mat-error *ngIf="registerForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Correo electrónico</mat-label>
+          <input matInput type="email" formControlName="email" autocomplete="email" placeholder="tu@correo.com">
+          <mat-icon matPrefix>email</mat-icon>
+          <mat-error *ngIf="registerForm.get('email')?.hasError('required')">El correo es requerido</mat-error>
+          <mat-error *ngIf="registerForm.get('email')?.hasError('email')">Ingresa un correo válido</mat-error>
+        </mat-form-field>
+
+        <div class="phone-row">
+          <mat-form-field appearance="outline" class="full-width phone-field">
+            <app-country-code-selector
+              matPrefix
+              [(country)]="phoneCountry"
+              (countryChange)="onCountryChange()"
+            ></app-country-code-selector>
+            <mat-label>WhatsApp</mat-label>
+            <input matInput type="tel" formControlName="phone" autocomplete="tel" placeholder="55 1234 5678">
+            <mat-error *ngIf="registerForm.get('phone')?.hasError('required')">El número es requerido</mat-error>
+            <mat-error *ngIf="registerForm.get('phone')?.hasError('pattern')">Ingresa un número válido</mat-error>
+          </mat-form-field>
+          <button
+            mat-flat-button
+            color="accent"
+            type="button"
+            class="send-code-btn"
+            (click)="sendCode()"
+            [disabled]="sendingCode">
+            <mat-spinner diameter="18" *ngIf="sendingCode"></mat-spinner>
+            <span *ngIf="!sendingCode">Enviar código</span>
+          </button>
+        </div>
+        <p class="phone-hint">Validamos tu número enviando un código de 6 dígitos por WhatsApp.</p>
+
+        @if (codeSent) {
+          <div class="code-section">
+            <div class="otp-wrap">
+              <app-otp-input
+                [code]="registerForm.get('code')?.value"
+                [state]="codeState"
+                [disabled]="codeVerified"
+                (codeChange)="onCodeChange($event)"
+                (complete)="verifyCode()"
+              ></app-otp-input>
+            </div>
+            <p class="code-hint">
+              @if (codeVerified) {
+                <mat-icon class="ok-icon">check_circle</mat-icon>
+                Código verificado. Ya puedes crear tu cuenta.
+              } @else {
+                <mat-icon class="ok-icon">check_circle</mat-icon>
+                Enviamos el código a {{ maskedPhone || 'tu WhatsApp' }}. Se verifica automáticamente.
+              }
+              @if (resendCooldown > 0) {
+                <span class="resend-cooldown"> · Reenviar en {{ resendCooldown }}s</span>
+              } @else if (!codeVerified) {
+                <a href="javascript:void(0)" class="resend-link" (click)="resendCode()"> · Reenviar código</a>
+              }
+            </p>
+          </div>
+        }
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Contraseña</mat-label>
+          <input matInput [type]="hidePassword ? 'password' : 'text'" formControlName="password" autocomplete="new-password" placeholder="••••••••">
+          <mat-icon matPrefix>lock</mat-icon>
+          <button mat-icon-button matSuffix type="button" (click)="hidePassword = !hidePassword" tabindex="-1">
+            <mat-icon>{{ hidePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+          </button>
+          <mat-error *ngIf="registerForm.get('password')?.hasError('required')">La contraseña es requerida</mat-error>
+          <mat-error *ngIf="registerForm.get('password')?.hasError('minlength')">Mínimo 6 caracteres</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Confirmar contraseña</mat-label>
+          <input matInput [type]="hideConfirm ? 'password' : 'text'" formControlName="confirmPassword" autocomplete="new-password" placeholder="••••••••">
+          <mat-icon matPrefix>lock</mat-icon>
+          <button mat-icon-button matSuffix type="button" (click)="hideConfirm = !hideConfirm" tabindex="-1">
+            <mat-icon>{{ hideConfirm ? 'visibility_off' : 'visibility' }}</mat-icon>
+          </button>
+          <mat-error *ngIf="registerForm.hasError('mismatch') && registerForm.get('confirmPassword')?.touched">Las contraseñas no coinciden</mat-error>
+        </mat-form-field>
+
+        <button mat-raised-button color="primary" type="submit" class="full-width login-btn" [disabled]="submitting || !codeSent || !codeVerified">
+          <mat-spinner diameter="20" *ngIf="submitting"></mat-spinner>
+          <span *ngIf="!submitting">Crear cuenta</span>
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <p>¿Ya tienes cuenta? <a routerLink="/auth/login">Iniciar sesión</a></p>
+      </div>
+    </mat-card>
+  </div>
+</div>

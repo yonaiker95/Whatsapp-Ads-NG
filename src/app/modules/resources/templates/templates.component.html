@@ -1,0 +1,37 @@
+<div class="legal-container">
+  <div class="legal-header">
+    <mat-icon class="header-icon">view_column</mat-icon>
+    <h1>Plantillas</h1>
+    <p class="last-updated">Descarga y personaliza plantillas profesionales para tus campañas</p>
+  </div>
+
+  <div class="template-filters">
+    <button mat-button [class.active]="!selectedCategory" (click)="filterBy(null)">
+      Todas
+    </button>
+    <button mat-button *ngFor="let cat of categories" [class.active]="selectedCategory === cat" (click)="filterBy(cat)">
+      {{ cat }}
+    </button>
+  </div>
+
+  <div class="templates-grid">
+    <div class="template-card" *ngFor="let t of filteredTemplates">
+      <div class="template-header">
+        <span class="template-category">{{ t.category }}</span>
+        <span class="template-badge premium" *ngIf="t.premium">Premium</span>
+        <span class="template-badge free" *ngIf="!t.premium">Gratis</span>
+      </div>
+      <h3>{{ t.name }}</h3>
+      <p>{{ t.desc }}</p>
+      <div class="template-footer">
+        <span class="downloads">
+          <mat-icon>download</mat-icon> {{ t.downloads }}
+        </span>
+        <button mat-raised-button class="template-btn" [class.premium-btn]="t.premium">
+          <mat-icon>{{ t.premium ? 'lock' : 'download' }}</mat-icon>
+          {{ t.premium ? 'Premium' : 'Descargar' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

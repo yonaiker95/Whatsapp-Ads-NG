@@ -1,0 +1,83 @@
+<footer class="landing-footer" role="contentinfo">
+  <div class="footer-main">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a class="logo" routerLink="/" aria-label="WhatsApp Ads - Inicio">
+            <mat-icon class="logo-icon">chat_bubble</mat-icon>
+            <span class="logo-text">WhatsApp Ads</span>
+          </a>
+          <p class="tagline">La plataforma líder para automatizar tu WhatsApp Business y escalar tus ventas.</p>
+          <div class="social-links">
+            @for (social of socialLinks; track social.label) {
+              <a [href]="social.href" target="_blank" rel="noopener noreferrer" class="social-link" [attr.aria-label]="social.label">
+                <svg class="social-svg" viewBox="0 0 24 24" fill="currentColor">
+                  <path [attr.d]="social.path"></path>
+                </svg>
+              </a>
+            }
+          </div>
+        </div>
+
+        <nav class="footer-links" aria-label="Enlaces del pie de página">
+          @for (group of footerLinkGroups; track group.title) {
+            <div class="link-group">
+              <h4>{{ group.title }}</h4>
+              <ul>
+                @for (link of group.links; track link.label) {
+                  <li>
+                    <a 
+                      [routerLink]="link.href ? [link.href] : ['/']"
+                      [fragment]="link.fragment || null"
+                      [attr.target]="link.external ? '_blank' : null"
+                      [attr.rel]="link.external ? 'noopener noreferrer' : null">
+                      {{ link.label }}
+                    </a>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </nav>
+
+        <div class="footer-cta">
+          <h3>¿Listo para empezar?</h3>
+          <p>Únete a +2,000 empresas que ya automatizan su WhatsApp con nosotros.</p>
+          <a routerLink="/auth/register" mat-raised-button color="primary" class="cta-button">
+            <mat-icon>send</mat-icon>
+            Crear cuenta gratis
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-bottom">
+    <div class="container">
+      <div class="bottom-content">
+        <p class="copyright">© {{ currentYear }} WhatsApp Ads. Todos los derechos reservados.</p>
+
+        <div class="bottom-links">
+          <a routerLink="/privacy">Política de privacidad</a>
+          <a routerLink="/terms">Términos de servicio</a>
+          <a routerLink="/cookies">Política de cookies</a>
+        </div>
+
+        <div class="certifications">
+          <span class="cert-badge">
+            <mat-icon>verified</mat-icon>
+            Meta Business Partner
+          </span>
+          <span class="cert-badge">
+            <mat-icon>security</mat-icon>
+            SOC 2 Type II
+          </span>
+          <span class="cert-badge">
+            <mat-icon>shield</mat-icon>
+            GDPR Compliant
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>

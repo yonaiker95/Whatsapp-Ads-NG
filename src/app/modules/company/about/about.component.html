@@ -1,0 +1,80 @@
+<div class="about-page">
+  <header class="about-hero">
+    <div class="about-hero-inner">
+      <span class="about-badge"><mat-icon>flag</mat-icon> Nuestra historia</span>
+      <h1>Hacemos que el WhatsApp de tu negocio trabaje solo</h1>
+      <p>
+        WhatsApp Ads nació en 2023 cuando nuestro equipo se dio cuenta de que las pymes perdían ventas
+        cada día por no poder responder rápido en el canal donde sus clientes ya estaban. Hoy ayudamos a
+        más de 2,000 empresas a automatizar conversaciones, enviar campañas y escalar sin contratar más gente.
+      </p>
+      <div class="hero-actions">
+        <a routerLink="/careers" mat-raised-button color="primary">
+          <mat-icon>work</mat-icon>
+          Únete al equipo
+        </a>
+        <a routerLink="/contact" mat-stroked-button>
+          <mat-icon>mail</mat-icon>
+          Contactar
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <section class="stats-section">
+    <div class="stat" *ngFor="let stat of stats">
+      <span class="stat-value">{{ stat.value }}</span>
+      <span class="stat-label">{{ stat.label }}</span>
+    </div>
+  </section>
+
+  <section class="mission-section">
+    <div class="mission-text">
+      <span class="section-badge">Misión</span>
+      <h2>Democratizar la automatización de WhatsApp</h2>
+      <p>
+        Creemos que cualquier negocio, sin importar su tamaño, debería poder conversar con sus clientes a escala.
+        Nuestra plataforma combina mensajería confiable, inteligencia artificial y analítica en una sola
+        herramienta que se configura en minutos.
+      </p>
+    </div>
+    <div class="mission-visual">
+      <mat-icon>auto_awesome</mat-icon>
+    </div>
+  </section>
+
+  <section class="values-section">
+    <span class="section-badge center">Nuestros valores</span>
+    <h2 class="values-title">Lo que nos guía cada día</h2>
+    <div class="values-grid">
+      <div class="value-card" *ngFor="let value of values">
+        <div class="value-icon">
+          <mat-icon>{{ value.icon }}</mat-icon>
+        </div>
+        <h3>{{ value.title }}</h3>
+        <p>{{ value.description }}</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="team-section">
+    <span class="section-badge center">Equipo</span>
+    <h2 class="values-title">Las personas detrás de WhatsApp Ads</h2>
+    <div class="team-grid">
+      <div class="team-card" *ngFor="let member of team">
+        <div class="team-avatar" [style.background]="member.color" [style.color]="textColor(member.color)">{{ member.initials }}</div>
+        <h3>{{ member.name }}</h3>
+        <p>{{ member.role }}</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="about-cta">
+    <h2>¿Trabajamos juntos?</h2>
+    <p>Explora nuestras oportunidades laborales o escríbenos para alianzas.</p>
+    <div class="cta-actions">
+      <a routerLink="/careers" mat-raised-button color="primary">Ver vacantes</a>
+      <a routerLink="/press" mat-stroked-button>Kit de prensa</a>
+    </div>
+  </section>
+</div>

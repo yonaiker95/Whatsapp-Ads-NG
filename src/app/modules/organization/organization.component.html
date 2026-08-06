@@ -1,0 +1,272 @@
+<div class="page-container">
+  <div class="page-header">
+    <div>
+      <h1>Organización y equipo</h1>
+      <p class="page-subtitle">Gestiona los datos de tu organización y los miembros que trabajan con ella</p>
+    </div>
+  </div>
+
+  @if (loading) {
+    <div class="loading-wrap">
+      <mat-spinner diameter="40"></mat-spinner>
+    </div>
+  } @else {
+    <mat-tab-group>
+      <mat-tab label="Organización">
+        <div class="tab-body">
+          @if (!org) {
+            <mat-card class="section-card create-card">
+              <mat-card-header>
+                <mat-icon class="card-icon">workspaces</mat-icon>
+                <mat-card-title>Crea tu organización</mat-card-title>
+                <mat-card-subtitle>Agrupa a tu equipo bajo una misma cuenta para gestionar el acceso de forma centralizada.</mat-card-subtitle>
+              </mat-card-header>
+              <mat-card-content>
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Nombre de la organización</mat-label>
+                  <input matInput [(ngModel)]="orgName" name="orgName" placeholder="Ej. Max Clean" />
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Descripción (opcional)</mat-label>
+                  <textarea matInput [(ngModel)]="orgDescription" name="orgDescription" rows="3" placeholder="¿A qué se dedica tu organización?"></textarea>
+                </mat-form-field>
+              </mat-card-content>
+              <mat-card-actions align="end">
+                <button mat-raised-button color="primary" (click)="createOrg()" [disabled]="creatingOrg">
+                  <mat-icon>add_business</mat-icon>
+                  Crear organización
+                </button>
+              </mat-card-actions>
+            </mat-card>
+          } @else {
+            <div class="org-summary-grid">
+              <mat-card class="section-card info-card">
+                <mat-card-header>
+                  <div class="card-avatar"><mat-icon>workspaces</mat-icon></div>
+                  <mat-card-title>{{ org.name }}</mat-card-title>
+                  <mat-card-subtitle *ngIf="org.description">{{ org.description }}</mat-card-subtitle>
+                  <span class="owner-badge" *ngIf="org.isOwner">Tú eres el propietario</span>
+                </mat-card-header>
+                <mat-card-content>
+                  <mat-divider></mat-divider>
+                  <div class="info-row">
+                    <span class="info-label">Miembros</span>
+                    <span class="info-value">{{ memberCount }}</span>
+                  </div>
+                  <div class="info-row" *ngIf="ownerName">
+                    <span class="info-label">Propietario</span>
+                    <span class="info-value">{{ ownerName }}</span>
+                  </div>
+                  <div class="info-row" *ngIf="org.createdAt">
+                    <span class="info-label">Creada</span>
+                    <span class="info-value">{{ formatDate(org.createdAt) }}</span>
+                  </div>
+                </mat-card-content>
+                <mat-card-actions *ngIf="canManage && !editingOrg">
+                  <button mat-stroked-button color="primary" (click)="toggleEdit()">
+                    <mat-icon>edit</mat-icon>
+                    Editar
+                  </button>
+                </mat-card-actions>
+              </mat-card>
+            </div>
+
+            @if (canManage && editingOrg) {
+              <mat-card class="section-card edit-card">
+                <mat-card-header>
+                  <mat-card-title>Editar organización</mat-card-title>
+                </mat-card-header>
+                <mat-card-content>
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Nombre de la organización</mat-label>
+                    <input matInput [(ngModel)]="orgName" name="orgNameEdit" />
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Descripción (opcional)</mat-label>
+                    <textarea matInput [(ngModel)]="orgDescription" name="orgDescriptionEdit" rows="3"></textarea>
+                  </mat-form-field>
+                </mat-card-content>
+                <mat-card-actions align="end">
+                  <button mat-button (click)="toggleEdit()">Cancelar</button>
+                  <button mat-raised-button color="primary" (click)="saveOrg()" [disabled]="savingOrg">
+                    <mat-icon>save</mat-icon>
+                    Guardar cambios
+                  </button>
+                </mat-card-actions>
+              </mat-card>
+            }
+          }
+        </div>
+      </mat-tab>
+
+      <mat-tab label="Equipo">
+        <div class="tab-body">
+          @if (!org) {
+            <div class="empty-hint">
+              <mat-icon>groups</mat-icon>
+              <p>Primero crea tu organización para poder invitar miembros al equipo.</p>
+            </div>
+          } @else {
+            @if (canManage) {
+              <mat-card class="section-card add-member-card">
+                <mat-card-header>
+                  <mat-card-title>Invitar miembro</mat-card-title>
+                  <mat-card-subtitle>Se creará un usuario nuevo con acceso a la cuenta de tu organización.</mat-card-subtitle>
+                </mat-card-header>
+                <mat-card-content>
+                  <div class="add-member-grid">
+                    <mat-form-field appearance="outline">
+                      <mat-label>Nombre</mat-label>
+                      <input matInput [(ngModel)]="memberName" name="memberName" placeholder="Nombre y apellido" />
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>Correo electrónico</mat-label>
+                      <input matInput [(ngModel)]="memberEmail" name="memberEmail" type="email" placeholder="usuario@empresa.com" />
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>Contraseña</mat-label>
+                      <input matInput [(ngModel)]="memberPassword" name="memberPassword" [type]="showPassword ? 'text' : 'password'" minlength="6" />
+                      <button mat-icon-button matSuffix type="button" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+                        <mat-icon>{{ showPassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+                      </button>
+                      <mat-hint>Mínimo 6 caracteres</mat-hint>
+                    </mat-form-field>
+                  </div>
+                  <div class="permissions-section">
+                    <div class="permissions-title">
+                      <mat-icon>manage_accounts</mat-icon>
+                      <span>Permisos del miembro</span>
+                      <mat-hint class="permissions-hint">Sin permisos el miembro solo verá el Dashboard y su perfil.</mat-hint>
+                    </div>
+                    <div class="permissions-grid">
+                      <label class="permission-check" *ngFor="let option of permissionOptions">
+                        <mat-checkbox [checked]="memberPermissions.includes(option.key)" (change)="togglePermission(option.key)">
+                          <span class="permission-check-label">
+                            <mat-icon class="permission-check-icon">{{ option.icon }}</mat-icon>
+                            {{ option.label }}
+                          </span>
+                        </mat-checkbox>
+                      </label>
+                    </div>
+                  </div>
+                </mat-card-content>
+                <mat-card-actions align="end">
+                  <button mat-raised-button color="primary" (click)="addMember()" [disabled]="addingMember">
+                    <mat-icon>person_add</mat-icon>
+                    Añadir miembro
+                  </button>
+                </mat-card-actions>
+              </mat-card>
+            }
+
+            @if (lastAdded) {
+              <mat-card class="section-card credentials-card">
+                <mat-card-header>
+                  <mat-icon class="card-icon">key</mat-icon>
+                  <mat-card-title>Credenciales del nuevo miembro</mat-card-title>
+                  <mat-card-subtitle>Guárdalas y compártelas de forma segura. No volverán a mostrarse.</mat-card-subtitle>
+                </mat-card-header>
+                <mat-card-content>
+                  <div class="credentials-grid">
+                    <div class="credential-item">
+                      <span class="credential-label">Email</span>
+                      <span class="credential-value">{{ lastAdded.email }}</span>
+                    </div>
+                    <div class="credential-item">
+                      <span class="credential-label">Contraseña</span>
+                      <code class="credential-value credential-code">{{ lastAddedPassword }}</code>
+                    </div>
+                  </div>
+                </mat-card-content>
+                <mat-card-actions align="end">
+                  <button mat-stroked-button color="primary" (click)="copyCredentials()">
+                    <mat-icon>content_copy</mat-icon>
+                    Copiar credenciales
+                  </button>
+                </mat-card-actions>
+              </mat-card>
+            }
+
+            <div class="members-header">
+              <h3>Miembros del equipo</h3>
+              <span class="members-count">{{ memberCount }}</span>
+            </div>
+
+            @if (loadingMembers) {
+              <div class="loading-wrap">
+                <mat-spinner diameter="40"></mat-spinner>
+              </div>
+            } @else if (members.length === 0) {
+              <mat-card class="section-card empty-hint">
+                <mat-icon>groups</mat-icon>
+                <p>Aún no hay miembros. Invita a tu primer compañero.</p>
+              </mat-card>
+            } @else {
+              <div class="member-list">
+                <div class="member-row" *ngFor="let member of members">
+                  <div class="member-avatar">{{ member.name.charAt(0) }}</div>
+                  <div class="member-info">
+                    <div class="member-name">
+                      {{ member.name }}
+                      <span class="role-chip" [class.role-owner]="member.role === 'owner'" [class.role-admin]="member.role === 'admin'">
+                        {{ memberRoleLabel(member.role) }}
+                      </span>
+                    </div>
+                    <div class="member-email">{{ member.email }}</div>
+                    <div class="member-created" *ngIf="member.createdAt">Miembro desde {{ formatDate(member.createdAt) }}</div>
+                    <div class="member-permissions" *ngIf="member.role === 'owner'">
+                      <span class="perm-chip perm-chip-all"><mat-icon>verified_user</mat-icon> Todos los permisos</span>
+                    </div>
+                    <div class="member-permissions" *ngIf="member.role !== 'owner' && !editingMemberId && memberHasAnyPermission(member)">
+                      <span class="perm-chip" *ngFor="let key of memberPermissionKeys(member)">
+                        <mat-icon>{{ permissionIcon(key) }}</mat-icon>
+                        {{ permissionLabel(key) }}
+                      </span>
+                    </div>
+                    <div class="member-permissions" *ngIf="member.role !== 'owner' && !editingMemberId && !memberHasAnyPermission(member)">
+                      <span class="perm-chip perm-chip-empty">Sin permisos</span>
+                    </div>
+
+                    @if (editingMemberId === member.id) {
+                      <div class="permissions-editor">
+                        <div class="permissions-title">
+                          <mat-icon>manage_accounts</mat-icon>
+                          <span>Permisos de {{ member.name }}</span>
+                        </div>
+                        <div class="permissions-grid">
+                          <label class="permission-check" *ngFor="let option of permissionOptions">
+                            <mat-checkbox [checked]="editingPermissions.includes(option.key)" (change)="toggleEditingPermission(option.key)">
+                              <span class="permission-check-label">
+                                <mat-icon class="permission-check-icon">{{ option.icon }}</mat-icon>
+                                {{ option.label }}
+                              </span>
+                            </mat-checkbox>
+                          </label>
+                        </div>
+                        <div class="permissions-editor-actions">
+                          <button mat-button (click)="cancelPermissionsEditor()">Cancelar</button>
+                          <button mat-raised-button color="primary" (click)="savePermissions(member)" [disabled]="savingPermissions">
+                            <mat-icon>save</mat-icon>
+                            Guardar permisos
+                          </button>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                  <div class="member-actions" *ngIf="canManage && member.role !== 'owner'">
+                    <button mat-icon-button matTooltip="Editar permisos" (click)="openPermissionsEditor(member)">
+                      <mat-icon color="primary">manage_accounts</mat-icon>
+                    </button>
+                    <button mat-icon-button matTooltip="Eliminar miembro" (click)="removeMember(member)" [disabled]="removingMemberId === member.id">
+                      <mat-icon color="warn">person_remove</mat-icon>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+          }
+        </div>
+      </mat-tab>
+    </mat-tab-group>
+  }
+</div>

@@ -1,0 +1,83 @@
+<div class="careers-page">
+  <header class="careers-hero">
+    <span class="careers-badge"><mat-icon>work</mat-icon> Carreras</span>
+    <h1>Trabaja donde el futuro se escribe en WhatsApp</h1>
+    <p>
+      Somos un equipo remoto, distribuido en 8 países, construyendo la infraestructura de conversación
+      que miles de empresas usan cada día. Buscamos personas que quieran crecer rápido y hacer un impacto real.
+    </p>
+    <div class="hero-actions">
+      <a href="#jobs" mat-raised-button color="primary">
+        <mat-icon>south</mat-icon>
+        Ver vacantes
+      </a>
+      <a routerLink="/about" mat-stroked-button>
+        <mat-icon>groups</mat-icon>
+        Conoce al equipo
+      </a>
+    </div>
+    <div class="hero-stats">
+      <span><strong>25</strong> personas</span>
+      <span><strong>8</strong> países</span>
+      <span><strong>100%</strong> remoto</span>
+      <span><strong>4.9</strong>/5 Glassdoor</span>
+    </div>
+  </header>
+
+  <section class="benefits-section">
+    <span class="section-badge center">Beneficios</span>
+    <h2 class="section-title">Te cuidamos para que des lo mejor</h2>
+    <div class="benefits-grid">
+      <div class="benefit-card" *ngFor="let benefit of benefits">
+        <div class="benefit-icon">
+          <mat-icon>{{ benefit.icon }}</mat-icon>
+        </div>
+        <h3>{{ benefit.title }}</h3>
+        <p>{{ benefit.description }}</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="culture-section">
+    <div class="culture-quote">
+      <mat-icon class="quote-icon">format_quote</mat-icon>
+      <blockquote>
+        "La mejor parte de trabajar aquí es la autonomía. Confiamos en el criterio de cada persona y
+        celebramos los errores cuando se convierten en aprendizaje."
+      </blockquote>
+      <cite>Lucía Paredes — CTO</cite>
+    </div>
+  </section>
+
+  <section class="jobs-section" id="jobs">
+    <span class="section-badge center">Vacantes abiertas</span>
+    <h2 class="section-title">{{ jobs.length }} oportunidades para ti</h2>
+    <div class="jobs-list">
+      <a class="job-card" *ngFor="let job of jobs" routerLink="/contact">
+        <div class="job-left">
+          <div class="job-icon" [style.background]="job.color + '1a'" [style.color]="job.color">
+            <mat-icon>person_outline</mat-icon>
+          </div>
+          <div class="job-info">
+            <h3>{{ job.title }}</h3>
+            <div class="job-meta">
+              <span><mat-icon>category</mat-icon> {{ job.department }}</span>
+              <span><mat-icon>location_on</mat-icon> {{ job.location }}</span>
+              <span><mat-icon>schedule</mat-icon> {{ job.type }}</span>
+            </div>
+            <div class="job-tags">
+              <mat-chip *ngFor="let tag of job.tags">{{ tag }}</mat-chip>
+            </div>
+          </div>
+        </div>
+        <div class="job-cta">
+          <mat-icon>arrow_forward</mat-icon>
+          Postular
+        </div>
+      </a>
+    </div>
+    <p class="jobs-note">
+      ¿No encuentras tu rol? Escríbenos a <a href="mailto:talento@whatsappads.com">talento&#64;whatsappads.com</a>.
+    </p>
+  </section>
+</div>

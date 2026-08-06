@@ -1,0 +1,55 @@
+<section class="pricing" id="pricing">
+  <div class="pricing-header">
+    <div class="badge">Planes transparentes</div>
+    <h2>Elige el plan perfecto para ti</h2>
+    <p>Todos los planes incluyen prueba de 30 días. Sin tarjeta de crédito. Cancela cuando quieras.</p>
+
+    <div class="billing-toggle">
+      <span [class.active]="billingCycle() === 'monthly'" (click)="billingCycle.set('monthly')">Mensual</span>
+      <div class="toggle-switch" [class.yearly]="billingCycle() === 'yearly'" (click)="toggleBilling()">
+        <span class="switch-thumb"></span>
+      </div>
+      <span [class.active]="billingCycle() === 'yearly'" (click)="billingCycle.set('yearly')">
+        Anual
+        <span class="save-badge">Ahorra 20%</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="pricing-grid">
+    <div class="pricing-card" *ngFor="let plan of plans" [class.popular]="plan.popular" [style.--card-color]="plan.color">
+      <div class="card-badge" *ngIf="plan.popular">Más popular</div>
+
+      <div class="card-header">
+        <h3>{{ plan.name }}</h3>
+        <div class="price" *ngIf="plan.priceMonthly > 0">
+          <span class="currency">$</span>
+          <span class="amount">{{ getPrice(plan) }}</span>
+          <span class="period">/mes</span>
+        </div>
+        <div class="price" *ngIf="plan.priceMonthly === 0">
+          <span class="amount">Gratis</span>
+        </div>
+        <p class="plan-description">{{ plan.description }}</p>
+      </div>
+
+      <ul class="features">
+        <li *ngFor="let feature of plan.features; let i = index">
+          <mat-icon class="check-icon">check</mat-icon>
+          <span>{{ feature }}</span>
+        </li>
+      </ul>
+
+      <button mat-raised-button class="cta-button" [color]="plan.popular ? 'primary' : ''" [style.background]="plan.color" [style.color]="textColor(plan.color)" [style.border-color]="plan.color">
+        {{ plan.cta }}
+      </button>
+
+      <p class="plan-note" *ngIf="plan.name === 'Empresarial'">Precio estimado. Contáctanos para cotización exacta.</p>
+    </div>
+  </div>
+
+  <div class="pricing-footer">
+    <mat-divider></mat-divider>
+    <p>¿Necesitas algo personalizado? <a routerLink="/contact">Contáctanos</a> y creamos un plan a tu medida.</p>
+  </div>
+</section>
