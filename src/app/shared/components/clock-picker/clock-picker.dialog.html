@@ -1,0 +1,51 @@
+<h2 mat-dialog-title>
+  <mat-icon class="dialog-icon">schedule</mat-icon>
+  {{ title }}
+</h2>
+<mat-dialog-content>
+  <div class="time-preview">{{ preview }}</div>
+
+  <div class="mode-row">
+    <button mat-button type="button" class="mode-btn" [class.active]="mode === 'hours'" (click)="backToHours()">
+      Hora
+    </button>
+    <span class="mode-separator">:</span>
+    <button mat-button type="button" class="mode-btn" [class.active]="mode === 'minutes'" (click)="goToMinutes()">
+      Minuto
+    </button>
+  </div>
+
+  <div class="clock-wrap">
+    <div class="clock-face">
+      <div class="clock-center"></div>
+      <div class="clock-hand" [style.transform]="handTransform"></div>
+      <button
+        *ngFor="let h of hours"
+        type="button"
+        class="clock-number"
+        [class.selected]="mode === 'hours' && selectedHour === h"
+        [style.transform]="hourPos(h)"
+        (click)="selectHour(h)">
+        {{ h }}
+      </button>
+      <button
+        *ngFor="let m of minutes"
+        type="button"
+        class="clock-number"
+        [class.selected]="mode === 'minutes' && selectedMinute === m"
+        [style.transform]="minutePos(m)"
+        (click)="selectMinute(m)">
+        {{ m }}
+      </button>
+    </div>
+
+    <div class="period-toggle">
+      <button type="button" class="period-btn" [class.active]="period === 'AM'" (click)="togglePeriod()">AM</button>
+      <button type="button" class="period-btn" [class.active]="period === 'PM'" (click)="togglePeriod()">PM</button>
+    </div>
+  </div>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button type="button" (click)="cancel()">Cancelar</button>
+  <button mat-raised-button color="primary" type="button" (click)="confirm()" cdkFocusInitial>Listo</button>
+</mat-dialog-actions>

@@ -104,7 +104,8 @@
     <div class="form-row">
       <mat-form-field appearance="outline">
         <mat-label>Fecha de envío</mat-label>
-        <input matInput [matDatepicker]="datePicker" formControlName="scheduledDate">
+        <input matInput [matDatepicker]="datePicker" formControlName="scheduledDate"
+               readonly (click)="datePicker.open()" placeholder="DD/MM/AAAA">
         <mat-datepicker-toggle matIconSuffix [for]="datePicker"></mat-datepicker-toggle>
         <mat-datepicker #datePicker></mat-datepicker>
         <mat-hint>Deja vacío para envío inmediato</mat-hint>
@@ -112,9 +113,11 @@
 
       <mat-form-field appearance="outline">
         <mat-label>Hora de envío</mat-label>
-        <input matInput [matTimepicker]="timePicker" formControlName="scheduledTime">
-        <mat-timepicker-toggle matIconSuffix [for]="timePicker"></mat-timepicker-toggle>
-        <mat-timepicker #timePicker></mat-timepicker>
+        <input matInput formControlName="scheduledTime" readonly (click)="openClock('scheduledTime', 'Hora de envío')"
+               placeholder="HH:MM">
+        <button mat-icon-button matIconSuffix type="button" (click)="openClock('scheduledTime', 'Hora de envío')">
+          <mat-icon>schedule</mat-icon>
+        </button>
       </mat-form-field>
     </div>
 
@@ -129,16 +132,20 @@
     <div class="form-row" *ngIf="form.get('recurrence')?.value !== 'none'">
       <mat-form-field appearance="outline">
         <mat-label>Hora de inicio</mat-label>
-        <input matInput [matTimepicker]="startTimePicker" formControlName="startTime">
-        <mat-timepicker-toggle matIconSuffix [for]="startTimePicker"></mat-timepicker-toggle>
-        <mat-timepicker #startTimePicker></mat-timepicker>
+        <input matInput formControlName="startTime" readonly (click)="openClock('startTime', 'Hora de inicio')"
+               placeholder="HH:MM">
+        <button mat-icon-button matIconSuffix type="button" (click)="openClock('startTime', 'Hora de inicio')">
+          <mat-icon>schedule</mat-icon>
+        </button>
       </mat-form-field>
 
       <mat-form-field appearance="outline">
         <mat-label>Hora de fin</mat-label>
-        <input matInput [matTimepicker]="endTimePicker" formControlName="endTime">
-        <mat-timepicker-toggle matIconSuffix [for]="endTimePicker"></mat-timepicker-toggle>
-        <mat-timepicker #endTimePicker></mat-timepicker>
+        <input matInput formControlName="endTime" readonly (click)="openClock('endTime', 'Hora de fin')"
+               placeholder="HH:MM">
+        <button mat-icon-button matIconSuffix type="button" (click)="openClock('endTime', 'Hora de fin')">
+          <mat-icon>schedule</mat-icon>
+        </button>
         <mat-error *ngIf="form.hasError('endBeforeStart')">Debe ser posterior a la hora de inicio</mat-error>
       </mat-form-field>
     </div>

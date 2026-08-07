@@ -2,7 +2,7 @@ import { Component, Inject, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
-import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { MatDialogModule, MatDialog, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
@@ -14,10 +14,10 @@ import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { MatDatepickerModule } from '@angular/material/datepicker';
-import { MatNativeDateModule } from '@angular/material/core';
-import { MatTimepickerModule } from '@angular/material/timepicker';
+import { MatNativeDateModule, MAT_DATE_LOCALE } from '@angular/material/core';
 import { Subject, takeUntil } from 'rxjs';
 import { MatChipInputEvent } from '@angular/material/chips';
+import { ClockPickerDialogComponent } from '../../../../shared/components/clock-picker/clock-picker.dialog';
 import { CampaignService } from '../../../../core/services/campaign.service';
 import { InstanceService } from '../../../../core/services/instance.service';
 import { GroupService } from '../../../../core/services/group.service';
@@ -51,8 +51,8 @@ export interface CampaignDialogData {
     MatSnackBarModule,
     MatDatepickerModule,
     MatNativeDateModule,
-    MatTimepickerModule,
   ],
+  providers: [{ provide: MAT_DATE_LOCALE, useValue: 'es-ES' }],
   templateUrl: './campaign-form-dialog.component.html',
   styleUrls: ['./campaign-form-dialog.component.scss'],
 })
@@ -88,6 +88,7 @@ export class CampaignFormDialogComponent implements OnDestroy {
     @Inject(MAT_DIALOG_DATA) data: CampaignDialogData,
     private fb: FormBuilder,
     private dialogRef: MatDialogRef<CampaignFormDialogComponent>,
+    private dialog: MatDialog,
     private campaignService: CampaignService,
     private instanceService: InstanceService,
     private groupService: GroupService,
@@ -276,5 +277,18 @@ export class CampaignFormDialogComponent implements OnDestroy {
   removeTag(tag: string, type: 'tags' | 'excludeTags'): void {
     const current = this.form.get(type)?.value || [];
     this.form.get(type)?.setValue(current.filter((t: string) => t !== tag));
+  }
+
+  openClock(control: string, title: string): void {
+    const current = (this.form.get(control)?.value as string) || '';
+    const dialogRef = this.dialog.open(ClockPickerDialogComponent, {
+      width: '320px',
+      data: { time: current, title },
+    });
+    dialogRef.afterClosed()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((result: string | null) => {
+        if (result) this.form.get(control)?.setValue(result);
+      });
   }
 }
