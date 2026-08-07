@@ -16,7 +16,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Subject, takeUntil } from 'rxjs';
-import { Instance, VERIFICATION_ROLE_LABELS } from '../../../../core/models/instance.model';
+import { Instance } from '../../../../core/models/instance.model';
 import { InstanceService } from '../../../../core/services/instance.service';
 import { InstanceSocketService, SocketMessage } from '../../../../core/services/instance-socket.service';
 import { ConfirmDialogComponent } from '../../../../shared/components/confirm-dialog/confirm-dialog.component';
@@ -31,7 +31,7 @@ import { InstanceFormDialogComponent, InstanceFormDialogData } from '../instance
   styleUrls: ['./instance-list.component.scss'],
 })
 export class InstanceListComponent implements OnInit, OnDestroy {
-  private readonly baseColumns = ['name', 'status', 'verification', 'security', 'phone', 'groupsCount', 'actions'];
+  private readonly baseColumns = ['name', 'status', 'security', 'phone', 'groupsCount', 'actions'];
   instances: Instance[] = [];
   loading = true;
   syncing = false;
@@ -285,10 +285,6 @@ export class InstanceListComponent implements OnInit, OnDestroy {
       qrcoded: 'qr_code',
     };
     return icons[status] || 'help';
-  }
-
-    verificationRoleLabel(role?: string): string {
-    return VERIFICATION_ROLE_LABELS[role || 'all'] || role || 'Todas';
   }
 
   isSecuritySender(instance: Instance): boolean {

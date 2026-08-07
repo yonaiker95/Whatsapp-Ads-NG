@@ -113,16 +113,6 @@
                 </td>
               </ng-container>
 
-              <ng-container matColumnDef="verification">
-                <th mat-header-cell *matHeaderCellDef> Verificación </th>
-                <td mat-cell *matCellDef="let instance" (click)="viewInstance(instance)">
-                  <mat-chip class="verification-chip" selectable="false">
-                    <mat-icon class="status-icon">verified_user</mat-icon>
-                    {{ verificationRoleLabel(instance.verificationRole) }}
-                  </mat-chip>
-                </td>
-              </ng-container>
-
               <ng-container matColumnDef="security">
                 <th mat-header-cell *matHeaderCellDef> Seguridad </th>
                 <td mat-cell *matCellDef="let instance" (click)="viewInstance(instance)">
