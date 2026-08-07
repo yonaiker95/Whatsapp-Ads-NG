@@ -1,9 +1,18 @@
+export interface PriceItem {
+  name: string;
+  price?: string;
+  description?: string;
+}
+
 export interface ChatbotConfig {
   id: string;
   instanceId: string;
   instance?: { name: string };
   isActive: boolean;
   systemPrompt: string;
+  companyInfo?: string;
+  priceList?: PriceItem[];
+  calendar?: string;
   maxTokens: number;
   temperature: number;
   createdAt: string;
@@ -14,6 +23,9 @@ export interface ChatbotConfigFormData {
   instanceId: string;
   isActive: boolean;
   systemPrompt: string;
+  companyInfo?: string;
+  priceList?: PriceItem[];
+  calendar?: string;
   maxTokens: number;
   temperature: number;
 }

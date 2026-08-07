@@ -373,6 +373,12 @@ async function initDb() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+      -- Conocimiento del bot por instancia: el sistema arma el prompt de la IA
+      -- combinando la información de la empresa, la lista de precios y el
+      -- calendario/disponibilidad junto con el comportamiento (system_prompt).
+      ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS company_info TEXT DEFAULT '';
+      ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS price_list JSONB DEFAULT '[]';
+      ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS calendar TEXT DEFAULT '';
       CREATE TABLE IF NOT EXISTS chatbot_paused (
         id TEXT PRIMARY KEY,
         instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE,
@@ -2988,11 +2994,42 @@ function enrichChatbotConfig(r) {
     instanceId: r.instance_id,
     isActive: r.is_active,
     systemPrompt: r.system_prompt,
+    companyInfo: r.company_info || '',
+    priceList: Array.isArray(r.price_list) ? r.price_list : (r.price_list ? JSON.parse(r.price_list) : []),
+    calendar: r.calendar || '',
     maxTokens: r.max_tokens,
     temperature: r.temperature !== null && r.temperature !== undefined ? Number(r.temperature) : 0.7,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+// Arma el prompt de sistema que recibe la IA combinando el comportamiento
+// definido por el usuario (system_prompt) con el conocimiento que alimentó
+// por instancia: información de la empresa, lista de precios y calendario.
+function buildChatbotSystemPrompt(config) {
+  const parts = [];
+  if (config.system_prompt && String(config.system_prompt).trim()) {
+    parts.push(String(config.system_prompt).trim());
+  }
+  const company = (config.company_info || '').trim();
+  if (company) parts.push(`INFORMACIÓN DE LA EMPRESA\n${company}`);
+  const priceList = Array.isArray(config.price_list) ? config.price_list : [];
+  const validPrices = priceList.filter((p) => p && String(p.name || '').trim());
+  if (validPrices.length > 0) {
+    const lines = validPrices.map((p) => {
+      const name = String(p.name || '').trim();
+      const price = String(p.price || '').trim();
+      const description = String(p.description || '').trim();
+      let line = `- ${name}`;
+      if (price) line += `: ${price}`;
+      if (description) line += ` (${description})`;
+      return line;
+    });
+    parts.push(`LISTA DE PRECIOS\n${lines.join('\n')}`);
+  }
+  const calendar = (config.calendar || '').trim();
+  if (calendar) parts.push(`CALENDARIO Y DISPONIBILIDAD\n${calendar}`);
+  return parts.join('\n\n');
 }
 async function getChatbotConfig(res, instanceId, session) {
   const inst = await loadInstanceForUser(instanceId, session);
@@ -3017,20 +3054,26 @@ async function saveChatbotConfig(res, body, session) {
   const existing = await pool.query('SELECT * FROM chatbot_configs WHERE instance_id = $1', [body.instanceId]);
   let result;
   const temperature = body.temperature !== undefined && body.temperature !== null ? body.temperature : 0.7;
+  const priceList = Array.isArray(body.priceList) ? body.priceList : [];
+  const companyInfo = body.companyInfo !== undefined ? body.companyInfo : '';
+  const calendar = body.calendar !== undefined ? body.calendar : '';
   if (existing.rows.length > 0) {
     result = await pool.query(
       `UPDATE chatbot_configs SET is_active = $1, system_prompt = $2, max_tokens = $3,
-       temperature = $4, updated_at = NOW() WHERE instance_id = $5 RETURNING *`,
+       temperature = $4, company_info = $5, price_list = $6, calendar = $7,
+       updated_at = NOW() WHERE instance_id = $8 RETURNING *`,
       [body.isActive !== false, body.systemPrompt || existing.rows[0].system_prompt,
-       body.maxTokens || existing.rows[0].max_tokens, temperature, body.instanceId]
+       body.maxTokens || existing.rows[0].max_tokens, temperature,
+       companyInfo, JSON.stringify(priceList), calendar, body.instanceId]
     );
   } else {
     const id = cuid();
     result = await pool.query(
-      `INSERT INTO chatbot_configs (id, instance_id, is_active, system_prompt, max_tokens, temperature)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      `INSERT INTO chatbot_configs (id, instance_id, is_active, system_prompt, max_tokens, temperature, company_info, price_list, calendar)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [id, body.instanceId, body.isActive !== false,
-       body.systemPrompt || 'Eres un vendedor experto...', body.maxTokens || 200, temperature]
+       body.systemPrompt || 'Eres un vendedor experto...', body.maxTokens || 200, temperature,
+       companyInfo, JSON.stringify(priceList), calendar]
     );
   }
   sendJson(res, 200, { data: enrichChatbotConfig(result.rows[0]), success: true });
@@ -5351,7 +5394,7 @@ async function generateChatbotReply(instance, senderJid, senderName, content) {
         project: settings.project,
       },
       {
-        system: config.system_prompt || 'Eres un asistente amable.',
+        system: buildChatbotSystemPrompt(config) || 'Eres un asistente amable.',
         messages,
         temperature: config.temperature != null ? Number(config.temperature) : 0.7,
         maxTokens: config.max_tokens != null ? Number(config.max_tokens) : 200,

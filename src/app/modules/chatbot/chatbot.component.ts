@@ -16,7 +16,7 @@ import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, takeUntil } from 'rxjs';
 import { ChatbotService } from '../../core/services/chatbot.service';
 import { InstanceService } from '../../core/services/instance.service';
-import { ChatbotConfig, ChatbotPaused } from '../../core/models/chatbot.model';
+import { ChatbotConfig, ChatbotPaused, PriceItem } from '../../core/models/chatbot.model';
 import { Instance } from '../../core/models/instance.model';
 
 @Component({
@@ -55,6 +55,9 @@ Reglas:
   maxTokens = 200;
   temperature = 0.7;
   isActive = false;
+  companyInfo = '';
+  priceList: PriceItem[] = [];
+  calendar = '';
 
   pausedChats: ChatbotPaused[] = [];
   pausedLoading = false;
@@ -98,8 +101,15 @@ Reglas:
           if (config) {
             this.isActive = config.isActive;
             this.systemPrompt = config.systemPrompt;
+            this.companyInfo = config.companyInfo || '';
+            this.priceList = Array.isArray(config.priceList) ? config.priceList.map((p) => ({ ...p })) : [];
+            this.calendar = config.calendar || '';
             this.maxTokens = config.maxTokens;
             this.temperature = config.temperature;
+          } else {
+            this.companyInfo = '';
+            this.priceList = [];
+            this.calendar = '';
           }
           this.configLoading = false;
         },
@@ -120,6 +130,9 @@ Reglas:
         instanceId: this.selectedInstanceId,
         isActive: this.isActive,
         systemPrompt: this.systemPrompt,
+        companyInfo: this.companyInfo,
+        priceList: this.priceList.filter((p) => p && (p.name || '').trim()),
+        calendar: this.calendar,
         maxTokens: this.maxTokens,
         temperature: this.temperature,
       })
@@ -174,5 +187,17 @@ Reglas:
         this.snackBar.open(err?.error?.error || 'Error al eliminar la conversación', 'Cerrar', { duration: 5000 });
       },
     });
+  }
+
+  addPriceItem(): void {
+    this.priceList.push({ name: '', price: '', description: '' });
+  }
+
+  removePriceItem(index: number): void {
+    this.priceList.splice(index, 1);
+  }
+
+  trackPriceItem(index: number, item: PriceItem): string {
+    return index + (item.name || '') + (item.price || '');
   }
 }

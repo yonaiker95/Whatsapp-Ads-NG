@@ -42,14 +42,72 @@
           <mat-card-header>
             <mat-card-title>
               <mat-icon>smart_toy</mat-icon>
-              Prompt del sistema
+              Conocimiento del bot
+            </mat-card-title>
+            <mat-card-subtitle>La información que alimenta a tu instancia: el bot la usará al responder</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div class="knowledge-section">
+              <h3>Información de la empresa</h3>
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Empresa, ubicación, contacto, servicios...</mat-label>
+                <textarea matInput rows="3" [(ngModel)]="companyInfo"
+                          placeholder="Ej: Panadería Delicias, Av. Principal 123, Caracas. Teléfono +58 412 555 0000. Abrimos Lun-Sáb de 7am a 8pm."></textarea>
+                <mat-hint>Nombre, horario, dirección, teléfono, redes... todo lo que el bot debe saber de tu negocio</mat-hint>
+              </mat-form-field>
+            </div>
+
+            <div class="knowledge-section">
+              <h3>Lista de precios</h3>
+              <div class="price-list">
+                <div class="price-row" *ngFor="let item of priceList; let i = index; trackBy: trackPriceItem">
+                  <mat-form-field appearance="outline" class="price-name">
+                    <mat-label>Producto / servicio</mat-label>
+                    <input matInput [(ngModel)]="item.name" placeholder="Ej: Pan integral 500g">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="price-value">
+                    <mat-label>Precio</mat-label>
+                    <input matInput [(ngModel)]="item.price" placeholder="Ej: 3,50 $">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="price-desc">
+                    <mat-label>Descripción (opcional)</mat-label>
+                    <input matInput [(ngModel)]="item.description" placeholder="Ej: Elaboración diaria">
+                  </mat-form-field>
+                  <button mat-icon-button type="button" (click)="removePriceItem(i)" aria-label="Eliminar producto">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </div>
+              </div>
+              <button mat-stroked-button type="button" (click)="addPriceItem()">
+                <mat-icon>add</mat-icon>
+                Agregar producto
+              </button>
+            </div>
+
+            <div class="knowledge-section">
+              <h3>Calendario y disponibilidad</h3>
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Disponibilidad, citas, horarios especiales...</mat-label>
+                <textarea matInput rows="3" [(ngModel)]="calendar"
+                          placeholder="Ej: Los lunes no hay atención a domicilio. Las entregas se coordinan entre 2pm y 6pm. Para citas con más de 48h de anticipación."></textarea>
+                <mat-hint>Horarios de atención, días no laborables, condiciones de entrega o citas</mat-hint>
+              </mat-form-field>
+            </div>
+          </mat-card-content>
+        </mat-card>
+
+        <mat-card class="config-card" appearance="outlined">
+          <mat-card-header>
+            <mat-card-title>
+              <mat-icon>psychology</mat-icon>
+              Cómo debe comportarse el bot
             </mat-card-title>
           </mat-card-header>
           <mat-card-content>
             <mat-form-field appearance="outline" class="full-width">
-              <mat-label>Instrucciones para la IA</mat-label>
+              <mat-label>Comportamiento, tono y reglas</mat-label>
               <textarea matInput rows="8" [(ngModel)]="systemPrompt"></textarea>
-              <mat-hint>Define el comportamiento, tono y reglas del chatbot</mat-hint>
+              <mat-hint>Define la personalidad, el tono y las reglas del bot al conversar</mat-hint>
             </mat-form-field>
           </mat-card-content>
         </mat-card>
