@@ -167,6 +167,12 @@ let pool = new Pool({ connectionString: DB_URL });
 async function initDb() {
   const client = await pool.connect();
   try {
+    // Detecta si la columna security_sender ya existía antes de migrar (para
+    // activar el envío de seguridad en las instancias existentes de admins
+    // solo la primera vez; en instalaciones nuevas se crea con DEFAULT FALSE).
+    const hadSecuritySender = (await client.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'instances' AND column_name = 'security_sender'`
+    ).catch(() => ({ rows: [] }))).rows.length > 0;
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -268,11 +274,13 @@ async function initDb() {
         evolution_instance_id TEXT,
         user_id TEXT REFERENCES users(id),
         verification_role TEXT DEFAULT 'all',
+        security_sender BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
       ALTER TABLE instances ADD COLUMN IF NOT EXISTS phone TEXT;
       ALTER TABLE instances ADD COLUMN IF NOT EXISTS verification_role TEXT DEFAULT 'all';
+      ALTER TABLE instances ADD COLUMN IF NOT EXISTS security_sender BOOLEAN DEFAULT FALSE;
       CREATE TABLE IF NOT EXISTS groups_ (
         id TEXT PRIMARY KEY,
         instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE,
@@ -307,8 +315,8 @@ async function initDb() {
         recurrence TEXT DEFAULT 'none',
         recurrence_config JSONB,
         concurrence INT DEFAULT 1,
-        start_time TIMESTAMPTZ,
-        end_time TIMESTAMPTZ,
+        start_time TIME,
+        end_time TIME,
         interval_value INT DEFAULT 1,
         interval_unit TEXT DEFAULT 'none',
         template_id TEXT REFERENCES templates(id),
@@ -555,6 +563,29 @@ async function initDb() {
        billing_period_end = COALESCE(billing_period_end, NOW() + INTERVAL '30 days')
        WHERE billing_period_end IS NULL`
     );
+    // Primera migración de security_sender: las instancias ya existentes de
+    // administradores/owners quedan habilitadas como emisoras de seguridad.
+    // En instalaciones nuevas la columna nace con DEFAULT FALSE (sin emisor).
+    if (!hadSecuritySender) {
+      await client.query(
+        `UPDATE instances SET security_sender = TRUE
+         WHERE user_id IN (SELECT id FROM users WHERE role IN ('admin', 'owner'))`
+      ).catch(() => {});
+    }
+    // Normaliza start_time/end_time de campañas a TIME (hora del día de la
+    // ventana de envío). Antes eran TIMESTAMPTZ y la UI los maneja como
+    // "HH:MM", lo que rompía la edición y el sentido de la ventana diaria.
+    const campaignStartTimeType = (await client.query(
+      `SELECT data_type FROM information_schema.columns WHERE table_name = 'campaigns' AND column_name = 'start_time'`
+    ).catch(() => ({ rows: [] }))).rows[0]?.data_type;
+    if (campaignStartTimeType === 'timestamp with time zone') {
+      await client.query(
+        `ALTER TABLE campaigns ALTER COLUMN start_time TYPE TIME USING start_time::time`
+      ).catch(() => {});
+      await client.query(
+        `ALTER TABLE campaigns ALTER COLUMN end_time TYPE TIME USING end_time::time`
+      ).catch(() => {});
+    }
     // Seed de los planes del landing (solo si la tabla está vacía)
     const planCount = await client.query('SELECT COUNT(*) AS n FROM plans');
     if (parseInt(planCount.rows[0].n, 10) === 0) {
@@ -891,13 +922,15 @@ function permForModule(base) {
   }
 }
 
-// Instancia de Evolution conectada que se usa para enviar los códigos. Cada
-// instancia tiene un rol de verificación (verification_role): 'otp' (verificación
-// de número/2FA/notificaciones), 'password' (recuperación de contraseña),
-// 'other' (otras verificaciones) o 'all' (todas). El envío usa EXCLUSIVAMENTE
-// instancias del administrador (admin global o propietario de la organización);
-// las de los miembros nunca envían códigos de verificación. Se elige la primera
-// conectada cuyo rol cubra el propósito; si ninguna la cubre, el envío no se
+// Instancia de Evolution conectada que se usa para enviar los códigos. Solo las
+// instancias que el admin/owner marca como emisoras de seguridad
+// (security_sender = TRUE) pueden enviar. Además, cada instancia tiene un rol de
+// verificación (verification_role): 'otp' (verificación de número/2FA/
+// notificaciones), 'password' (recuperación de contraseña), 'other' (otras
+// verificaciones) o 'all' (todas). El envío usa EXCLUSIVAMENTE instancias del
+// administrador (admin global o propietario de la organización); las de los
+// miembros nunca envían códigos de verificación. Se elige la primera conectada
+// y habilitada cuyo rol cubra el propósito; si ninguna la cubre, el envío no se
 // puede completar y el código queda registrado en el log para desarrollo.
 function roleMatches(role, purpose) {
   const r = role || 'all';
@@ -912,7 +945,7 @@ async function getOtpSenderInstance(purpose = 'otp') {
   ).catch(() => ({ rows: [] }))).rows;
   const adminIds = new Set(admins.map((a) => String(a.id)));
   const rows = (await pool.query(
-    `SELECT * FROM instances WHERE status = 'connected' ORDER BY created_at ASC`
+    `SELECT * FROM instances WHERE status = 'connected' AND security_sender = TRUE ORDER BY created_at ASC`
   ).catch(() => ({ rows: [] }))).rows;
   return rows.find((i) => adminIds.has(String(i.user_id)) && roleMatches(i.verification_role, purpose)) || null;
 }
@@ -2141,12 +2174,17 @@ async function createInstance(res, body, session) {
   const phone = (body.phone || body.number || '').trim() || null;
   // Rol de verificación de la instancia: para qué envíos de código se usa.
   const verificationRole = VALID_VERIFICATION_ROLES.includes(body.verificationRole) ? body.verificationRole : 'all';
+  // Emisora de seguridad (OTP): solo el admin/owner puede habilitarla; los
+  // miembros no pueden marcar sus instancias para enviar códigos del sistema.
+  const securitySender = body.securitySender === true || body.securitySender === 'true'
+    ? (session.role === 'admin' || session.role === 'owner')
+    : false;
   // n8n es un entorno único del sistema (variables de entorno del admin); no se
   // persiste ni se acepta configuración por instancia.
   const result = await pool.query(
-    `INSERT INTO instances (id, name, evolution_url, api_key, phone, status, user_id, verification_role)
-     VALUES ($1, $2, $3, $4, $5, 'disconnected', $6, $7) RETURNING *`,
-    [id, body.name, evolutionUrl, apiKey, phone, session.id, verificationRole]
+    `INSERT INTO instances (id, name, evolution_url, api_key, phone, status, user_id, verification_role, security_sender)
+     VALUES ($1, $2, $3, $4, $5, 'disconnected', $6, $7, $8) RETURNING *`,
+    [id, body.name, evolutionUrl, apiKey, phone, session.id, verificationRole, securitySender]
   );
   // Crea la instancia en Evolution API
   let evoInstanceId = null;
@@ -2179,13 +2217,24 @@ async function updateInstance(res, id, body, session) {
   const inst = await pool.query('SELECT * FROM instances WHERE id = $1', [id]);
   if (inst.rows.length === 0) return sendJson(res, 404, { error: 'Instancia no encontrada' });
   if (!isOwner(inst.rows[0], session)) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  // Solo el admin/owner puede cambiar el flag de emisor de seguridad; para los
+  // miembros el valor enviado se ignora (se conserva el actual).
+  const canSetSecurity = session.role === 'admin' || session.role === 'owner';
+  const securitySender = body.securitySender === true || body.securitySender === 'true'
+    ? true
+    : body.securitySender === false || body.securitySender === 'false'
+      ? false
+      : null;
+  const newSecuritySender = canSetSecurity ? securitySender : null;
   const result = await pool.query(
     `UPDATE instances SET name = COALESCE($1, name), status = COALESCE($2, status),
      phone = COALESCE($3, phone),
      verification_role = COALESCE($4, verification_role),
-     updated_at = NOW() WHERE id = $5 RETURNING *`,
+     security_sender = COALESCE($5, security_sender),
+     updated_at = NOW() WHERE id = $6 RETURNING *`,
     [body.name || null, body.status || null, (body.phone || body.number || null),
-      VALID_VERIFICATION_ROLES.includes(body.verificationRole) ? body.verificationRole : null, id]
+      VALID_VERIFICATION_ROLES.includes(body.verificationRole) ? body.verificationRole : null,
+      newSecuritySender, id]
   );
   if (result.rows.length === 0) return sendJson(res, 404, { error: 'Instancia no encontrada' });
   pushInstanceUpdate(result.rows[0]);
@@ -2417,6 +2466,24 @@ async function syncInstancesWithEvolution() {
 // =========================================================================
 // 10. Campaigns
 // =========================================================================
+// Normaliza un valor de hora a "HH:MM". Acepta "HH:MM", "HH:MM:SS" o
+// timestamps/Date; devuelve null si no hay un valor de hora utilizable.
+function toTimeString(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'string') {
+    const m = v.match(/(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    const h = String(parseInt(m[1], 10)).padStart(2, '0');
+    const min = String(parseInt(m[2], 10)).padStart(2, '0');
+    if (parseInt(h, 10) > 23 || parseInt(min, 10) > 59) return null;
+    return `${h}:${min}`;
+  }
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return null;
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${h}:${min}`;
+}
 function enrichInstance(i, role) {
   const canSeeCredentials = role === 'admin';
   return {
@@ -2428,6 +2495,7 @@ function enrichInstance(i, role) {
     status: i.status,
     evolutionInstanceId: i.evolution_instance_id,
     verificationRole: i.verification_role || 'all',
+    securitySender: !!i.security_sender,
     groups_count: i.groups_count || 0,
     userId: i.user_id || i.userId || null,
     ownerName: i.owner_name || null,
@@ -2456,8 +2524,8 @@ function enrichCampaign(c) {
     recurrence: c.recurrence,
     recurrenceConfig: c.recurrence_config || {},
     concurrence: c.concurrence,
-    startTime: c.start_time,
-    endTime: c.end_time,
+    startTime: toTimeString(c.start_time),
+    endTime: toTimeString(c.end_time),
     intervalValue: c.interval_value,
     intervalUnit: c.interval_unit,
     templateId: c.template_id,
@@ -2532,6 +2600,8 @@ async function createCampaign(res, body, session) {
     if (inst.rows.length === 0) return sendJson(res, 404, { error: 'Instancia no encontrada' });
     if (!isOwner(inst.rows[0], session)) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   }
+  const startTime = toTimeString(body.startTime);
+  const endTime = toTimeString(body.endTime);
   const result = await pool.query(
     `INSERT INTO campaigns (id, name, description, status, active, scheduled_at, recurrence,
      recurrence_config, concurrence, start_time, end_time, interval_value, interval_unit,
@@ -2539,7 +2609,7 @@ async function createCampaign(res, body, session) {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
     [id, body.name, body.description || '', 'draft', body.active !== false,
      body.scheduledAt || null, body.recurrence || 'none', JSON.stringify(body.recurrenceConfig || {}),
-     body.concurrence || 1, body.startTime || null, body.endTime || null,
+     body.concurrence || 1, startTime, endTime,
      body.intervalValue || 1, body.intervalUnit || 'none',
      body.templateId || null, body.instanceId || null,
      body.groupIds || [], body.tags || [],
@@ -2556,17 +2626,32 @@ async function updateCampaign(res, id, body, session) {
     if (inst.rows.length === 0) return sendJson(res, 404, { error: 'Instancia no encontrada' });
     if (!isOwner(inst.rows[0], session)) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   }
+  const startTime = toTimeString(body.startTime);
+  const endTime = toTimeString(body.endTime);
   const result = await pool.query(
     `UPDATE campaigns SET name = COALESCE($1, name), description = COALESCE($2, description),
      status = COALESCE($3, status), active = COALESCE($4, active),
      scheduled_at = COALESCE($5, scheduled_at), template_id = COALESCE($6, template_id),
      instance_id = COALESCE($7, instance_id), group_ids = COALESCE($8, group_ids),
-     tags = COALESCE($9, tags), updated_at = NOW() WHERE id = $10 RETURNING *`,
+     tags = COALESCE($9, tags),
+     recurrence = COALESCE($10, recurrence),
+     recurrence_config = COALESCE($11, recurrence_config),
+     concurrence = COALESCE($12, concurrence),
+     start_time = COALESCE($13, start_time),
+     end_time = COALESCE($14, end_time),
+     interval_value = COALESCE($15, interval_value),
+     interval_unit = COALESCE($16, interval_unit),
+     exclude_tags = COALESCE($17, exclude_tags),
+     updated_at = NOW() WHERE id = $18 RETURNING *`,
     [body.name || null, body.description !== undefined ? body.description : null,
      body.status || null, body.active !== undefined ? body.active : null,
      body.scheduledAt || null, body.templateId || null, body.instanceId || null,
      body.groupIds ? body.groupIds : null,
-     body.tags ? body.tags : null, id]
+     body.tags ? body.tags : null,
+     body.recurrence || null, body.recurrenceConfig ? JSON.stringify(body.recurrenceConfig) : null,
+     body.concurrence || null, startTime, endTime,
+     body.intervalValue || null, body.intervalUnit || null,
+     body.excludeTags ? body.excludeTags : null, id]
   );
   sendJson(res, 200, { data: enrichCampaign(result.rows[0]), success: true });
 }

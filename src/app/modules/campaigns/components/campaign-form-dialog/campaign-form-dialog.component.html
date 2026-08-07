@@ -103,28 +103,43 @@
     <div class="form-section-label">Programación</div>
     <div class="form-row">
       <mat-form-field appearance="outline">
-        <mat-label>Fecha y hora de envío</mat-label>
-        <input matInput type="datetime-local" formControlName="scheduledAt">
+        <mat-label>Fecha de envío</mat-label>
+        <input matInput [matDatepicker]="datePicker" formControlName="scheduledDate">
+        <mat-datepicker-toggle matIconSuffix [for]="datePicker"></mat-datepicker-toggle>
+        <mat-datepicker #datePicker></mat-datepicker>
         <mat-hint>Deja vacío para envío inmediato</mat-hint>
       </mat-form-field>
 
       <mat-form-field appearance="outline">
-        <mat-label>Recurrencia</mat-label>
-        <mat-select formControlName="recurrence">
-          <mat-option *ngFor="let opt of recurrenceOptions" [value]="opt.value">{{ opt.label }}</mat-option>
-        </mat-select>
+        <mat-label>Hora de envío</mat-label>
+        <input matInput [matTimepicker]="timePicker" formControlName="scheduledTime">
+        <mat-timepicker-toggle matIconSuffix [for]="timePicker"></mat-timepicker-toggle>
+        <mat-timepicker #timePicker></mat-timepicker>
       </mat-form-field>
     </div>
+
+    <mat-form-field appearance="outline" class="full-width">
+      <mat-label>Recurrencia</mat-label>
+      <mat-select formControlName="recurrence">
+        <mat-option *ngFor="let opt of recurrenceOptions" [value]="opt.value">{{ opt.label }}</mat-option>
+      </mat-select>
+      <mat-hint>Ventana de envío diaria cuando hay recurrencia</mat-hint>
+    </mat-form-field>
 
     <div class="form-row" *ngIf="form.get('recurrence')?.value !== 'none'">
       <mat-form-field appearance="outline">
         <mat-label>Hora de inicio</mat-label>
-        <input matInput type="time" formControlName="startTime">
+        <input matInput [matTimepicker]="startTimePicker" formControlName="startTime">
+        <mat-timepicker-toggle matIconSuffix [for]="startTimePicker"></mat-timepicker-toggle>
+        <mat-timepicker #startTimePicker></mat-timepicker>
       </mat-form-field>
 
       <mat-form-field appearance="outline">
         <mat-label>Hora de fin</mat-label>
-        <input matInput type="time" formControlName="endTime">
+        <input matInput [matTimepicker]="endTimePicker" formControlName="endTime">
+        <mat-timepicker-toggle matIconSuffix [for]="endTimePicker"></mat-timepicker-toggle>
+        <mat-timepicker #endTimePicker></mat-timepicker>
+        <mat-error *ngIf="form.hasError('endBeforeStart')">Debe ser posterior a la hora de inicio</mat-error>
       </mat-form-field>
     </div>
 

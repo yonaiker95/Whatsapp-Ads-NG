@@ -123,6 +123,16 @@
                 </td>
               </ng-container>
 
+              <ng-container matColumnDef="security">
+                <th mat-header-cell *matHeaderCellDef> Seguridad </th>
+                <td mat-cell *matCellDef="let instance" (click)="viewInstance(instance)">
+                  <mat-chip class="verification-chip" [class.chip-security-on]="isSecuritySender(instance)" selectable="false">
+                    <mat-icon class="status-icon">shield</mat-icon>
+                    {{ isSecuritySender(instance) ? 'Activada' : 'Desactivada' }}
+                  </mat-chip>
+                </td>
+              </ng-container>
+
               <ng-container matColumnDef="phone">
                 <th mat-header-cell *matHeaderCellDef> Teléfono </th>
                 <td mat-cell *matCellDef="let instance" (click)="viewInstance(instance)">

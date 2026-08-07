@@ -7,6 +7,7 @@ export interface Instance {
   status: 'disconnected' | 'connecting' | 'connected' | 'qrcoded';
   evolutionInstanceId?: string;
   verificationRole?: string;
+  securitySender?: boolean;
   groups_count?: number;
   groups?: unknown[];
   userId?: string;
@@ -20,6 +21,7 @@ export interface InstanceFormData {
   name: string;
   phone?: string;
   verificationRole?: string;
+  securitySender?: boolean;
 }
 
 export const VERIFICATION_ROLE_LABELS: Record<string, string> = {

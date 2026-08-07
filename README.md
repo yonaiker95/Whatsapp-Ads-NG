@@ -6,7 +6,7 @@ Sistema de gestión de campañas de marketing para WhatsApp. Permite administrar
 
 - **Instalador de primer arranque (setup wizard)**: en la primera ejecución el sistema detecta que no está instalado, redirige a `/setup` y guía la configuración del entorno, la conexión a PostgreSQL, los servicios externos (Evolution API y n8n) y la creación de la cuenta de administrador.
 - **Autenticación**: registro y acceso con sesiones protegidas por cookies y token CSRF, validación del número de WhatsApp por **OTP** y verificación en dos pasos (2FA) opcional.
-- **Verificación por OTP de WhatsApp**: el número de teléfono se valida enviando un código de 6 dígitos por WhatsApp (`/api/auth/phone/send-code`). El registro, el restablecimiento de contraseña y el cambio de número lo requieren. Los códigos se envían **solo desde instancias del administrador** (las de los miembros nunca envían códigos).
+- **Verificación por OTP de WhatsApp**: el número de teléfono se valida enviando un código de 6 dígitos por WhatsApp (`/api/auth/phone/send-code`). El registro, el restablecimiento de contraseña y el cambio de número lo requieren. Los códigos se envían **solo desde las instancias que el administrador habilita como "emisoras de seguridad"** (`security_sender`); las demás nunca envían códigos.
 - **Verificación en dos pasos (2FA)**: al iniciar sesión, si el usuario la tiene activa y su número está verificado, el sistema envía un código a su WhatsApp antes de completar el acceso.
 - **Organizaciones y equipo**: crea una organización, invita miembros con acceso a la cuenta y concede a cada uno **permisos por módulo** (instancias, campañas, plantillas, grupos, auto-respuestas, chatbot, centro de IA, reportes, facturación, organización, envío manual). El backend bloquea (`403`) los módulos no concedidos y el sidebar oculta las secciones sin permiso.
 - **Instancias de WhatsApp**: alta, baja, conexión por código QR y sincronización con Evolution API.
@@ -14,7 +14,7 @@ Sistema de gestión de campañas de marketing para WhatsApp. Permite administrar
 - **Centro de IA**: configuración de proveedores de IA (Gemini, OpenAI, Claude, DeepSeek, Mistral, OpenRouter, Azure) en modo SaaS o BYOK, con validación, cuota mensual, auditoría y log de uso.
 - **Chatbot con IA**: prompt de sistema configurable por instancia, pausa por conversación, y respuestas generadas por el AI Center y entregadas por n8n.
 - **Orquestación n8n**: cada instancia recibe automáticamente su propio workflow/webhook dinámico (`dm-chatbot-<id>`) sobre un único entorno n8n administrado por el sistema.
-- **Campañas**: creación, programación, envío masivo a grupos con control de concurrencia y log de resultados.
+- **Campañas**: creación y edición con programación mediante calendario y reloj (fecha/hora de envío), recurrencia con ventana diaria (hora de inicio/fin con validación), envío masivo a grupos con control de concurrencia y log de resultados.
 - **Plantillas de mensajes**: texto, multimedia y variables.
 - **Grupos**: sincronización automática desde las instancias conectadas.
 - **Respuestas automáticas**: reglas de respuesta ante palabras clave.

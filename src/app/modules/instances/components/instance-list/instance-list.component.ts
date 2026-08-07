@@ -31,7 +31,7 @@ import { InstanceFormDialogComponent, InstanceFormDialogData } from '../instance
   styleUrls: ['./instance-list.component.scss'],
 })
 export class InstanceListComponent implements OnInit, OnDestroy {
-  private readonly baseColumns = ['name', 'status', 'verification', 'phone', 'groupsCount', 'actions'];
+  private readonly baseColumns = ['name', 'status', 'verification', 'security', 'phone', 'groupsCount', 'actions'];
   instances: Instance[] = [];
   loading = true;
   syncing = false;
@@ -287,7 +287,11 @@ export class InstanceListComponent implements OnInit, OnDestroy {
     return icons[status] || 'help';
   }
 
-  verificationRoleLabel(role?: string): string {
+    verificationRoleLabel(role?: string): string {
     return VERIFICATION_ROLE_LABELS[role || 'all'] || role || 'Todas';
+  }
+
+  isSecuritySender(instance: Instance): boolean {
+    return !!instance.securitySender;
   }
 }

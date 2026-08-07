@@ -301,6 +301,7 @@ erDiagram
         text status
         text user_id FK
         text verification_role
+        boolean security_sender
     }
     groups_ {
         text id PK
@@ -323,6 +324,9 @@ erDiagram
         text template_id FK
         text instance_id FK
         datetime scheduled_at
+        text recurrence
+        time start_time
+        time end_time
         int total_sent
         int total_failed
     }
@@ -514,6 +518,8 @@ Todas las rutas están prefijadas con `/api`. Las rutas (excepto autenticación 
 
 > Al crear o actualizar una instancia, el backend también **garantiza el workflow dinámico en n8n** (`ensureN8nWorkflow`) si `N8N_URL` y `N8N_API_KEY` están configuradas.
 
+> **Emisora de mensajes de seguridad** (`security_sender`): solo las instancias que el administrador/propietario marque con el toggle *"Enviar mensajes de seguridad"* pueden enviar códigos OTP (registro, 2FA, recuperación de contraseña, cambio de número). El backend exige `status='connected' AND security_sender = TRUE` para elegir emisora (`getOtpSenderInstance`); un miembro sin rol admin/owner no puede activar el flag (se conserva el valor existente). En la migración inicial, las instancias ya existentes de admin/owner quedan habilitadas automáticamente; en instalaciones nuevas nace con `FALSE`.
+
 ### Campañas
 
 | Método | Ruta | Descripción |
@@ -525,6 +531,8 @@ Todas las rutas están prefijadas con `/api`. Las rutas (excepto autenticación 
 | DELETE | `/api/campaigns/:id` | Elimina una campaña |
 | POST | `/api/campaigns/:id/send` | Ejecuta el envío de la campaña |
 | GET | `/api/campaigns/:id/logs` | Obtiene los logs de envío |
+
+> **Programación**: el formulario usa un **calendario** para la fecha de envío y **relojes** (Material timepicker) para la hora de envío y para la ventana diaria (`start_time`/`end_time`) de campañas con recurrencia. `start_time` y `end_time` son del tipo `TIME` (hora del día, formato `HH:MM`); el backend los normaliza al guardar (`toTimeString`) y los devuelve como `HH:MM`. Al editar, la ventana de horas debe tener `end > start` (validado en el formulario). `PUT /api/campaigns/:id` actualiza también recurrencia, configuración, concurrencia, ventana de horas, intervalo y etiquetas excluidas.
 
 ### Plantillas
 

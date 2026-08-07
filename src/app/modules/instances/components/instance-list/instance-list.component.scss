@@ -250,6 +250,11 @@
       background: var(--info-bg);
       color: var(--info);
 
+      &.chip-security-on {
+        background: var(--success-bg);
+        color: var(--success);
+      }
+
       .status-icon {
         font-size: 14px;
         width: 14px;

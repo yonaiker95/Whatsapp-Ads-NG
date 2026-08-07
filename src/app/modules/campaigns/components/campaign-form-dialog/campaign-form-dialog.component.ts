@@ -1,6 +1,7 @@
 import { Component, Inject, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -12,6 +13,9 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatNativeDateModule } from '@angular/material/core';
+import { MatTimepickerModule } from '@angular/material/timepicker';
 import { Subject, takeUntil } from 'rxjs';
 import { MatChipInputEvent } from '@angular/material/chips';
 import { CampaignService } from '../../../../core/services/campaign.service';
@@ -45,6 +49,9 @@ export interface CampaignDialogData {
     MatAutocompleteModule,
     MatProgressSpinnerModule,
     MatSnackBarModule,
+    MatDatepickerModule,
+    MatNativeDateModule,
+    MatTimepickerModule,
   ],
   templateUrl: './campaign-form-dialog.component.html',
   styleUrls: ['./campaign-form-dialog.component.scss'],
@@ -111,6 +118,7 @@ export class CampaignFormDialogComponent implements OnDestroy {
   }
 
   buildForm(campaign?: Campaign): void {
+    const scheduled = campaign?.scheduledAt ? new Date(campaign.scheduledAt) : null;
     this.form = this.fb.group({
       name: ['', [Validators.required, Validators.minLength(3)]],
       description: [''],
@@ -119,7 +127,8 @@ export class CampaignFormDialogComponent implements OnDestroy {
       tags: [[]],
       excludeTags: [[]],
       templateId: [''],
-      scheduledAt: [''],
+      scheduledDate: [scheduled],
+      scheduledTime: [scheduled ? this.toTimeString(scheduled) : ''],
       recurrence: ['none'],
       startTime: [''],
       endTime: [''],
@@ -127,7 +136,7 @@ export class CampaignFormDialogComponent implements OnDestroy {
       intervalValue: [1],
       concurrence: [1],
       active: [true],
-    });
+    }, { validator: this.validateTimeWindow });
 
     if (campaign) {
       this.form.patchValue({
@@ -138,10 +147,9 @@ export class CampaignFormDialogComponent implements OnDestroy {
         tags: campaign.tags,
         excludeTags: campaign.excludeTags,
         templateId: campaign.templateId || '',
-        scheduledAt: campaign.scheduledAt ? new Date(campaign.scheduledAt).toISOString().slice(0, 16) : '',
         recurrence: campaign.recurrence || 'none',
-        startTime: campaign.startTime,
-        endTime: campaign.endTime,
+        startTime: campaign.startTime ? campaign.startTime.slice(0, 5) : '',
+        endTime: campaign.endTime ? campaign.endTime.slice(0, 5) : '',
         intervalUnit: campaign.intervalUnit || 'minutes',
         intervalValue: campaign.intervalValue || 1,
         concurrence: campaign.concurrence || 1,
@@ -149,6 +157,34 @@ export class CampaignFormDialogComponent implements OnDestroy {
       });
     }
   }
+
+  private toTimeString(value: Date): string {
+    const h = String(value.getHours()).padStart(2, '0');
+    const m = String(value.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
+  private parseTime(value: string): [number, number] {
+    const [h = 0, m = 0] = value.split(':').map(Number);
+    return [isNaN(h) ? 0 : h, isNaN(m) ? 0 : m];
+  }
+
+  validateTimeWindow: ValidatorFn = (group: AbstractControl): ValidationErrors | null => {
+    const recurrence = group.get('recurrence')?.value;
+    if (!recurrence || recurrence === 'none') {
+      group.get('endTime')?.setErrors(null);
+      return null;
+    }
+    const start = (group.get('startTime')?.value || '') as string;
+    const end = (group.get('endTime')?.value || '') as string;
+    if (!start || !end) return null;
+    if (end <= start) {
+      group.get('endTime')?.setErrors({ endBeforeStart: true });
+      return { endBeforeStart: true };
+    }
+    group.get('endTime')?.setErrors(null);
+    return null;
+  };
 
   loadData(): void {
     this.instanceService.getAll()
@@ -180,6 +216,16 @@ export class CampaignFormDialogComponent implements OnDestroy {
     this.submitting = true;
     const value = this.form.value;
 
+    let scheduledAt: string | undefined;
+    if (value.scheduledDate) {
+      const date = new Date(value.scheduledDate);
+      if (value.scheduledTime) {
+        const [h, m] = this.parseTime(value.scheduledTime);
+        date.setHours(h, m, 0, 0);
+      }
+      scheduledAt = date.toISOString();
+    }
+
     const data: CampaignFormData = {
       name: value.name,
       description: value.description,
@@ -188,7 +234,7 @@ export class CampaignFormDialogComponent implements OnDestroy {
       tags: value.tags,
       excludeTags: value.excludeTags,
       templateId: value.templateId || undefined,
-      scheduledAt: value.scheduledAt ? new Date(value.scheduledAt).toISOString() : undefined,
+      scheduledAt,
       recurrence: value.recurrence,
       startTime: value.startTime || undefined,
       endTime: value.endTime || undefined,
