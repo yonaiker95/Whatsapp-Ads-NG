@@ -27,6 +27,10 @@ class OpenAIProvider extends OpenAICompatibleProvider {
     return 'gpt-4o-mini';
   }
 
+  get embedModel() {
+    return 'text-embedding-3-small';
+  }
+
   get helpGuide() {
     return [
       'Abre https://platform.openai.com y crea una cuenta o inicia sesión.',

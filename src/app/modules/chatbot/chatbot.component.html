@@ -99,6 +99,85 @@
         <mat-card class="config-card" appearance="outlined">
           <mat-card-header>
             <mat-card-title>
+              <mat-icon>description</mat-icon>
+              Documentos del bot
+            </mat-card-title>
+            <mat-card-subtitle>Aliméntalo con catálogos, políticas, menús o cualquier texto largo: buscará los fragmentos relevantes a cada consulta (con embeddings si tu proveedor los soporta, o por palabras)</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div class="documents-list" *ngIf="documents.length > 0">
+              <div class="document-row" *ngFor="let doc of documents; trackBy: trackDocument">
+                <mat-icon class="doc-icon">insert_drive_file</mat-icon>
+                <div class="doc-info">
+                  <div class="doc-title">{{ doc.title }}</div>
+                  <div class="doc-meta">
+                    {{ doc.charCount }} caracteres · {{ doc.chunkCount }} fragmentos ·
+                    <span [ngClass]="doc.status === 'stored' ? 'badge-ok' : 'badge-warn'">
+                      {{ doc.status === 'stored' ? 'con embeddings' : 'búsqueda por palabras' }}
+                    </span>
+                  </div>
+                  <div class="doc-warning" *ngIf="doc.error">⚠ {{ doc.error }}</div>
+                </div>
+                <button mat-icon-button type="button" (click)="deleteDocument(doc)" aria-label="Eliminar documento">
+                  <mat-icon>delete</mat-icon>
+                </button>
+              </div>
+            </div>
+            <div class="documents-empty" *ngIf="!documentsLoading && documents.length === 0">
+              Aún no hay documentos. Agrega el primero con el formulario de abajo.
+            </div>
+
+            <div class="document-form">
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Título del documento</mat-label>
+                <input matInput [(ngModel)]="newDocTitle" placeholder="Ej: Catálogo de productos 2026, Política de devoluciones, Menú del local">
+              </mat-form-field>
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>Contenido</mat-label>
+                <textarea matInput rows="4" [(ngModel)]="newDocContent"
+                          placeholder="Pega aquí el texto completo: descripción de productos y precios, condiciones, horarios, FAQ, etc."></textarea>
+                <mat-hint>El bot solo usará la información de este documento cuando la consulta del cliente tenga relación con ella</mat-hint>
+              </mat-form-field>
+              <button mat-raised-button color="primary" (click)="addDocument()" [disabled]="documentSaving || !selectedInstanceId">
+                <mat-spinner diameter="18" *ngIf="documentSaving"></mat-spinner>
+                <mat-icon *ngIf="!documentSaving">upload_file</mat-icon>
+                {{ documentSaving ? 'Procesando...' : 'Agregar documento' }}
+              </button>
+            </div>
+
+            <mat-divider class="doc-divider"></mat-divider>
+
+            <div class="query-test">
+              <h3>Probar recuperación</h3>
+              <p class="query-hint">Escribe una pregunta típica de un cliente y mira qué fragmentos recuperaría el bot para responderla.</p>
+              <div class="query-row">
+                <mat-form-field appearance="outline" class="query-input">
+                  <mat-label>Ej: ¿Cuánto cuesta el pan integral?</mat-label>
+                  <input matInput [(ngModel)]="queryTest">
+                </mat-form-field>
+                <button mat-stroked-button (click)="testDocumentQuery()" [disabled]="queryTesting || !queryTest.trim()">
+                  <mat-spinner diameter="18" *ngIf="queryTesting"></mat-spinner>
+                  <mat-icon *ngIf="!queryTesting">search</mat-icon>
+                  Probar
+                </button>
+              </div>
+              <div class="query-results" *ngIf="queryTested && queryResults.length > 0">
+                <div class="query-result" *ngFor="let r of queryResults">
+                  <div class="query-score">Relevancia: {{ r.score }}</div>
+                  <div class="query-content" *ngIf="r.title"><strong>{{ r.title }}:</strong> {{ r.content }}</div>
+                  <div class="query-content" *ngIf="!r.title">{{ r.content }}</div>
+                </div>
+              </div>
+              <div class="query-empty" *ngIf="queryTested && queryResults.length === 0">
+                No se encontraron fragmentos relacionados. Prueba con otras palabras o agrega más contenido.
+              </div>
+            </div>
+          </mat-card-content>
+        </mat-card>
+
+        <mat-card class="config-card" appearance="outlined">
+          <mat-card-header>
+            <mat-card-title>
               <mat-icon>psychology</mat-icon>
               Cómo debe comportarse el bot
             </mat-card-title>

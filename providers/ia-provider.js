@@ -27,6 +27,13 @@ class IAProvider {
     return null;
   }
 
+  // Modelo de embeddings usado para documentos del chatbot (RAG). Devuelve null
+  // cuando el proveedor no expone un endpoint de embeddings (el sistema cae a
+  // búsqueda léxica por palabras en ese caso).
+  get embedModel() {
+    return null;
+  }
+
   // Lista de modelos que expone el proveedor para el catálogo SaaS / selector BYOK.
   // Cada elemento: { id, label, inputCost?, outputCost?, isPreview? }
   get availableModels() {
@@ -50,6 +57,15 @@ class IAProvider {
   // @returns Promise<{ text: string, usage?: { inputTokens, outputTokens } }>
   async generate(/* settings, request */) {
     throw new Error('IAProvider.generate no está implementado');
+  }
+
+  // Genera vectores (embeddings) para una lista de textos.
+  // @param settings { apiKey, baseUrl, organization, project }
+  // @param texts    string[]
+  // @returns Promise<number[][]>  Un vector por texto (mismo orden).
+  // Lanza un error si el proveedor no soporta embeddings (se usa búsqueda léxica).
+  async embed(/* settings, texts */) {
+    throw new Error(`IAProvider.embed no está implementado para ${this.label}`);
   }
 }
 

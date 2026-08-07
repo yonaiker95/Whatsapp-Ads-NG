@@ -22,6 +22,12 @@ class OpenAICompatibleProvider extends IAProvider {
     return 'Bearer';
   }
 
+  // Modelo de embeddings: los proveedores compatibles con OpenAI que expongan
+  // uno lo definen; si devuelve null el sistema usa búsqueda léxica.
+  get embedModel() {
+    return null;
+  }
+
   _buildUrl(baseUrl, model) {
     return `${(baseUrl || this.defaultBaseUrl).replace(/\/$/, '')}/chat/completions`;
   }
@@ -77,6 +83,26 @@ class OpenAICompatibleProvider extends IAProvider {
         outputTokens: (data.usage && data.usage.completion_tokens) || 0,
       },
     };
+  }
+
+  async embed({ apiKey, baseUrl, organization, project }, texts) {
+    const model = this.embedModel;
+    if (!model) {
+      throw new Error(`El proveedor ${this.label} no expone un modelo de embeddings`);
+    }
+    const headers = this._headers(apiKey);
+    if (organization) headers['OpenAI-Organization'] = organization;
+    if (project) headers['OpenAI-Project'] = project;
+    const data = await requestJson(
+      'POST',
+      `${(baseUrl || this.defaultBaseUrl).replace(/\/$/, '')}/embeddings`,
+      headers,
+      { model, input: (texts || []).map((t) => String(t || '')) }
+    );
+    return (data.data || [])
+      .slice()
+      .sort((a, b) => (a.index || 0) - (b.index || 0))
+      .map((e) => e.embedding);
   }
 }
 

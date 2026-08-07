@@ -379,6 +379,35 @@ async function initDb() {
       ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS company_info TEXT DEFAULT '';
       ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS price_list JSONB DEFAULT '[]';
       ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS calendar TEXT DEFAULT '';
+      -- Documentos del bot (RAG): el chatbot busca en los documentos de la
+      -- instancia los fragmentos relevantes a la consulta del cliente y los
+      -- inyecta en el prompt. Los embeddings son opcionales (si el proveedor de
+      -- IA no expone el endpoint, cae a búsqueda léxica por palabras).
+      CREATE TABLE IF NOT EXISTS bot_documents (
+        id TEXT PRIMARY KEY,
+        instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        status TEXT DEFAULT 'stored',
+        error TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS bot_document_chunks (
+        id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL REFERENCES bot_documents(id) ON DELETE CASCADE,
+        instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE,
+        chunk_index INT DEFAULT 0,
+        content TEXT NOT NULL,
+        embedding JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_bot_documents_instance ON bot_documents (instance_id);
+      CREATE INDEX IF NOT EXISTS idx_bot_document_chunks_instance ON bot_document_chunks (instance_id);
+      CREATE INDEX IF NOT EXISTS idx_bot_document_chunks_document ON bot_document_chunks (document_id);
+      -- Auto-respuestas: una regla en modo IA puede alimentarse de un documento
+      -- específico de la instancia (la parte del conocimiento que le interese).
+      ALTER TABLE auto_replies ADD COLUMN IF NOT EXISTS document_id TEXT;
       CREATE TABLE IF NOT EXISTS chatbot_paused (
         id TEXT PRIMARY KEY,
         instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE,
@@ -1523,6 +1552,13 @@ async function handleRequest(req, res, pathname) {
         if (method === 'POST' && parts[1] === 'pause') return await togglePauseChat(res, await parseBody(req), session);
         if (method === 'GET' && parts[1] === 'paused') return await getPausedChats(res, req, session);
         if (method === 'DELETE' && parts[1] === 'paused') return await removePausedChat(res, req, session);
+        if (method === 'GET' && parts[1] === 'documents') return await getChatbotDocuments(res, req, session);
+        if (method === 'POST' && parts[1] === 'documents' && parts[2] === 'query')
+          return await testChatbotDocumentQuery(res, await parseBody(req), session);
+        if (method === 'POST' && parts[1] === 'documents' && !parts[2])
+          return await createChatbotDocument(res, await parseBody(req), session);
+        if (method === 'DELETE' && parts[1] === 'documents' && parts[2])
+          return await deleteChatbotDocument(res, parts[2], session);
         break;
 
       // -- Auto-replies --
@@ -3031,6 +3067,236 @@ function buildChatbotSystemPrompt(config) {
   if (calendar) parts.push(`CALENDARIO Y DISPONIBILIDAD\n${calendar}`);
   return parts.join('\n\n');
 }
+
+// ---------------------------------------------------------------------------
+// Documentos del bot (RAG): divide el contenido en fragmentos con solape,
+// calcula embeddings con el proveedor de IA activo (cuando lo soporta) y, al
+// responder, recupera los fragmentos más relevantes a la consulta para
+// inyectarlos en el prompt. Si el proveedor no tiene embeddings o fallan, usa
+// un score léxico por coincidencia de palabras (siempre funciona sin IA).
+// ---------------------------------------------------------------------------
+function chunkText(text, size = 900, overlap = 120) {
+  const clean = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!clean) return [];
+  const chunks = [];
+  let start = 0;
+  while (start < clean.length) {
+    let end = Math.min(start + size, clean.length);
+    if (end < clean.length) {
+      const nl = clean.lastIndexOf('\n', end);
+      const dot = clean.lastIndexOf('. ', end);
+      const boundary = Math.max(nl, dot);
+      if (boundary > start + size * 0.6) end = boundary + (boundary === dot ? 2 : 1);
+    } else {
+      const piece = clean.slice(start).trim();
+      if (piece) chunks.push(piece);
+      break;
+    }
+    const piece = clean.slice(start, end).trim();
+    if (piece) chunks.push(piece);
+    const next = Math.max(start + 1, end - overlap);
+    if (next <= start || next >= clean.length) break;
+    start = next;
+  }
+  return chunks;
+}
+
+function cosineSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+function lexicalScore(query, text) {
+  const qWords = String(query || '').toLowerCase().split(/[^a-z0-9áéíóúñüÁÉÍÓÚÑÜ]+/).filter((w) => w.length > 2);
+  if (qWords.length === 0) return 0;
+  const t = String(text || '').toLowerCase();
+  let hits = 0;
+  for (const w of qWords) if (t.includes(w)) hits++;
+  return hits / qWords.length;
+}
+
+async function loadTenantAiSettingsForInstance(instance) {
+  const tenantId = instance.user_id;
+  if (!tenantId) return null;
+  const aiConfig = (await pool.query('SELECT * FROM ai_configs WHERE user_id = $1', [tenantId])).rows[0];
+  if (!aiConfig || !aiConfig.status) return null;
+  return resolveAiSettings({ id: tenantId, role: 'user' }, aiConfig);
+}
+
+// Calcula embeddings de una lista de textos con la configuración de IA del
+// tenant. Devuelve null si el proveedor no los soporta o falla (el llamador cae
+// a búsqueda léxica).
+async function embedBotTexts(instance, texts, settings) {
+  let effective = settings;
+  if (!effective || effective.error || !effective.provider) {
+    try {
+      effective = await loadTenantAiSettingsForInstance(instance);
+    } catch (e) {
+      return null;
+    }
+  }
+  if (!effective || effective.error || !effective.provider || typeof effective.provider.embed !== 'function') {
+    return null;
+  }
+  try {
+    const vectors = await effective.provider.embed(effective, texts);
+    if (!Array.isArray(vectors) || vectors.length !== texts.length) return null;
+    return vectors.map((v) => (Array.isArray(v) && v.length > 0 ? v : null));
+  } catch (e) {
+    console.warn('[RAG] embed falló, usando búsqueda léxica:', e.message);
+    return null;
+  }
+}
+
+// Recupera los fragmentos más relevantes de los documentos de la instancia.
+// @param settings  configuración de IA ya resuelta (opcional, evita re-resolver)
+// @param documentId  limita la búsqueda a un documento concreto
+async function retrieveBotContext(instance, query, limit = 4, settings, documentId) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  const params = [instance.id];
+  let where = 'c.instance_id = $1';
+  if (documentId) {
+    params.push(documentId);
+    where += ' AND c.document_id = $' + params.length;
+  }
+  const chunks = (await pool.query(
+    `SELECT c.content, c.embedding, d.title FROM bot_document_chunks c
+     JOIN bot_documents d ON d.id = c.document_id
+     WHERE ${where} ORDER BY c.created_at DESC`, params
+  )).rows;
+  if (chunks.length === 0) return [];
+  let queryVec = null;
+  const vectors = await embedBotTexts(instance, [q], settings);
+  if (vectors) queryVec = vectors[0];
+  const scored = chunks.map((c) => {
+    const emb = c.embedding ? (typeof c.embedding === 'string' ? JSON.parse(c.embedding) : c.embedding) : null;
+    const score = queryVec && emb ? cosineSimilarity(queryVec, emb) : lexicalScore(q, c.content);
+    return { title: c.title || null, content: c.content, score };
+  });
+  return scored
+    .filter((s) => s.score > (queryVec ? 0.15 : 0))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+function enrichBotDocument(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    instanceId: r.instance_id,
+    title: r.title,
+    status: r.status || 'stored',
+    error: r.error || null,
+    chunkCount: parseInt(r.chunk_count, 10) || 0,
+    charCount: r.content ? r.content.length : 0,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+async function getChatbotDocuments(res, req, session) {
+  const u = new URL(req.url, `http://${req.headers.host}`);
+  const iid = u.searchParams.get('instanceId');
+  if (iid && !(await loadInstanceForUser(iid, session))) {
+    return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  }
+  let q = `SELECT d.*, COUNT(c.id)::int AS chunk_count FROM bot_documents d
+           LEFT JOIN bot_document_chunks c ON c.document_id = d.id`;
+  const params = [];
+  const conds = [];
+  if (iid) {
+    params.push(iid);
+    conds.push('d.instance_id = $' + params.length);
+  }
+  if (session.role !== 'admin') {
+    q += ' LEFT JOIN instances i ON i.id = d.instance_id';
+    params.push(session.id);
+    conds.push('i.user_id = $' + params.length);
+  }
+  if (conds.length) q += ' WHERE ' + conds.join(' AND ');
+  q += ' GROUP BY d.id ORDER BY d.created_at DESC';
+  const result = await pool.query(q, params);
+  sendJson(res, 200, { data: result.rows.map(enrichBotDocument), success: true });
+}
+
+async function createChatbotDocument(res, body, session) {
+  if (!body.instanceId) return sendJson(res, 400, { error: 'instanceId requerido' });
+  const inst = await loadInstanceForUser(body.instanceId, session);
+  if (!inst) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  const title = String(body.title || '').trim();
+  const content = String(body.content || '').trim();
+  if (!title) return sendJson(res, 400, { error: 'El título es requerido' });
+  if (!content) return sendJson(res, 400, { error: 'El contenido es requerido' });
+  if (content.length < 30) return sendJson(res, 400, { error: 'El contenido es demasiado corto para alimentar al bot' });
+  const chunks = chunkText(content);
+  if (chunks.length === 0) return sendJson(res, 400, { error: 'El contenido no se pudo procesar' });
+  const id = cuid();
+  let embeddings = null;
+  try {
+    embeddings = await embedBotTexts(inst, chunks);
+  } catch (e) {
+    embeddings = null;
+  }
+  const status = embeddings ? 'stored' : 'lexical';
+  const error = embeddings ? null : 'El proveedor de IA no expone embeddings o fallaron: el bot usará búsqueda por palabras.';
+  await pool.query(
+    `INSERT INTO bot_documents (id, instance_id, title, content, status, error)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [id, body.instanceId, title, content, status, error]
+  );
+  for (let i = 0; i < chunks.length; i++) {
+    const emb = embeddings && embeddings[i];
+    await pool.query(
+      `INSERT INTO bot_document_chunks (id, document_id, instance_id, chunk_index, content, embedding)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [cuid(), id, body.instanceId, i, chunks[i], emb ? JSON.stringify(emb) : null]
+    );
+  }
+  const row = (await pool.query(
+    `SELECT d.*, COUNT(c.id)::int AS chunk_count FROM bot_documents d
+     LEFT JOIN bot_document_chunks c ON c.document_id = d.id
+     WHERE d.id = $1 GROUP BY d.id`, [id]
+  )).rows[0];
+  sendJson(res, 201, { data: enrichBotDocument(row), success: true });
+}
+
+async function deleteChatbotDocument(res, id, session) {
+  const row = (await pool.query('SELECT * FROM bot_documents WHERE id = $1', [id])).rows[0];
+  if (!row) return sendJson(res, 404, { error: 'Documento no encontrado' });
+  if (session.role !== 'admin' && !(await loadInstanceForUser(row.instance_id, session))) {
+    return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  }
+  await pool.query('DELETE FROM bot_documents WHERE id = $1', [id]);
+  sendJson(res, 200, { success: true });
+}
+
+async function testChatbotDocumentQuery(res, body, session) {
+  const instanceId = body.instanceId;
+  const query = String(body.query || '').trim();
+  if (!instanceId || !query) return sendJson(res, 400, { error: 'instanceId y query son requeridos' });
+  const inst = await loadInstanceForUser(instanceId, session);
+  if (!inst) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  const context = await retrieveBotContext(inst, query, 4);
+  sendJson(res, 200, {
+    data: context.map((c) => ({
+      title: c.title,
+      content: c.content,
+      score: Number(c.score.toFixed(4)),
+    })),
+    success: true,
+  });
+}
+
 async function getChatbotConfig(res, instanceId, session) {
   const inst = await loadInstanceForUser(instanceId, session);
   if (!inst) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
@@ -3153,6 +3419,7 @@ function enrichAutoReply(r) {
     isActive: r.is_active,
     useAi: r.use_ai === true,
     aiInstructions: r.ai_instructions || null,
+    documentId: r.document_id || null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -3180,6 +3447,14 @@ async function getAutoReply(res, id, session) {
   }
   sendJson(res, 200, { data: enrichAutoReply(row), success: true });
 }
+async function autoReplyDocumentValid(documentId, instanceId) {
+  if (!documentId) return true;
+  const row = (await pool.query(
+    'SELECT id FROM bot_documents WHERE id = $1 AND instance_id = $2', [documentId, instanceId]
+  )).rows[0];
+  return !!row;
+}
+
 async function createAutoReply(res, body, session) {
   const useAi = body.useAi === true;
   if (!body.instanceId || !body.name || !body.trigger) {
@@ -3190,6 +3465,9 @@ async function createAutoReply(res, body, session) {
   }
   const inst = await loadInstanceForUser(body.instanceId, session);
   if (!inst) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  if (body.documentId && !(await autoReplyDocumentValid(body.documentId, body.instanceId))) {
+    return sendJson(res, 400, { error: 'El documento seleccionado no pertenece a esta instancia' });
+  }
   const limits = await getUserPlanLimits(session.id, session.role);
   if (limits) {
     const used = parseInt((await pool.query(
@@ -3199,10 +3477,10 @@ async function createAutoReply(res, body, session) {
   }
   const id = cuid();
   const result = await pool.query(
-    `INSERT INTO auto_replies (id, instance_id, name, trigger, response, is_active, use_ai, ai_instructions)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    `INSERT INTO auto_replies (id, instance_id, name, trigger, response, is_active, use_ai, ai_instructions, document_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
     [id, body.instanceId, body.name, body.trigger, body.response || '', body.isActive !== false,
-      useAi, body.aiInstructions || null]
+      useAi, body.aiInstructions || null, body.documentId || null]
   );
   sendJson(res, 201, { data: enrichAutoReply(result.rows[0]), success: true });
 }
@@ -3218,16 +3496,23 @@ async function updateAutoReply(res, id, body, session) {
   if (body.instanceId && !(await loadInstanceForUser(body.instanceId, session))) {
     return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   }
+  const targetInstanceId = body.instanceId || existing.rows[0].instance_id;
+  if (body.documentId !== undefined && body.documentId && !(await autoReplyDocumentValid(body.documentId, targetInstanceId))) {
+    return sendJson(res, 400, { error: 'El documento seleccionado no pertenece a esta instancia' });
+  }
+  const DOC_UNSET = '___UNSET___';
   const result = await pool.query(
     `UPDATE auto_replies SET name = COALESCE($1, name), trigger = COALESCE($2, trigger),
      response = COALESCE($3, response), is_active = COALESCE($4, is_active),
      instance_id = COALESCE($5, instance_id),
      use_ai = CASE WHEN $7::boolean IS NULL THEN use_ai ELSE $7 END,
      ai_instructions = COALESCE($8, ai_instructions),
+     document_id = CASE WHEN $9 = $10 THEN document_id ELSE $9::text END,
      updated_at = NOW() WHERE id = $6 RETURNING *`,
     [body.name || null, body.trigger || null, body.response || null,
      body.isActive !== undefined ? body.isActive : null, body.instanceId || null, id,
-     body.useAi !== undefined ? body.useAi : null, body.aiInstructions !== undefined ? body.aiInstructions : null]
+     body.useAi !== undefined ? body.useAi : null, body.aiInstructions !== undefined ? body.aiInstructions : null,
+     body.documentId !== undefined ? (body.documentId || null) : DOC_UNSET, DOC_UNSET]
   );
   if (result.rows.length === 0) return sendJson(res, 404, { error: 'Auto-reply no encontrado' });
   sendJson(res, 200, { data: enrichAutoReply(result.rows[0]), success: true });
@@ -4969,7 +5254,15 @@ async function processAutoReply(instance, rule, targetJid, senderJid, senderName
     let reply;
     if (rule.use_ai === true) {
       const instructions = rule.ai_instructions || 'Responde de forma breve y natural, en el mismo idioma del cliente.';
-      const system = `Eres el asistente de atención al cliente de esta empresa. Reglas de esta auto-respuesta: ${instructions}`;
+      let system = `Eres el asistente de atención al cliente de esta empresa. Reglas de esta auto-respuesta: ${instructions}`;
+      if (rule.document_id) {
+        const doc = (await pool.query('SELECT title FROM bot_documents WHERE id = $1', [rule.document_id])).rows[0];
+        const ctx = await retrieveBotContext(instance, content, 4, null, rule.document_id);
+        if (ctx.length > 0) {
+          const docs = ctx.map((c) => `- ${c.content}`).join('\n');
+          system += `\n\nINFORMACIÓN DE REFERENCIA DEL DOCUMENTO${doc && doc.title ? ` "${doc.title}"` : ''} (úsala solo si responde a la consulta del cliente):\n${docs}`;
+        }
+      }
       const history = (await pool.query(
         `SELECT sender_jid, content, direction FROM message_logs
          WHERE instance_id = $1 AND sender_jid = $2 AND content IS NOT NULL
@@ -5385,6 +5678,18 @@ async function generateChatbotReply(instance, senderJid, senderName, content) {
   messages.push({ role: 'user', content });
 
   try {
+    let systemPrompt = buildChatbotSystemPrompt(config) || 'Eres un asistente amable.';
+    try {
+      const context = await retrieveBotContext(instance, content, 4, settings);
+      if (context.length > 0) {
+        const docs = context
+          .map((c) => `- ${c.title ? `[${c.title}] ` : ''}${c.content}`)
+          .join('\n');
+        systemPrompt += `\n\nINFORMACIÓN EXTRAÍDA DE LOS DOCUMENTOS DE LA EMPRESA\nUsa estos datos solo si responden a lo que el cliente pregunta; si no guardan relación, ignóralos:\n${docs}`;
+      }
+    } catch (e) {
+      console.warn('[RAG] recuperación de contexto falló:', e.message);
+    }
     const result = await settings.provider.generate(
       {
         apiKey: settings.apiKey,
@@ -5394,7 +5699,7 @@ async function generateChatbotReply(instance, senderJid, senderName, content) {
         project: settings.project,
       },
       {
-        system: buildChatbotSystemPrompt(config) || 'Eres un asistente amable.',
+        system: systemPrompt,
         messages,
         temperature: config.temperature != null ? Number(config.temperature) : 0.7,
         maxTokens: config.max_tokens != null ? Number(config.max_tokens) : 200,

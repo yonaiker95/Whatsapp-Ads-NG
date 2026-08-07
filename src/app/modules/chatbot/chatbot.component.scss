@@ -154,6 +154,137 @@
   padding: 8px 0 24px;
 }
 
+.documents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+
+  .document-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    background: var(--surface-hover);
+
+    .doc-icon {
+      color: var(--primary);
+      flex-shrink: 0;
+    }
+
+    .doc-info {
+      flex: 1;
+      min-width: 0;
+
+      .doc-title {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--text-primary);
+      }
+
+      .doc-meta {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 2px;
+      }
+
+      .doc-warning {
+        font-size: 12px;
+        color: var(--warn);
+        margin-top: 4px;
+      }
+    }
+  }
+}
+
+.documents-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.document-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.doc-divider {
+  margin: 20px 0;
+}
+
+.query-test {
+  h3 {
+    margin: 0 0 4px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .query-hint {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .query-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+
+    .query-input {
+      flex: 1;
+    }
+  }
+
+  .query-results {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+
+    .query-result {
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      background: var(--surface-hover);
+
+      .query-score {
+        font-size: 11px;
+        color: var(--primary);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        margin-bottom: 4px;
+      }
+
+      .query-content {
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--text-primary);
+      }
+    }
+  }
+
+  .query-empty {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+}
+
+.badge-ok {
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+.badge-warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .paused-content {
   padding: 24px 0;
 

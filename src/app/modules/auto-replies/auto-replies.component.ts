@@ -116,6 +116,7 @@ export class AutoRepliesComponent implements OnInit, OnDestroy {
         isActive: reply.isActive,
         useAi: reply.useAi,
         aiInstructions: reply.aiInstructions,
+        documentId: reply.documentId || null,
       },
       reply.id
     );
@@ -131,6 +132,7 @@ export class AutoRepliesComponent implements OnInit, OnDestroy {
         isActive: !reply.isActive,
         useAi: reply.useAi,
         aiInstructions: reply.aiInstructions,
+        documentId: reply.documentId || null,
       })
       .subscribe(() => this.loadAutoReplies());
   }

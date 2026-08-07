@@ -38,6 +38,24 @@ export interface ChatbotPaused {
   createdAt: string;
 }
 
+export interface BotDocument {
+  id: string;
+  instanceId: string;
+  title: string;
+  status: string;
+  error?: string | null;
+  chunkCount: number;
+  charCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BotDocumentQueryResult {
+  title?: string | null;
+  content: string;
+  score: number;
+}
+
 export interface ConversationMessage {
   id: string;
   senderName: string;

@@ -4,7 +4,7 @@
   <div class="form-column">
     <mat-form-field appearance="outline">
       <mat-label>Instancia *</mat-label>
-      <mat-select [(ngModel)]="formData.instanceId" required>
+      <mat-select [(ngModel)]="formData.instanceId" required (selectionChange)="onInstanceChange()">
         <mat-option *ngFor="let inst of instances" [value]="inst.id">{{ inst.name }}</mat-option>
       </mat-select>
     </mat-form-field>
@@ -32,6 +32,16 @@
       <textarea matInput [(ngModel)]="formData.aiInstructions" rows="3"
         placeholder="Ej: Ofrece el precio del plan y pide su número. Sé amable y breve."></textarea>
       <mat-hint>Opcional: guía a la IA sobre cómo responder</mat-hint>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" *ngIf="formData.useAi">
+      <mat-label>Alimentarse de un documento</mat-label>
+      <mat-select [(ngModel)]="formData.documentId">
+        <mat-option [value]="null">— Sin documento —</mat-option>
+        <mat-option *ngFor="let doc of documents" [value]="doc.id">{{ doc.title }}</mat-option>
+      </mat-select>
+      <mat-hint *ngIf="documents.length > 0">La IA responderá usando los fragmentos relevantes de este documento del chatbot</mat-hint>
+      <mat-hint *ngIf="documents.length === 0">No hay documentos en esta instancia. Crea uno en el módulo Chatbot.</mat-hint>
     </mat-form-field>
 
     <mat-form-field appearance="outline" *ngIf="!formData.useAi">

@@ -12,11 +12,12 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatListModule } from '@angular/material/list';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatDividerModule } from '@angular/material/divider';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, takeUntil } from 'rxjs';
 import { ChatbotService } from '../../core/services/chatbot.service';
 import { InstanceService } from '../../core/services/instance.service';
-import { ChatbotConfig, ChatbotPaused, PriceItem } from '../../core/models/chatbot.model';
+import { ChatbotConfig, ChatbotPaused, PriceItem, BotDocument, BotDocumentQueryResult } from '../../core/models/chatbot.model';
 import { Instance } from '../../core/models/instance.model';
 
 @Component({
@@ -25,7 +26,7 @@ import { Instance } from '../../core/models/instance.model';
   imports: [
     CommonModule, FormsModule, MatCardModule, MatIconModule, MatButtonModule, MatTabsModule,
     MatFormFieldModule, MatInputModule, MatSelectModule, MatSlideToggleModule,
-    MatProgressSpinnerModule, MatListModule, MatChipsModule, MatSnackBarModule,
+    MatProgressSpinnerModule, MatListModule, MatChipsModule, MatDividerModule, MatSnackBarModule,
   ],
   templateUrl: './chatbot.component.html',
   styleUrls: ['./chatbot.component.scss'],
@@ -62,6 +63,16 @@ Reglas:
   pausedChats: ChatbotPaused[] = [];
   pausedLoading = false;
 
+  documents: BotDocument[] = [];
+  documentsLoading = false;
+  documentSaving = false;
+  newDocTitle = '';
+  newDocContent = '';
+  queryTest = '';
+  queryResults: BotDocumentQueryResult[] = [];
+  queryTesting = false;
+  queryTested = false;
+
   private destroy$ = new Subject<void>();
 
   constructor(
@@ -88,6 +99,7 @@ Reglas:
   onInstanceChange(): void {
     this.loadConfig();
     this.loadPausedChats();
+    this.loadDocuments();
   }
 
   loadConfig(): void {
@@ -199,5 +211,84 @@ Reglas:
 
   trackPriceItem(index: number, item: PriceItem): string {
     return index + (item.name || '') + (item.price || '');
+  }
+
+  loadDocuments(): void {
+    if (!this.selectedInstanceId) return;
+    this.documentsLoading = true;
+    this.chatbotService.getDocuments(this.selectedInstanceId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (docs) => {
+          this.documents = docs;
+          this.documentsLoading = false;
+        },
+        error: () => {
+          this.documentsLoading = false;
+        },
+      });
+  }
+
+  addDocument(): void {
+    if (!this.selectedInstanceId) return;
+    if (!this.newDocTitle.trim()) {
+      this.snackBar.open('Escribe un título para el documento', 'Cerrar', { duration: 3000 });
+      return;
+    }
+    if (!this.newDocContent.trim()) {
+      this.snackBar.open('Escribe el contenido del documento', 'Cerrar', { duration: 3000 });
+      return;
+    }
+    this.documentSaving = true;
+    this.chatbotService.createDocument(this.selectedInstanceId, this.newDocTitle.trim(), this.newDocContent)
+      .subscribe({
+        next: () => {
+          this.documentSaving = false;
+          this.newDocTitle = '';
+          this.newDocContent = '';
+          this.snackBar.open('Documento agregado al conocimiento del bot', 'Cerrar', { duration: 3000 });
+          this.loadDocuments();
+        },
+        error: (err) => {
+          this.documentSaving = false;
+          this.snackBar.open(err?.error?.error || 'Error al guardar el documento', 'Cerrar', { duration: 5000 });
+        },
+      });
+  }
+
+  deleteDocument(doc: BotDocument): void {
+    this.chatbotService.deleteDocument(doc.id).subscribe({
+      next: () => {
+        this.snackBar.open('Documento eliminado', 'Cerrar', { duration: 3000 });
+        this.loadDocuments();
+      },
+      error: (err) => {
+        this.snackBar.open(err?.error?.error || 'Error al eliminar el documento', 'Cerrar', { duration: 5000 });
+      },
+    });
+  }
+
+  testDocumentQuery(): void {
+    if (!this.selectedInstanceId || !this.queryTest.trim()) return;
+    this.queryTesting = true;
+    this.queryTested = false;
+    this.chatbotService.testDocumentQuery(this.selectedInstanceId, this.queryTest.trim())
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (results) => {
+          this.queryResults = results;
+          this.queryTesting = false;
+          this.queryTested = true;
+        },
+        error: () => {
+          this.queryTesting = false;
+          this.queryTested = true;
+          this.queryResults = [];
+        },
+      });
+  }
+
+  trackDocument(index: number, doc: BotDocument): string {
+    return doc.id;
   }
 }

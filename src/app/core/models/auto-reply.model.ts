@@ -8,6 +8,7 @@ export interface AutoReply {
   isActive: boolean;
   useAi?: boolean;
   aiInstructions?: string | null;
+  documentId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -20,4 +21,5 @@ export interface AutoReplyFormData {
   isActive: boolean;
   useAi?: boolean;
   aiInstructions?: string | null;
+  documentId?: string | null;
 }

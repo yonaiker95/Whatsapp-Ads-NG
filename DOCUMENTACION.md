@@ -177,8 +177,10 @@ El esquema se crea automáticamente al iniciar el backend (`server.js`). Tablas:
 | `send_logs` | Registro de resultados de cada envío |
 | `message_logs` | Mensajes enviados y recibidos |
 | `auto_replies` | Reglas de respuesta automática |
-| `chatbot_configs` | Configuración del chatbot por instancia (prompt, activo) |
+| `chatbot_configs` | Configuración del chatbot por instancia (prompt, activo, conocimiento: empresa, precios, calendario) |
 | `chatbot_paused` | Conversaciones pausadas del chatbot |
+| `bot_documents` | Documentos del bot (RAG): texto que alimenta al chatbot por instancia |
+| `bot_document_chunks` | Fragmentos de cada documento con sus embeddings (búsqueda semántica) |
 | `ai_configs` | Configuración de IA por usuario (modo SaaS/BYOK, proveedor, modelo) |
 | `ai_saas_keys` | Claves de sistema (modo SaaS) administradas por el admin |
 | `ai_usage_logs` | Registro de consumo de IA (tokens, costo, estado) |
@@ -564,6 +566,10 @@ Todas las rutas están prefijadas con `/api`. Las rutas (excepto autenticación 
 | POST | `/api/chatbot/pause` | Pausa o reanuda una conversación |
 | GET | `/api/chatbot/paused` | Lista conversaciones pausadas |
 | DELETE | `/api/chatbot/paused` | Elimina una conversación pausada |
+| GET | `/api/chatbot/documents?instanceId=` | Lista los documentos del bot de la instancia |
+| POST | `/api/chatbot/documents` | Crea un documento (lo divide en fragmentos y calcula embeddings con el proveedor de IA) |
+| POST | `/api/chatbot/documents/query` | Prueba la recuperación: devuelve los fragmentos relevantes a una consulta |
+| DELETE | `/api/chatbot/documents/:id` | Elimina un documento (y sus fragmentos) |
 
 ### Respuestas automáticas
 
@@ -723,6 +729,15 @@ Las sesiones se almacenan en memoria (objeto `sessions` en `server.js`). En un d
 - El chatbot debe estar activo (`chatbot_configs.is_active`) para procesar mensajes.
 - Las API keys de IA se almacenan **cifradas** (AES-256-GCM) con la clave maestra derivada de `AI_ENC_KEY` (o `SESSION_SECRET`).
 
+### Conocimiento del bot
+
+- **Campos del prompt**: además del comportamiento (`system_prompt`), cada instancia puede definir `company_info` (información de la empresa), `price_list` (lista de precios) y `calendar` (disponibilidad). `buildChatbotSystemPrompt` los combina en el prompt de sistema que recibe la IA.
+- **Documentos (RAG)**: `POST /api/chatbot/documents` guarda textos largos (catálogos, políticas, menús...) en `bot_documents`, los divide en fragmentos con solape (`chunkText`, ~900 caracteres) y calcula sus **embeddings** con el proveedor de IA activo del tenant cuando lo soporta (`IAProvider.embed`; Gemini, OpenAI y Mistral lo exponen).
+- **Recuperación**: al responder, `retrieveBotContext` calcula el embedding de la consulta del cliente y devuelve los fragmentos más parecidos por **similitud coseno** (umbral 0.15), que se inyectan como "INFORMACIÓN EXTRAÍDA DE LOS DOCUMENTOS DE LA EMPRESA". Si el proveedor no tiene embeddings o fallan, cae a **búsqueda léxica** por coincidencia de palabras (funciona siempre).
+- **Estado del documento**: `stored` (con embeddings) o `lexical` (búsqueda por palabras); se puede probar la recuperación con `POST /api/chatbot/documents/query`.
+- **Auto-respuestas con documento**: una regla de auto-respuesta en modo IA puede vincular un documento de su instancia (`auto_replies.document_id`); al dispararse recupera solo los fragmentos de ese documento y los usa como referencia, permitiendo alimentar una parte específica del conocimiento.
+- El bot funciona **sin auto-respuestas configuradas**: el chatbot IA (con o sin n8n) usa directamente el conocimiento de la instancia.
+
 ### Pausa por conversación
 
 - Enviar un mensaje manual a un chat privado inserta al remitente en `chatbot_paused` (ON CONFLICT DO NOTHING): el chatbot deja de responder a ese contacto hasta que se reanude.
@@ -800,7 +815,7 @@ Registrados en `providers/provider-manager.js` (clase `ProviderManager`, único 
 | openrouter | OpenRouter | sí | no |
 | azure | Azure OpenAI | sí | sí (endpoint/deployment) |
 
-Cada proveedor implementa la interfaz `IAProvider` (`providers/ia-provider.js`): `validateConnection()` y `generate()`. El formato de cada API key se valida en `security/api-keys.js`.
+Cada proveedor implementa la interfaz `IAProvider` (`providers/ia-provider.js`): `validateConnection()`, `generate()` y, opcionalmente, `embed(settings, texts)` + el getter `embedModel` para los **embeddings** (documentos RAG del chatbot). Los que exponen embeddings: **gemini** (`gemini-embedding-001`), **openai** (`text-embedding-3-small`) y **mistral** (`mistral-embed`); el resto (claude, deepseek, openrouter, azure) devuelven `null` y el chatbot usa búsqueda léxica. El formato de cada API key se valida en `security/api-keys.js`.
 
 ### Modos
 

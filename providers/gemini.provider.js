@@ -35,6 +35,10 @@ class GeminiProvider extends IAProvider {
     ];
   }
 
+  get embedModel() {
+    return 'gemini-embedding-001';
+  }
+
   _headers(apiKey) {
     return { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' };
   }
@@ -84,6 +88,25 @@ class GeminiProvider extends IAProvider {
         outputTokens: usage.candidatesTokenCount || 0,
       },
     };
+  }
+
+  async embed({ apiKey, baseUrl }, texts) {
+    const base = (baseUrl || this.defaultBaseUrl).replace(/\/$/, '');
+    const model = this.embedModel || 'gemini-embedding-001';
+    const items = (texts || []).filter((t) => String(t || '').trim());
+    if (items.length === 0) return [];
+    const results = await Promise.all(
+      items.map(async (t) => {
+        const data = await requestJson(
+          'POST',
+          `${base}/models/${model}:embedContent`,
+          this._headers(apiKey),
+          { model: `models/${model}`, content: { parts: [{ text: String(t || '') }] } }
+        );
+        return data.embedding && data.embedding.values;
+      })
+    );
+    return results;
   }
 }
 

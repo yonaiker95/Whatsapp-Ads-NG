@@ -11,7 +11,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { AutoReplyService } from '../../../../core/services/auto-reply.service';
 import { InstanceService } from '../../../../core/services/instance.service';
+import { ChatbotService } from '../../../../core/services/chatbot.service';
 import { AutoReplyFormData } from '../../../../core/models/auto-reply.model';
+import { BotDocument } from '../../../../core/models/chatbot.model';
 import { Instance } from '../../../../core/models/instance.model';
 
 export interface AutoReplyDialogData {
@@ -33,6 +35,7 @@ export class AutoReplyFormDialogComponent {
   formData: AutoReplyFormData;
   id?: string;
   instances: Instance[] = [];
+  documents: BotDocument[] = [];
   saving = false;
 
   constructor(
@@ -40,6 +43,7 @@ export class AutoReplyFormDialogComponent {
     private dialogRef: MatDialogRef<AutoReplyFormDialogComponent>,
     private autoReplyService: AutoReplyService,
     private instanceService: InstanceService,
+    private chatbotService: ChatbotService,
     private snackBar: MatSnackBar
   ) {
     this.formData = { ...data.formData };
@@ -53,6 +57,27 @@ export class AutoReplyFormDialogComponent {
       if (!this.formData.instanceId && instances.length > 0) {
         this.formData.instanceId = instances[0].id;
       }
+      if (this.formData.instanceId) this.loadDocuments();
+    });
+  }
+
+  onInstanceChange(): void {
+    this.formData.documentId = null;
+    this.loadDocuments();
+  }
+
+  loadDocuments(): void {
+    if (!this.formData.instanceId) {
+      this.documents = [];
+      return;
+    }
+    this.chatbotService.getDocuments(this.formData.instanceId).subscribe({
+      next: (docs) => {
+        this.documents = docs;
+      },
+      error: () => {
+        this.documents = [];
+      },
     });
   }
 
@@ -70,9 +95,13 @@ export class AutoReplyFormDialogComponent {
       return;
     }
     this.saving = true;
+    const payload: AutoReplyFormData = {
+      ...this.formData,
+      documentId: this.formData.useAi ? this.formData.documentId || null : null,
+    };
     const request = this.id
-      ? this.autoReplyService.update(this.id, this.formData)
-      : this.autoReplyService.create(this.formData);
+      ? this.autoReplyService.update(this.id, payload)
+      : this.autoReplyService.create(payload);
 
     request.subscribe({
       next: () => {

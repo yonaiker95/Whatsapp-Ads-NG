@@ -29,6 +29,10 @@ class MistralProvider extends OpenAICompatibleProvider {
     return 'mistral-small-latest';
   }
 
+  get embedModel() {
+    return 'mistral-embed';
+  }
+
   get helpGuide() {
     return [
       'Abre https://console.mistral.ai y crea una cuenta.',
