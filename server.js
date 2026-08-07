@@ -2341,14 +2341,24 @@ async function reconcileWithEvolution(evolutionUrl, apiKey) {
     ? remoteInstances
     : (remoteInstances.value || []);
   let synced = 0, created = 0;
+  // Propietario por defecto para las instancias que Evolution posee y la BD no
+  // conoce: el primer admin/owner del sistema. Si no existe, no se crean
+  // instancias huérfanas (evita violar la FK instances_user_id_fkey).
+  let systemOwnerId = null;
+  try {
+    const owner = await pool.query(
+      `SELECT id FROM users WHERE role IN ('admin', 'owner') ORDER BY created_at ASC LIMIT 1`
+    );
+    systemOwnerId = owner.rows[0] ? owner.rows[0].id : null;
+  } catch { /* sin propietario: se omiten las instancias nuevas */ }
   for (const remote of remoteList) {
     const name = remote.instanceName || remote.name;
     if (!name) continue;
     const rStatus = remote.connectionStatus || remote.status || remote.state || '';
     const dbStatus = rStatus === 'open' ? 'connected' : rStatus === 'connecting' ? 'connecting' : 'disconnected';
     const existing = await pool.query(
-      `SELECT * FROM instances WHERE evolution_instance_id = $1 OR (name = $2 AND evolution_url = $3)`,
-      [name, name, evolutionUrl]
+      `SELECT * FROM instances WHERE evolution_instance_id = $1 OR name = $2`,
+      [name, name]
     );
     if (existing.rows.length > 0) {
       const e = existing.rows[0];
@@ -2359,11 +2369,11 @@ async function reconcileWithEvolution(evolutionUrl, apiKey) {
         );
         synced++;
       }
-    } else {
+    } else if (systemOwnerId) {
       await pool.query(
         `INSERT INTO instances (id, name, evolution_url, api_key, status, evolution_instance_id, user_id)
-         VALUES ($1, $2, $3, $4, $5, $6, '1')`,
-        [cuid(), name, evolutionUrl, apiKey, dbStatus, name]
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [cuid(), name, evolutionUrl, apiKey, dbStatus, name, systemOwnerId]
       );
       created++;
     }
