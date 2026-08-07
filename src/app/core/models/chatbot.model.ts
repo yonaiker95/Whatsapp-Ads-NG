@@ -44,10 +44,36 @@ export interface BotDocument {
   title: string;
   status: string;
   error?: string | null;
+  source?: string;
+  sourceRef?: string | null;
+  sourceUrl?: string | null;
   chunkCount: number;
   charCount: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export type GoogleSourceType = 'sheet' | 'docs' | 'calendar';
+
+export interface GoogleConnectionStatus {
+  connected: boolean;
+  email?: string | null;
+}
+
+export interface GoogleAuthUrl {
+  url: string;
+}
+
+export interface GoogleFileItem {
+  id: string;
+  name: string;
+  mimeType?: string;
+}
+
+export interface GoogleCalendarItem {
+  id: string;
+  summary: string;
+  primary?: boolean;
 }
 
 export interface BotDocumentQueryResult {

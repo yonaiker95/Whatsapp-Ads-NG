@@ -9,6 +9,7 @@ const { WebSocketServer } = require('ws');
 // Centro de IA: todo acceso a proveedores pasa por IAProvider vía ProviderManager.
 const { providerManager } = require('./providers/provider-manager');
 const { encryptSecret, decryptSecret, maskKey, validateKeyFormat, providerLabel } = require('./security/api-keys');
+const { createGoogleClient } = require('./google');
 
 // ---------------------------------------------------------------------------
 // 1. Config
@@ -163,6 +164,15 @@ function fetchJson(method, url, headers, body) {
 // 3. Base de datos
 // ---------------------------------------------------------------------------
 let pool = new Pool({ connectionString: DB_URL });
+
+// Cliente de Google (OAuth + Sheets/Docs/Calendar) para alimentar el
+// conocimiento del bot desde la cuenta del usuario.
+const googleClient = createGoogleClient({
+  getPool: () => pool,
+  encryptSecret,
+  decryptSecret,
+  appUrl: () => APP_URL,
+});
 
 async function initDb() {
   const client = await pool.connect();
@@ -405,6 +415,22 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_bot_documents_instance ON bot_documents (instance_id);
       CREATE INDEX IF NOT EXISTS idx_bot_document_chunks_instance ON bot_document_chunks (instance_id);
       CREATE INDEX IF NOT EXISTS idx_bot_document_chunks_document ON bot_document_chunks (document_id);
+      -- Procedencia de cada documento del bot: 'manual' (pegado a mano),
+      -- 'sheet' / 'docs' / 'calendar' (importados desde la cuenta de Google).
+      ALTER TABLE bot_documents ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual';
+      ALTER TABLE bot_documents ADD COLUMN IF NOT EXISTS source_ref TEXT;
+      ALTER TABLE bot_documents ADD COLUMN IF NOT EXISTS source_url TEXT;
+      -- Conexión OAuth de la cuenta de Google del usuario (tokens cifrados).
+      CREATE TABLE IF NOT EXISTS google_connections (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        google_email TEXT NOT NULL,
+        access_token_enc TEXT NOT NULL,
+        refresh_token_enc TEXT,
+        scopes TEXT,
+        expires_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
       -- Auto-respuestas: una regla en modo IA puede alimentarse de un documento
       -- específico de la instancia (la parte del conocimiento que le interese).
       ALTER TABLE auto_replies ADD COLUMN IF NOT EXISTS document_id TEXT;
@@ -1437,6 +1463,16 @@ async function handleRequest(req, res, pathname) {
     return await getTestimonials(res, null);
   }
 
+  // -- Google OAuth callback (llega por redirect del navegador) --
+  // Se procesa ANTES de requireAuth: el navegador navega directo a esta URL
+  // tras autorizar en Google. La asociación con el usuario se hace mediante el
+  // parámetro `state` (ver google.js), así funciona aunque el popup no lleve
+  // cookie de sesión. Termina redirigiendo de vuelta a la SPA.
+  if (base === 'chatbot' && id === 'google' && action === 'callback') {
+    const q = new URL(req.url, `http://${req.headers.host}`);
+    return await googleOAuthCallback(res, q);
+  }
+
   const session = await requireAuth(req, res);
   if (!session) return;
 
@@ -1559,6 +1595,8 @@ async function handleRequest(req, res, pathname) {
           return await createChatbotDocument(res, await parseBody(req), session);
         if (method === 'DELETE' && parts[1] === 'documents' && parts[2])
           return await deleteChatbotDocument(res, parts[2], session);
+        if (parts[1] === 'google')
+          return await handleGoogleRoutes(res, req, session, parts.slice(2));
         break;
 
       // -- Auto-replies --
@@ -3148,9 +3186,17 @@ async function embedBotTexts(instance, texts, settings) {
     return null;
   }
   try {
-    const vectors = await effective.provider.embed(effective, texts);
-    if (!Array.isArray(vectors) || vectors.length !== texts.length) return null;
-    return vectors.map((v) => (Array.isArray(v) && v.length > 0 ? v : null));
+    // Procesa en lotes para no saturar la API del proveedor con documentos
+    // grandes (por ejemplo una hoja de cálculo importada con miles de filas).
+    const BATCH = 24;
+    const vectors = [];
+    for (let i = 0; i < texts.length; i += BATCH) {
+      const batch = texts.slice(i, i + BATCH);
+      const v = await effective.provider.embed(effective, batch);
+      if (!Array.isArray(v) || v.length !== batch.length) return null;
+      vectors.push(...v);
+    }
+    return vectors.map((vec) => (Array.isArray(vec) && vec.length > 0 ? vec : null));
   } catch (e) {
     console.warn('[RAG] embed falló, usando búsqueda léxica:', e.message);
     return null;
@@ -3197,6 +3243,9 @@ function enrichBotDocument(r) {
     title: r.title,
     status: r.status || 'stored',
     error: r.error || null,
+    source: r.source || 'manual',
+    sourceRef: r.source_ref || null,
+    sourceUrl: r.source_url || null,
     chunkCount: parseInt(r.chunk_count, 10) || 0,
     charCount: r.content ? r.content.length : 0,
     createdAt: r.created_at,
@@ -3238,36 +3287,45 @@ async function createChatbotDocument(res, body, session) {
   if (!title) return sendJson(res, 400, { error: 'El título es requerido' });
   if (!content) return sendJson(res, 400, { error: 'El contenido es requerido' });
   if (content.length < 30) return sendJson(res, 400, { error: 'El contenido es demasiado corto para alimentar al bot' });
+  const saved = await storeBotDocument(inst, title, content);
+  if (saved.ok === false) return sendJson(res, 400, { error: saved.error || 'El contenido no se pudo procesar' });
+  const row = (await pool.query(
+    `SELECT d.*, COUNT(c.id)::int AS chunk_count FROM bot_documents d
+     LEFT JOIN bot_document_chunks c ON c.document_id = d.id
+     WHERE d.id = $1 GROUP BY d.id`, [saved.id]
+  )).rows[0];
+  sendJson(res, 201, { data: enrichBotDocument(row), success: true });
+}
+
+// Divide el contenido en fragmentos, calcula embeddings (si el proveedor los
+// soporta) y guarda el documento con sus chunks. Se usa tanto para los
+// documentos manuales como para los importados desde Google.
+async function storeBotDocument(instance, title, content, extra = {}) {
   const chunks = chunkText(content);
-  if (chunks.length === 0) return sendJson(res, 400, { error: 'El contenido no se pudo procesar' });
+  if (chunks.length === 0) return { ok: false, error: 'El contenido no se pudo procesar' };
   const id = cuid();
   let embeddings = null;
   try {
-    embeddings = await embedBotTexts(inst, chunks);
+    embeddings = await embedBotTexts(instance, chunks);
   } catch (e) {
     embeddings = null;
   }
   const status = embeddings ? 'stored' : 'lexical';
   const error = embeddings ? null : 'El proveedor de IA no expone embeddings o fallaron: el bot usará búsqueda por palabras.';
   await pool.query(
-    `INSERT INTO bot_documents (id, instance_id, title, content, status, error)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [id, body.instanceId, title, content, status, error]
+    `INSERT INTO bot_documents (id, instance_id, title, content, status, error, source, source_ref, source_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [id, instance.id, title, content, status, error, extra.source || 'manual', extra.sourceRef || null, extra.sourceUrl || null]
   );
   for (let i = 0; i < chunks.length; i++) {
     const emb = embeddings && embeddings[i];
     await pool.query(
       `INSERT INTO bot_document_chunks (id, document_id, instance_id, chunk_index, content, embedding)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [cuid(), id, body.instanceId, i, chunks[i], emb ? JSON.stringify(emb) : null]
+      [cuid(), id, instance.id, i, chunks[i], emb ? JSON.stringify(emb) : null]
     );
   }
-  const row = (await pool.query(
-    `SELECT d.*, COUNT(c.id)::int AS chunk_count FROM bot_documents d
-     LEFT JOIN bot_document_chunks c ON c.document_id = d.id
-     WHERE d.id = $1 GROUP BY d.id`, [id]
-  )).rows[0];
-  sendJson(res, 201, { data: enrichBotDocument(row), success: true });
+  return { ok: true, id, status, error, chunkCount: chunks.length };
 }
 
 async function deleteChatbotDocument(res, id, session) {
@@ -3295,6 +3353,121 @@ async function testChatbotDocumentQuery(res, body, session) {
     })),
     success: true,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Integración con Google (OAuth + importación de hojas/documentos/agenda)
+// ---------------------------------------------------------------------------
+async function googleOAuthCallback(res, q) {
+  const code = q.searchParams.get('code');
+  const state = q.searchParams.get('state');
+  const home = `${String(APP_URL).replace(/\/+$/, '')}/app/chatbot`;
+  const fail = `${home}?google=error`;
+  if (!code || !state) {
+    res.writeHead(302, { Location: fail });
+    return res.end();
+  }
+  try {
+    await googleClient.handleCallback(code, state);
+    res.writeHead(302, { Location: `${home}?google=connected` });
+    return res.end();
+  } catch (e) {
+    console.warn('[Google] OAuth callback error:', e.message);
+    res.writeHead(302, { Location: fail });
+    return res.end();
+  }
+}
+
+async function handleGoogleRoutes(res, req, session, seg) {
+  const method = req.method;
+  const q = new URL(req.url, `http://${req.headers.host}`);
+  if (method === 'GET' && seg[0] === 'auth-url') {
+    if (!googleClient.isConfigured()) {
+      return sendJson(res, 400, {
+        error: 'Google no está configurado: faltan GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET (guía en DOCUMENTACION.md)',
+      });
+    }
+    return sendJson(res, 200, { data: { url: googleClient.buildAuthUrl(session.id) }, success: true });
+  }
+  if (method === 'GET' && seg[0] === 'status') {
+    const conn = await googleClient.getConnection(session.id).catch(() => null);
+    return sendJson(res, 200, {
+      data: { connected: Boolean(conn && conn.email), email: conn ? conn.email : null },
+      success: true,
+    });
+  }
+  if (method === 'DELETE' && seg.length === 0) {
+    await googleClient.disconnect(session.id);
+    return sendJson(res, 200, { success: true });
+  }
+  if (method === 'GET' && seg[0] === 'files') {
+    const kind = q.searchParams.get('kind') === 'docs' ? 'docs' : 'sheets';
+    try {
+      const files = await googleClient.listFiles(session.id, kind);
+      return sendJson(res, 200, { data: files, success: true });
+    } catch (e) {
+      return sendJson(res, 400, { error: googleApiErrorMessage(e) });
+    }
+  }
+  if (method === 'GET' && seg[0] === 'calendars') {
+    try {
+      const calendars = await googleClient.listCalendars(session.id);
+      return sendJson(res, 200, { data: calendars, success: true });
+    } catch (e) {
+      return sendJson(res, 400, { error: googleApiErrorMessage(e) });
+    }
+  }
+  if (method === 'POST' && seg[0] === 'import') {
+    return await importGoogleSource(res, await parseBody(req), session);
+  }
+  return sendJson(res, 404, { error: 'Not found' });
+}
+
+function googleApiErrorMessage(e) {
+  if (e && e.code === 'NO_CONNECTION') return 'Conecta tu cuenta de Google antes de importar contenido.';
+  if (e && e.status === 401) return 'La conexión con Google caducó o fue revocada. Reconecta tu cuenta.';
+  if (e && e.status === 403) return 'Google rechazó el acceso a este recurso. Revisa los permisos otorgados.';
+  if (e && e.status === 404) return 'No se encontró el archivo o calendario. Puede que haya sido eliminado.';
+  return (e && e.message) || 'Error al comunicarse con Google';
+}
+
+async function importGoogleSource(res, body, session) {
+  if (!body.instanceId) return sendJson(res, 400, { error: 'instanceId requerido' });
+  const inst = await loadInstanceForUser(body.instanceId, session);
+  if (!inst) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  const type = String(body.type || 'sheet');
+  let imported;
+  try {
+    if (type === 'sheet') {
+      if (!body.fileId) return sendJson(res, 400, { error: 'Selecciona una hoja de cálculo' });
+      imported = await googleClient.importSheet(session.id, body.fileId);
+    } else if (type === 'docs') {
+      if (!body.fileId) return sendJson(res, 400, { error: 'Selecciona un documento' });
+      imported = await googleClient.importDocs(session.id, body.fileId);
+    } else if (type === 'calendar') {
+      if (!body.calendarId) return sendJson(res, 400, { error: 'Selecciona un calendario' });
+      imported = await googleClient.importCalendar(session.id, body.calendarId, body.days);
+    } else {
+      return sendJson(res, 400, { error: 'Tipo de fuente no válido' });
+    }
+  } catch (e) {
+    return sendJson(res, 400, { error: googleApiErrorMessage(e) });
+  }
+  if (!imported || !imported.content || imported.content.length < 30) {
+    return sendJson(res, 400, { error: 'La fuente importada no contiene texto suficiente para alimentar al bot' });
+  }
+  const saved = await storeBotDocument(inst, imported.title, imported.content, {
+    source: type,
+    sourceRef: type === 'calendar' ? String(body.calendarId || '') : String(body.fileId || ''),
+    sourceUrl: imported.url || null,
+  });
+  if (saved.ok === false) return sendJson(res, 400, { error: saved.error || 'El contenido importado no se pudo procesar' });
+  const row = (await pool.query(
+    `SELECT d.*, COUNT(c.id)::int AS chunk_count FROM bot_documents d
+     LEFT JOIN bot_document_chunks c ON c.document_id = d.id
+     WHERE d.id = $1 GROUP BY d.id`, [saved.id]
+  )).rows[0];
+  sendJson(res, 201, { data: enrichBotDocument(row), success: true });
 }
 
 async function getChatbotConfig(res, instanceId, session) {

@@ -1,6 +1,10 @@
 import { Injectable } from '@angular/core';
 import { ApiService } from './api.service';
-import { ChatbotConfig, ChatbotConfigFormData, ChatbotPaused, ConversationSummary, ConversationMessage, BotDocument, BotDocumentQueryResult } from '../models/chatbot.model';
+import {
+  ChatbotConfig, ChatbotConfigFormData, ChatbotPaused, ConversationSummary, ConversationMessage,
+  BotDocument, BotDocumentQueryResult, GoogleConnectionStatus, GoogleAuthUrl, GoogleFileItem,
+  GoogleCalendarItem, GoogleSourceType,
+} from '../models/chatbot.model';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
@@ -42,6 +46,38 @@ export class ChatbotService {
 
   testDocumentQuery(instanceId: string, query: string): Observable<BotDocumentQueryResult[]> {
     return this.api.post<BotDocumentQueryResult[]>('/chatbot/documents/query', { instanceId, query }).pipe(map((res) => res.data));
+  }
+
+  getGoogleAuthUrl(): Observable<GoogleAuthUrl> {
+    return this.api.get<GoogleAuthUrl>('/chatbot/google/auth-url').pipe(map((res) => res.data));
+  }
+
+  getGoogleStatus(): Observable<GoogleConnectionStatus> {
+    return this.api.get<GoogleConnectionStatus>('/chatbot/google/status').pipe(map((res) => res.data));
+  }
+
+  disconnectGoogle(): Observable<void> {
+    return this.api.delete<void>('/chatbot/google').pipe(map((res) => res.data));
+  }
+
+  listGoogleFiles(kind: 'sheets' | 'docs'): Observable<GoogleFileItem[]> {
+    return this.api.get<GoogleFileItem[]>(`/chatbot/google/files?kind=${kind}`).pipe(map((res) => res.data));
+  }
+
+  listGoogleCalendars(): Observable<GoogleCalendarItem[]> {
+    return this.api.get<GoogleCalendarItem[]>('/chatbot/google/calendars').pipe(map((res) => res.data));
+  }
+
+  importGoogleSource(
+    instanceId: string,
+    type: GoogleSourceType,
+    fileId?: string,
+    calendarId?: string,
+    days?: number
+  ): Observable<BotDocument> {
+    return this.api
+      .post<BotDocument>('/chatbot/google/import', { instanceId, type, fileId, calendarId, days })
+      .pipe(map((res) => res.data));
   }
 
   getConversations(instanceId: string): Observable<ConversationSummary[]> {

@@ -26,6 +26,7 @@ RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
 
 # Backend y módulos en tiempo de ejecución
 COPY server.js ./
+COPY google.js ./
 COPY providers ./providers
 COPY security ./security
 

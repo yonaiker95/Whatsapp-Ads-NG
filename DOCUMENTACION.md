@@ -155,6 +155,9 @@ Definidas en `.env` (ver `.env.example` para la referencia):
 | `N8N_EVOLUTION_URL` | URL de Evolution visible desde el contenedor n8n | http://evolution_api:8080 |
 | `AI_ENC_KEY` | Clave maestra de cifrado de API keys de IA | cambiar-en-produccion-clave-maestra-ia |
 | `GEMINI_API_KEY` | Clave para el chatbot (legacy) | — |
+| `GOOGLE_CLIENT_ID` | Client ID de OAuth de Google (importar hojas/documentos/agenda al chatbot) | — |
+| `GOOGLE_CLIENT_SECRET` | Client Secret de OAuth de Google | — |
+| `GOOGLE_REDIRECT_URI` | URL de retorno del OAuth (opcional; por defecto `{APP_URL}/api/chatbot/google/callback`) | — |
 | `PORT` | Puerto del backend | 3000 |
 | `API_TARGET` | Destino del proxy en desarrollo | http://localhost:3000 |
 | `API_PORT` | Puerto de la API para el proxy | 3000 |
@@ -179,8 +182,9 @@ El esquema se crea automáticamente al iniciar el backend (`server.js`). Tablas:
 | `auto_replies` | Reglas de respuesta automática |
 | `chatbot_configs` | Configuración del chatbot por instancia (prompt, activo, conocimiento: empresa, precios, calendario) |
 | `chatbot_paused` | Conversaciones pausadas del chatbot |
-| `bot_documents` | Documentos del bot (RAG): texto que alimenta al chatbot por instancia |
+| `bot_documents` | Documentos del bot (RAG): texto que alimenta al chatbot por instancia; `source` indica su origen (`manual`/`sheet`/`docs`/`calendar`) |
 | `bot_document_chunks` | Fragmentos de cada documento con sus embeddings (búsqueda semántica) |
+| `google_connections` | Conexión OAuth de la cuenta de Google por usuario (tokens cifrados) |
 | `ai_configs` | Configuración de IA por usuario (modo SaaS/BYOK, proveedor, modelo) |
 | `ai_saas_keys` | Claves de sistema (modo SaaS) administradas por el admin |
 | `ai_usage_logs` | Registro de consumo de IA (tokens, costo, estado) |
@@ -570,6 +574,13 @@ Todas las rutas están prefijadas con `/api`. Las rutas (excepto autenticación 
 | POST | `/api/chatbot/documents` | Crea un documento (lo divide en fragmentos y calcula embeddings con el proveedor de IA) |
 | POST | `/api/chatbot/documents/query` | Prueba la recuperación: devuelve los fragmentos relevantes a una consulta |
 | DELETE | `/api/chatbot/documents/:id` | Elimina un documento (y sus fragmentos) |
+| GET | `/api/chatbot/google/auth-url` | URL de autorización de Google (inicia el OAuth) |
+| GET | `/api/chatbot/google/callback?code=&state=` | Callback de OAuth (redirect de Google; asocia la cuenta al usuario vía `state`) |
+| GET | `/api/chatbot/google/status` | Estado de la conexión de Google del usuario (`{ connected, email }`) |
+| DELETE | `/api/chatbot/google` | Desconecta la cuenta de Google del usuario |
+| GET | `/api/chatbot/google/files?kind=sheets\|docs` | Lista las hojas de cálculo / documentos del Drive del usuario |
+| GET | `/api/chatbot/google/calendars` | Lista los calendarios del usuario |
+| POST | `/api/chatbot/google/import` | Importa una fuente (`type: sheet\|docs\|calendar`) y la convierte en documento del bot |
 
 ### Respuestas automáticas
 
@@ -737,6 +748,45 @@ Las sesiones se almacenan en memoria (objeto `sessions` en `server.js`). En un d
 - **Estado del documento**: `stored` (con embeddings) o `lexical` (búsqueda por palabras); se puede probar la recuperación con `POST /api/chatbot/documents/query`.
 - **Auto-respuestas con documento**: una regla de auto-respuesta en modo IA puede vincular un documento de su instancia (`auto_replies.document_id`); al dispararse recupera solo los fragmentos de ese documento y los usa como referencia, permitiendo alimentar una parte específica del conocimiento.
 - El bot funciona **sin auto-respuestas configuradas**: el chatbot IA (con o sin n8n) usa directamente el conocimiento de la instancia.
+
+### Importar desde Google (hojas de cálculo, documentos y agenda)
+
+El bot se alimenta no solo con texto pegado a mano (`source = manual`) sino también desde la **cuenta de Google** del usuario: hojas de cálculo (`sheet`), documentos de Google (`docs`) y agenda (`calendar`). La importación es una **instantánea**: se copia el contenido, se divide en fragmentos con embeddings y se guarda en `bot_documents` (igual que un documento manual). Si el archivo cambia, se vuelve a importar y se elimina la versión anterior.
+
+- **Tabla nueva** `google_connections`: una fila por usuario con los tokens de OAuth **cifrados** (`access_token_enc`, `refresh_token_enc`, `scopes`, `expires_at`). El access token se renueva automáticamente con el refresh token antes de cada llamada.
+- **Columnas nuevas** en `bot_documents`: `source` (`manual`/`sheet`/`docs`/`calendar`), `source_ref` (id del archivo o calendario) y `source_url` (enlace a la fuente original).
+- **Endpoints**: ver la tabla de la API en la sección 9. El flujo de conexión: `GET /api/chatbot/google/auth-url` devuelve la URL de autorización, el navegador pasa por Google, y `GET /api/chatbot/google/callback` intercambia el código, asocia la cuenta al usuario mediante el parámetro `state` y redirige de vuelta a la SPA (`/app/chatbot`). El estado de la conexión se consulta con `GET /api/chatbot/google/status` y se desconecta con `DELETE /api/chatbot/google`.
+- **Listados**: `GET /api/chatbot/google/files?kind=sheets|docs` lista el Drive del usuario (Drive API) y `GET /api/chatbot/google/calendars` sus calendarios.
+- **Importación**: `POST /api/chatbot/google/import` con `{ instanceId, type, fileId?, calendarId?, days? }`. La conversión a texto:
+  - **Hoja de cálculo** (`Sheets API`): lee las pestañas (máx. 20, 5000 filas/pestaña), usa la primera fila como nombres de columna y genera `Columna: valor | ...` por fila.
+  - **Documento** (`Docs API`): extrae párrafos y tablas del JSON estructural (`body.content`) a texto plano.
+  - **Agenda** (`Calendar API`): eventos de los próximos N días (por defecto 30, máx. 365) formateados como `Evento | Fecha | Lugar | Descripción`, incluyendo el nombre del calendario y el período.
+- **Límites**: los embeddings se calculan en **lotes de 24 fragmentos** (`embedBotTexts`) para no saturar la API del proveedor con importaciones grandes.
+- **Scopes solicitados** (solo lectura): `userinfo.email`, `drive.readonly`, `spreadsheets.readonly`, `documents.readonly`, `calendar.readonly`.
+
+#### Guía: crear las credenciales de Google OAuth
+
+Para activar la importación desde Google necesitas un proyecto en **Google Cloud Console** con credenciales OAuth. Los pasos (unos 10-15 minutos):
+
+1. **Crear el proyecto**: entra en https://console.cloud.google.com/ → crea un proyecto (p. ej. "WhatsApp Ads").
+2. **Habilitar las APIs** (APIs y servicios → Biblioteca): `Google Drive API`, `Google Sheets API`, `Google Docs API` y `Google Calendar API`.
+3. **Pantalla de consentimiento** (APIs y servicios → Pantalla de consentimiento de OAuth):
+   - Modo **Externo**. Completa el nombre de la app y el correo de soporte.
+   - En **Scopes**: agrega los de solo lectura de Drive, Sheets, Docs y Calendar (o usa el nivel por defecto; la app los pide al conectar).
+   - En **Usuarios de prueba**: añade tu cuenta de Google (mientras la app esté en modo "Testing" solo funcionará con estos usuarios; para producción pulsa "Publicar").
+4. **Crear el Client ID** (Credenciales → Crear credenciales → ID de cliente de OAuth):
+   - Tipo de aplicación: **Aplicación web**.
+   - Nombre: "WhatsApp Ads".
+   - **URIs de redireccionamiento autorizadas**: agrega `http://localhost:3000/api/chatbot/google/callback` (y la URL pública de tu despliegue, por ejemplo `https://tu-dominio.com/api/chatbot/google/callback`).
+   - El valor **debe coincidir** con `GOOGLE_REDIRECT_URI` (por defecto `{APP_URL}/api/chatbot/google/callback`).
+5. **Guardar las credenciales**: copia el **Client ID** y el **Client Secret** y configúralos en el entorno:
+   ```dotenv
+   GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-xxxxx
+   # GOOGLE_REDIRECT_URI=http://localhost:3000/api/chatbot/google/callback  (opcional)
+   ```
+   En Docker, agrégalas al `.env` del proyecto (el compose las inyecta) y reinicia el contenedor: `docker compose up -d app`.
+6. **Usar la app**: en el módulo **Chatbot** aparece la tarjeta "Importar desde Google". Conecta tu cuenta, elige el tipo de fuente (hoja de cálculo, documento o agenda), selecciona el archivo/calendario y pulsa "Importar al conocimiento del bot". El documento aparece en la lista con su origen y un enlace a la fuente.
 
 ### Pausa por conversación
 

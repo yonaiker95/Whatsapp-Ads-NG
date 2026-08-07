@@ -96,6 +96,108 @@
           </mat-card-content>
         </mat-card>
 
+        <mat-card class="config-card google-card" appearance="outlined">
+          <mat-card-header>
+            <mat-card-title>
+              <mat-icon>cloud</mat-icon>
+              Importar desde Google
+            </mat-card-title>
+            <mat-card-subtitle>Conecta tu cuenta de Google para alimentar al bot con tus hojas de cálculo, documentos y agenda. El contenido se copia y queda disponible para las consultas de tus clientes</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <div class="google-config-error" *ngIf="googleConfigError">
+              <mat-icon>warning</mat-icon>
+              {{ googleConfigError }}
+            </div>
+
+            <div class="google-connected" *ngIf="googleConnected">
+              <mat-chip class="verification-chip chip-google-on" selectable="false">
+                <mat-icon class="status-icon">check_circle</mat-icon>
+                Conectada: {{ googleEmail }}
+              </mat-chip>
+              <button mat-stroked-button (click)="disconnectGoogle()" [disabled]="googleDisconnecting">
+                <mat-spinner diameter="18" *ngIf="googleDisconnecting"></mat-spinner>
+                <mat-icon *ngIf="!googleDisconnecting">link_off</mat-icon>
+                Desconectar
+              </button>
+            </div>
+
+            <div class="google-connect-cta" *ngIf="!googleConnected && !googleStatusLoading">
+              <p>El bot puede aprender de tu cuenta de Google:</p>
+              <ul>
+                <li><mat-icon>grid_on</mat-icon> Hojas de cálculo (catálogos, precios, inventario, listas)</li>
+                <li><mat-icon>article</mat-icon> Documentos (políticas, menús, FAQ, contratos)</li>
+                <li><mat-icon>event</mat-icon> Agenda (citas, eventos, disponibilidad)</li>
+              </ul>
+              <button mat-raised-button color="primary" (click)="connectGoogle()" [disabled]="googleConnecting">
+                <mat-spinner diameter="18" *ngIf="googleConnecting"></mat-spinner>
+                <mat-icon *ngIf="!googleConnecting">login</mat-icon>
+                {{ googleConnecting ? 'Esperando autorización...' : 'Conectar cuenta de Google' }}
+              </button>
+            </div>
+
+            <div class="google-import" *ngIf="googleConnected">
+              <mat-form-field appearance="outline" class="google-type">
+                <mat-label>Tipo de fuente</mat-label>
+                <mat-select [(ngModel)]="googleImportType" (selectionChange)="onGoogleImportTypeChange()">
+                  <mat-option value="sheet">Hoja de cálculo</mat-option>
+                  <mat-option value="docs">Documento de Google</mat-option>
+                  <mat-option value="calendar">Agenda</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <ng-container *ngIf="googleImportType !== 'calendar'">
+                <div class="google-file-row">
+                  <mat-form-field appearance="outline" class="google-file-select">
+                    <mat-label>{{ googleImportType === 'docs' ? 'Documento' : 'Hoja de cálculo' }}</mat-label>
+                    <mat-select [(ngModel)]="googleSelectedFileId">
+                      <mat-option *ngFor="let f of googleFiles" [value]="f.id">{{ f.name }}</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                  <button mat-stroked-button (click)="loadGoogleFiles()" [disabled]="googleFilesLoading" aria-label="Recargar archivos">
+                    <mat-spinner diameter="18" *ngIf="googleFilesLoading"></mat-spinner>
+                    <mat-icon *ngIf="!googleFilesLoading">refresh</mat-icon>
+                  </button>
+                </div>
+                <div class="google-empty" *ngIf="!googleFilesLoading && googleFiles.length === 0">
+                  No se encontraron {{ googleImportType === 'docs' ? 'documentos' : 'hojas de cálculo' }} en tu Drive.
+                </div>
+              </ng-container>
+
+              <ng-container *ngIf="googleImportType === 'calendar'">
+                <div class="google-file-row">
+                  <mat-form-field appearance="outline" class="google-file-select">
+                    <mat-label>Calendario</mat-label>
+                    <mat-select [(ngModel)]="googleSelectedCalendarId">
+                      <mat-option *ngFor="let c of googleCalendars" [value]="c.id">{{ c.summary }}</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="google-days">
+                    <mat-label>Días hacia adelante</mat-label>
+                    <input matInput type="number" min="1" max="365" [(ngModel)]="googleCalendarDays">
+                  </mat-form-field>
+                  <button mat-stroked-button (click)="loadGoogleFiles()" [disabled]="googleFilesLoading" aria-label="Recargar calendarios">
+                    <mat-spinner diameter="18" *ngIf="googleFilesLoading"></mat-spinner>
+                    <mat-icon *ngIf="!googleFilesLoading">refresh</mat-icon>
+                  </button>
+                </div>
+                <div class="google-empty" *ngIf="!googleFilesLoading && googleCalendars.length === 0">
+                  No se encontraron calendarios en tu cuenta.
+                </div>
+              </ng-container>
+
+              <button mat-raised-button color="primary" class="google-import-btn"
+                      (click)="importGoogle()"
+                      [disabled]="googleImporting || (googleImportType !== 'calendar' ? !googleSelectedFileId : !googleSelectedCalendarId)">
+                <mat-spinner diameter="18" *ngIf="googleImporting"></mat-spinner>
+                <mat-icon *ngIf="!googleImporting">download</mat-icon>
+                {{ googleImporting ? 'Importando...' : 'Importar al conocimiento del bot' }}
+              </button>
+              <p class="google-hint">Cada importación crea un documento nuevo. Si el archivo cambia, importa de nuevo y elimina la versión anterior.</p>
+            </div>
+          </mat-card-content>
+        </mat-card>
+
         <mat-card class="config-card" appearance="outlined">
           <mat-card-header>
             <mat-card-title>
@@ -107,17 +209,20 @@
           <mat-card-content>
             <div class="documents-list" *ngIf="documents.length > 0">
               <div class="document-row" *ngFor="let doc of documents; trackBy: trackDocument">
-                <mat-icon class="doc-icon">insert_drive_file</mat-icon>
+                <mat-icon class="doc-icon" [matTooltip]="docSourceLabel(doc)">{{ docSourceIcon(doc) }}</mat-icon>
                 <div class="doc-info">
                   <div class="doc-title">{{ doc.title }}</div>
                   <div class="doc-meta">
-                    {{ doc.charCount }} caracteres · {{ doc.chunkCount }} fragmentos ·
+                    {{ docSourceLabel(doc) }} · {{ doc.charCount }} caracteres · {{ doc.chunkCount }} fragmentos ·
                     <span [ngClass]="doc.status === 'stored' ? 'badge-ok' : 'badge-warn'">
                       {{ doc.status === 'stored' ? 'con embeddings' : 'búsqueda por palabras' }}
                     </span>
                   </div>
                   <div class="doc-warning" *ngIf="doc.error">⚠ {{ doc.error }}</div>
                 </div>
+                <a *ngIf="doc.sourceUrl" class="doc-source-link" [href]="doc.sourceUrl" target="_blank" rel="noopener" matTooltip="Abrir fuente en Google">
+                  <mat-icon>open_in_new</mat-icon>
+                </a>
                 <button mat-icon-button type="button" (click)="deleteDocument(doc)" aria-label="Eliminar documento">
                   <mat-icon>delete</mat-icon>
                 </button>

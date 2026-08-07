@@ -13,12 +13,20 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatListModule } from '@angular/material/list';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatDividerModule } from '@angular/material/divider';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
-import { Subject, takeUntil } from 'rxjs';
+import { Subject, takeUntil, Observable } from 'rxjs';
 import { ChatbotService } from '../../core/services/chatbot.service';
 import { InstanceService } from '../../core/services/instance.service';
-import { ChatbotConfig, ChatbotPaused, PriceItem, BotDocument, BotDocumentQueryResult } from '../../core/models/chatbot.model';
+import { ChatbotConfig, ChatbotPaused, PriceItem, BotDocument, BotDocumentQueryResult, GoogleSourceType, GoogleFileItem, GoogleCalendarItem } from '../../core/models/chatbot.model';
 import { Instance } from '../../core/models/instance.model';
+
+const GOOGLE_SOURCE_LABELS: Record<string, string> = {
+  manual: 'Manual',
+  sheet: 'Hoja de cálculo',
+  docs: 'Documento',
+  calendar: 'Agenda',
+};
 
 @Component({
   selector: 'app-chatbot',
@@ -27,6 +35,7 @@ import { Instance } from '../../core/models/instance.model';
     CommonModule, FormsModule, MatCardModule, MatIconModule, MatButtonModule, MatTabsModule,
     MatFormFieldModule, MatInputModule, MatSelectModule, MatSlideToggleModule,
     MatProgressSpinnerModule, MatListModule, MatChipsModule, MatDividerModule, MatSnackBarModule,
+    MatTooltipModule,
   ],
   templateUrl: './chatbot.component.html',
   styleUrls: ['./chatbot.component.scss'],
@@ -73,6 +82,23 @@ Reglas:
   queryTesting = false;
   queryTested = false;
 
+  googleConnected = false;
+  googleEmail = '';
+  googleStatusLoading = false;
+  googleConnecting = false;
+  googleDisconnecting = false;
+  googleConfigError = '';
+  googleImportType: GoogleSourceType = 'sheet';
+  googleFiles: GoogleFileItem[] = [];
+  googleCalendars: GoogleCalendarItem[] = [];
+  googleFilesLoading = false;
+  googleSelectedFileId = '';
+  googleSelectedCalendarId = '';
+  googleCalendarDays = 30;
+  googleImporting = false;
+  private googlePopup: Window | null = null;
+  private googlePollTimer: ReturnType<typeof setInterval> | null = null;
+
   private destroy$ = new Subject<void>();
 
   constructor(
@@ -89,9 +115,11 @@ Reglas:
         this.loadConfig();
       }
     });
+    this.loadGoogleStatus();
   }
 
   ngOnDestroy(): void {
+    this.stopGooglePolling();
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -290,5 +318,184 @@ Reglas:
 
   trackDocument(index: number, doc: BotDocument): string {
     return doc.id;
+  }
+
+  docSourceLabel(doc: BotDocument): string {
+    return GOOGLE_SOURCE_LABELS[doc.source || 'manual'] || 'Manual';
+  }
+
+  docSourceIcon(doc: BotDocument): string {
+    switch (doc.source) {
+      case 'sheet': return 'grid_on';
+      case 'docs': return 'article';
+      case 'calendar': return 'event';
+      default: return 'insert_drive_file';
+    }
+  }
+
+  loadGoogleStatus(): void {
+    this.googleStatusLoading = true;
+    this.chatbotService.getGoogleStatus().subscribe({
+      next: (status) => {
+        this.googleConnected = status.connected;
+        this.googleEmail = status.email || '';
+        this.googleConfigError = '';
+        this.googleStatusLoading = false;
+        if (status.connected) this.loadGoogleFiles();
+      },
+      error: (err) => {
+        this.googleStatusLoading = false;
+        this.googleConfigError = err?.error?.error || '';
+      },
+    });
+  }
+
+  connectGoogle(): void {
+    if (this.googleConnecting) return;
+    this.googleConfigError = '';
+    this.chatbotService.getGoogleAuthUrl().subscribe({
+      next: ({ url }) => {
+        this.googlePopup = window.open(url, '_blank', 'width=620,height=700');
+        this.googleConnecting = true;
+        this.startGooglePolling();
+      },
+      error: (err) => {
+        this.googleConfigError = err?.error?.error || 'No se pudo iniciar la conexión con Google';
+      },
+    });
+  }
+
+  private startGooglePolling(): void {
+    this.stopGooglePolling();
+    let tries = 0;
+    this.googlePollTimer = setInterval(() => {
+      tries += 1;
+      this.chatbotService.getGoogleStatus().subscribe({
+        next: (status) => {
+          if (status.connected) {
+            this.stopGooglePolling();
+            this.googleConnecting = false;
+            this.googleConnected = true;
+            this.googleEmail = status.email || '';
+            if (this.googlePopup) {
+              this.googlePopup.close();
+              this.googlePopup = null;
+            }
+            this.snackBar.open('Cuenta de Google conectada correctamente', 'Cerrar', { duration: 3000 });
+            this.loadGoogleFiles();
+          } else if (tries > 90) {
+            this.stopGooglePolling();
+            this.googleConnecting = false;
+            this.snackBar.open('No se detectó la conexión. Vuelve a intentarlo.', 'Cerrar', { duration: 5000 });
+          }
+        },
+        error: () => {
+          if (tries > 90) {
+            this.stopGooglePolling();
+            this.googleConnecting = false;
+          }
+        },
+      });
+    }, 1500);
+  }
+
+  private stopGooglePolling(): void {
+    if (this.googlePollTimer) {
+      clearInterval(this.googlePollTimer);
+      this.googlePollTimer = null;
+    }
+  }
+
+  disconnectGoogle(): void {
+    if (!confirm('¿Desconectar la cuenta de Google? Dejarás de poder importar contenido hasta reconectarla.')) return;
+    this.googleDisconnecting = true;
+    this.chatbotService.disconnectGoogle().subscribe({
+      next: () => {
+        this.googleDisconnecting = false;
+        this.googleConnected = false;
+        this.googleEmail = '';
+        this.googleFiles = [];
+        this.googleCalendars = [];
+        this.googleSelectedFileId = '';
+        this.googleSelectedCalendarId = '';
+        this.snackBar.open('Cuenta de Google desconectada', 'Cerrar', { duration: 3000 });
+      },
+      error: (err) => {
+        this.googleDisconnecting = false;
+        this.snackBar.open(err?.error?.error || 'Error al desconectar la cuenta', 'Cerrar', { duration: 5000 });
+      },
+    });
+  }
+
+  onGoogleImportTypeChange(): void {
+    this.googleSelectedFileId = '';
+    this.googleSelectedCalendarId = '';
+    this.googleFiles = [];
+    this.googleCalendars = [];
+    this.loadGoogleFiles();
+  }
+
+  loadGoogleFiles(): void {
+    if (!this.googleConnected) return;
+    this.googleFilesLoading = true;
+    const load: Observable<GoogleFileItem[] | GoogleCalendarItem[]> =
+      this.googleImportType === 'calendar'
+        ? this.chatbotService.listGoogleCalendars()
+        : this.chatbotService.listGoogleFiles(this.googleImportType === 'docs' ? 'docs' : 'sheets');
+    load.subscribe({
+      next: (items: any) => {
+        if (this.googleImportType === 'calendar') {
+          this.googleCalendars = items as GoogleCalendarItem[];
+          if (!this.googleSelectedCalendarId && items.length > 0) {
+            this.googleSelectedCalendarId = (items[0] as GoogleCalendarItem).id;
+          }
+        } else {
+          this.googleFiles = items as GoogleFileItem[];
+          if (!this.googleSelectedFileId && items.length > 0) {
+            this.googleSelectedFileId = (items[0] as GoogleFileItem).id;
+          }
+        }
+        this.googleFilesLoading = false;
+      },
+      error: (err: any) => {
+        this.googleFilesLoading = false;
+        this.snackBar.open(err?.error?.error || 'Error al cargar los archivos de Google', 'Cerrar', { duration: 5000 });
+      },
+    });
+  }
+
+  importGoogle(): void {
+    if (!this.selectedInstanceId) {
+      this.snackBar.open('Selecciona una instancia', 'Cerrar', { duration: 3000 });
+      return;
+    }
+    if (this.googleImportType === 'calendar' && !this.googleSelectedCalendarId) {
+      this.snackBar.open('Selecciona un calendario', 'Cerrar', { duration: 3000 });
+      return;
+    }
+    if (this.googleImportType !== 'calendar' && !this.googleSelectedFileId) {
+      this.snackBar.open('Selecciona un archivo', 'Cerrar', { duration: 3000 });
+      return;
+    }
+    this.googleImporting = true;
+    this.chatbotService
+      .importGoogleSource(
+        this.selectedInstanceId,
+        this.googleImportType,
+        this.googleSelectedFileId || undefined,
+        this.googleSelectedCalendarId || undefined,
+        this.googleCalendarDays
+      )
+      .subscribe({
+        next: () => {
+          this.googleImporting = false;
+          this.snackBar.open('Contenido importado al conocimiento del bot', 'Cerrar', { duration: 3000 });
+          this.loadDocuments();
+        },
+        error: (err) => {
+          this.googleImporting = false;
+          this.snackBar.open(err?.error?.error || 'Error al importar el contenido', 'Cerrar', { duration: 5000 });
+        },
+      });
   }
 }
