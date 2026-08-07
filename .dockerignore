@@ -1,0 +1,39 @@
+# Dependencias y salidas de compilación
+node_modules
+dist
+.angular
+coverage
+tmp
+out-tsc
+
+# Entornos y secretos
+.env
+.env.local
+.env.production
+.env.staging
+.env.test
+!.env.example
+
+# Datos de runtime (marca de instalación del setup)
+data
+
+# Logs
+*.log
+*.log.*
+
+# Git
+.git
+.gitignore
+
+# Artefactos de pruebas
+e2e-shots
+*.tmp.js
+
+# Documentación y flujos de referencia (no necesarios en la imagen)
+README.md
+DOCUMENTACION.md
+n8n-workflows
+
+# IDE
+.vscode
+.idea

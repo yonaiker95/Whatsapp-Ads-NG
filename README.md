@@ -74,6 +74,39 @@ Al iniciar el servidor por primera vez (sin marca de instalación en `data/setup
 
 > Si la base de datos ya tiene usuarios pero no existe `data/setup.json` (migración), el sistema se auto-marca como instalado con `legacy:true` y conserva los usuarios existentes.
 
+## Despliegue con Docker
+
+El proyecto incluye un `Dockerfile` (multi-stage: compila Angular y ejecuta el backend) y el servicio `app` en `docker-compose.yml`. Todo el stack (PostgreSQL, Evolution API, Redis, n8n y la app) se levanta con:
+
+```bash
+docker compose up -d --build
+```
+
+La aplicación queda en `http://localhost:3000`. En el primer arranque sin `data/setup.json` el **instalador** (`/setup`) guía la configuración (la BD ya queda apuntando al contenedor `postgres`, así que basta completar el wizard con el host `postgres`).
+
+Configuración mediante `.env` (misma sintaxis que `.env.example`):
+
+| Variable | Descripción |
+|----------|-------------|
+| `APP_URL` | URL pública (por defecto `http://localhost:3000`) |
+| `SESSION_SECRET` | Secreto de sesión (cambiar en producción) |
+| `AI_ENC_KEY` | Clave maestra de cifrado de API keys de IA |
+| `EVOLUTION_API_KEY` | API Key de Evolution API |
+| `N8N_API_KEY` | API Key de n8n (X-N8N-API-KEY) para aprovisionar workflows |
+| `EVO_WEBHOOK_URL` | URL del webhook de Evolution hacia la app (solo si la app corre en el host) |
+| `N8N_WEBHOOK_URL` | URL pública de n8n (solo si la app corre en el host) |
+
+**Dos modos de ejecución:**
+
+- **Todo en Docker** (por defecto): `docker compose up -d --build` levanta la app en el contenedor. Las URLs entre contenedores las define el compose (`app:3000`, `evolution_api:8080`, `n8n:5678`).
+- **App en el host + infraestructura en Docker**: inicia solo la infraestructura (`docker compose up -d postgres evolution_postgres evolution_redis evolution_api n8n`) y ejecuta la app con `npm run serve`, agregando a `.env`:
+  ```
+  EVO_WEBHOOK_URL=http://host.docker.internal:3000/api/webhooks
+  N8N_WEBHOOK_URL=http://host.docker.internal:3000
+  ```
+
+**Persistencia**: los datos quedan en volúmenes de Docker (`postgres_data`, `n8n_data`, `app_data` para la marca de instalación `data/setup.json`, etc.). La app usa sesiones en memoria; no la escales a varias réplicas sin un almacén de sesiones compartido.
+
 ## Ejecución en desarrollo
 
 ```bash

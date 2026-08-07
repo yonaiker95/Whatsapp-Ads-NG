@@ -72,7 +72,9 @@ services:
       LOG_LEVEL: info
       LOG_SAVE: "true"
       DELAY_MESSAGE: "3000"
-      WEBHOOK_GLOBAL_URL: http://host.docker.internal:3000/api/webhooks
+      # Apunta al contenedor de la app. En modo "app en el host" (infra en Docker),
+      # sobreescribe con EVO_WEBHOOK_URL=http://host.docker.internal:3000/api/webhooks
+      WEBHOOK_GLOBAL_URL: ${EVO_WEBHOOK_URL:-http://app:3000/api/webhooks}
       WEBHOOK_GLOBAL_ENABLED: "true"
       WEBHOOK_EVENTS: CONNECTION_UPDATE,MESSAGES_UPSERT,MESSAGES_UPDATE,MESSAGES_DELETE
     ports:
@@ -91,7 +93,7 @@ services:
       N8N_HOST: localhost
       N8N_PORT: 5678
       N8N_PROTOCOL: http
-      WEBHOOK_URL: http://host.docker.internal:3000
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://app:3000}
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: "168"
       N8N_DEFAULT_BINARY_DATA_TEMP: /files
@@ -101,9 +103,46 @@ services:
       - n8n_data:/home/node/.n8n
       - ./n8n-workflows:/backup/workflows
 
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: whatsapp-ads:latest
+    container_name: whatsapp_ads_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      evolution_api:
+        condition: service_started
+      n8n:
+        condition: service_started
+    environment:
+      # La app se comunica con los demás servicios por la red interna de Docker
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/whatsapp_ads
+      EVOLUTION_API_URL: http://evolution_api:8080
+      N8N_URL: http://n8n:5678
+      N8N_APP_URL: http://app:3000
+      N8N_EVOLUTION_URL: http://evolution_api:8080
+      PORT: 3000
+      # Variables que conviene ajustar desde .env o environment del compose
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:-cambiar-en-produccion}
+      AI_ENC_KEY: ${AI_ENC_KEY:-cambiar-en-produccion-clave-maestra-ia}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-evolution_api_7465829274}
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin@whatsapp-ads.com}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-Admin123}
+      N8N_API_KEY: ${N8N_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      - "3000:3000"
+    volumes:
+      - app_data:/app/data
+
 volumes:
   postgres_data:
   evolution_postgres_data:
   evolution_redis_data:
   evolution_api_instances:
   n8n_data:
+  app_data:
