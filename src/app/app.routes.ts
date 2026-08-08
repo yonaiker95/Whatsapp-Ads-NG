@@ -101,6 +101,11 @@ export const routes: Routes = [
         data: { title: 'Organización y equipo' },
       },
       {
+        path: 'users',
+        loadComponent: () => import('./modules/users/users.component').then(m => m.UsersComponent),
+        data: { title: 'Usuarios' },
+      },
+      {
         path: 'plans',
         loadComponent: () => import('./modules/plans/plans.component').then(m => m.PlansComponent),
         data: { title: 'Planes' },

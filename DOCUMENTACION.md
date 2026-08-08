@@ -520,9 +520,11 @@ Todas las rutas están prefijadas con `/api`. Las rutas (excepto autenticación 
 | DELETE | `/api/instances/:id/disconnect` | Desconecta la instancia |
 | GET | `/api/instances/:id/qrcode` | Obtiene el código QR |
 | GET | `/api/instances/:id/status` | Obtiene el estado de conexión (y sincroniza el teléfono) |
-| POST | `/api/instances/sync` | Sincroniza instancias desde Evolution API |
+| POST | `/api/instances/sync` | Sincroniza desde Evolution API las instancias de la **organización** del usuario (disponible para cualquier usuario autenticado) |
 
 > Al crear o actualizar una instancia, el backend también **garantiza el workflow dinámico en n8n** (`ensureN8nWorkflow`) si `N8N_URL` y `N8N_API_KEY` están configuradas.
+
+> **Sincronización**: `POST /api/instances/sync` ya no está restringida al administrador. Cualquier usuario autenticado puede sincronizar y la reconciliación se acota a las instancias de su organización (las instancias remotas que no existan se crean a nombre del usuario que sincroniza). El sync global de segundo plano (arranque) sigue asignando las huérfanas al primer admin/owner.
 
 > **Emisora de mensajes de seguridad** (`security_sender`): solo las instancias que el administrador/propietario marque con el toggle *"Enviar mensajes de seguridad"* pueden enviar códigos OTP (registro, 2FA, recuperación de contraseña, cambio de número). El backend exige `status='connected' AND security_sender = TRUE` para elegir emisora (`getOtpSenderInstance`); un miembro sin rol admin/owner no puede activar el flag (se conserva el valor existente). En la migración inicial, las instancias ya existentes de admin/owner quedan habilitadas automáticamente; en instalaciones nuevas nace con `FALSE`.
 
@@ -622,6 +624,16 @@ Todas las rutas están prefijadas con `/api`. Las rutas (excepto autenticación 
 | DELETE | `/api/organizations/current/members/:id` | Elimina un miembro |
 
 Solo el propietario (o el admin global) puede crear, editar o eliminar miembros. Los permisos se envían como array de claves válidas (ver sección 6) y se persisten en `users.permissions`.
+
+### Usuarios registrados (panel del propietario)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/users` | Lista todos los usuarios registrados (información completa, estado, instancias y sesiones) |
+| POST | `/api/users/:id/block` | Bloquea al usuario del sistema (`reason` opcional); revoca sus sesiones activas |
+| POST | `/api/users/:id/unblock` | Desbloquea al usuario |
+
+Solo el **propietario de la organización** (`organizations.owner_id`) puede usar estos endpoints; el resto recibe 403. Al bloquear a un usuario se borran sus sesiones de inmediato y no puede volver a iniciar sesión. No se puede bloquear la propia cuenta ni a administradores/propietarios de otras organizaciones. La columna `blocked` (con `blocked_at` y `blocked_reason`) se añade automáticamente a `users` al arrancar.
 
 ### Centro de IA
 

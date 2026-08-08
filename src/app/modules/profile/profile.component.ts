@@ -30,7 +30,7 @@ export class ProfileComponent {
   }
 
   get roleLabel(): string {
-    return this.user?.role === 'admin' ? 'Administrador' : 'Usuario';
+    return this.user?.role === 'admin' || this.user?.role === 'owner' ? 'Administrador' : 'Usuario';
   }
 
   save(): void {

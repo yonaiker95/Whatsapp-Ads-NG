@@ -11,6 +11,7 @@ interface NavItem {
   route: string;
   badge?: number;
   adminOnly?: boolean;
+  ownerOnly?: boolean;
   permission?: string;
 }
 
@@ -64,6 +65,7 @@ export class SidebarComponent {
       items: [
         { label: 'Facturación', icon: 'receipt_long', route: '/app/billing', permission: 'billing' },
         { label: 'Organización y equipo', icon: 'diversity_3', route: '/app/organization', permission: 'organization' },
+        { label: 'Usuarios', icon: 'group', route: '/app/users', ownerOnly: true },
         { label: 'Planes', icon: 'workspace_premium', route: '/app/plans', adminOnly: true },
         { label: 'Testimonios', icon: 'rate_review', route: '/app/testimonials', adminOnly: true },
         { label: 'Mi perfil', icon: 'person', route: '/app/profile' },
@@ -86,6 +88,7 @@ export class SidebarComponent {
         .map((section) => ({
           ...section,
           items: section.items.filter((item) => {
+            if (item.ownerOnly) return user?.role === 'owner';
             if (item.adminOnly) return isFull;
             if (isFull) return true;
             return !item.permission || perms.includes(item.permission);
@@ -105,7 +108,8 @@ export class SidebarComponent {
   }
 
   get roleLabel(): string {
-    return (this.authService.currentUser()?.role || 'user') === 'admin' ? 'Administrador' : 'Usuario';
+    const role = this.authService.currentUser()?.role || 'user';
+    return role === 'admin' || role === 'owner' ? 'Administrador' : 'Usuario';
   }
 
   onToggle(): void {

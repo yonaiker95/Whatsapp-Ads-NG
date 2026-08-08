@@ -86,7 +86,8 @@ export class AiCenterComponent implements OnInit, OnDestroy {
   saasLabel = '';
 
   get isAdmin(): boolean {
-    return this.authService.currentUser()?.role === 'admin';
+    const role = this.authService.currentUser()?.role;
+    return role === 'admin' || role === 'owner';
   }
 
   get currentProvider(): AiProviderInfo | null {

@@ -415,6 +415,11 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_bot_documents_instance ON bot_documents (instance_id);
       CREATE INDEX IF NOT EXISTS idx_bot_document_chunks_instance ON bot_document_chunks (instance_id);
       CREATE INDEX IF NOT EXISTS idx_bot_document_chunks_document ON bot_document_chunks (document_id);
+      -- Bloqueo de usuarios desde el panel del propietario de la organización
+      -- (un usuario bloqueado no puede iniciar sesión y pierde sus sesiones).
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked_reason TEXT;
       -- Procedencia de cada documento del bot: 'manual' (pegado a mano),
       -- 'sheet' / 'docs' / 'calendar' (importados desde la cuenta de Google).
       ALTER TABLE bot_documents ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual';
@@ -954,10 +959,31 @@ function sanitizePermissions(list) {
   return [...new Set(list.map((p) => String(p)).filter((p) => PERMISSION_KEYS.includes(p)))];
 }
 
+// El propietario de la organización y los administradores comparten privilegios
+// de administración (gestionar planes, pagos, claves, usuarios, etc.).
+function isAdminRole(role) {
+  return role === 'admin' || role === 'owner';
+}
+
+// True solo si la sesión pertenece al propietario (owner) de su organización.
+async function isOrgOwner(session) {
+  if (!session) return false;
+  try {
+    const r = await pool.query(
+      `SELECT o.owner_id FROM organizations o
+       JOIN users u ON u.organization_id = o.id
+       WHERE u.id = $1`, [session.id]
+    );
+    return r.rows.length > 0 && String(r.rows[0].owner_id) === String(session.id);
+  } catch {
+    return false;
+  }
+}
+
 // El administrador global y el propietario de la organización siempre tienen acceso.
 async function hasPermission(session, perm) {
   if (!perm) return true;
-  if (session.role === 'admin' || session.role === 'owner') return true;
+  if (isAdminRole(session.role)) return true;
   const u = (await pool.query('SELECT permissions FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
   const perms = u && u.permissions ? u.permissions : [];
   return perms.includes(perm);
@@ -1477,6 +1503,13 @@ async function handleRequest(req, res, pathname) {
   if (!session) return;
 
   try {
+    // La sincronización de instancias está disponible para todos los usuarios
+    // autenticados (no requiere permiso de módulo): reconcilia únicamente las
+    // instancias de la organización del usuario (ver reconcileWithEvolution).
+    if (base === 'instances' && method === 'POST' && id === 'sync' && !action) {
+      if (!(await ensureBillingActive(res, session))) return;
+      return await syncInstances(res, await parseBody(req), session);
+    }
     // Permiso por módulo: los miembros solo acceden a los módulos que el
     // propietario les haya concedido. Admin y propietario pasan siempre.
     const requiredPerm = permForModule(base);
@@ -1500,6 +1533,13 @@ async function handleRequest(req, res, pathname) {
         if (method === 'POST' && !id) return await createTestimonial(res, await parseBody(req), session);
         if (method === 'PUT' && id) return await updateTestimonial(res, id, await parseBody(req), session);
         if (method === 'DELETE' && id) return await deleteTestimonial(res, id, session);
+        break;
+
+      // -- Usuarios registrados (solo el propietario de la organización) --
+      case 'users':
+        if (method === 'GET' && !id) return await getAdminUsers(res, session);
+        if (method === 'POST' && id && action === 'block') return await blockUser(res, id, await parseBody(req), session);
+        if (method === 'POST' && id && action === 'unblock') return await unblockUser(res, id, session);
         break;
 
       // -- Organizations --
@@ -1795,6 +1835,16 @@ async function handleAuth(req, res, pathname) {
       const u = dbuser.rows[0];
       const check = verifyPassword(body.password, u.password_hash);
       if (check.ok) {
+        // Cuenta bloqueada por el propietario de la organización: se rechaza el
+        // acceso incluso con credenciales válidas.
+        if (u.blocked) {
+          const reason = (u.blocked_reason || '').toString().trim();
+          return sendJson(res, 403, {
+            error: reason
+              ? `Tu cuenta está bloqueada: ${reason}`
+              : 'Tu cuenta está bloqueada. Contacta al administrador de la organización.',
+          });
+        }
         // Actualiza el hash legacy en texto plano al iniciar sesión
         if (check.legacy) {
           await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
@@ -1869,6 +1919,14 @@ async function handleAuth(req, res, pathname) {
       'SELECT * FROM users WHERE phone = $1 ORDER BY created_at DESC LIMIT 1', [row.phone]
     ).catch(() => ({ rows: [] }))).rows[0];
     if (!user) return sendJson(res, 404, { error: 'Usuario no encontrado' });
+    if (user.blocked) {
+      const reason = (user.blocked_reason || '').toString().trim();
+      return sendJson(res, 403, {
+        error: reason
+          ? `Tu cuenta está bloqueada: ${reason}`
+          : 'Tu cuenta está bloqueada. Contacta al administrador de la organización.',
+      });
+    }
     const { sid: newSid, session: sess } = await createSession(user);
     res.writeHead(200, {
       'Content-Type': 'application/json',
@@ -2070,7 +2128,7 @@ async function loadOrgForSession(session) {
 }
 
 function canManageOrganization(session, org) {
-  if (session.role === 'admin') return true;
+  if (isAdminRole(session.role)) return true;
   return !!org && String(org.owner_id) === String(session.id);
 }
 
@@ -2163,6 +2221,92 @@ async function removeOrganizationMember(res, memberId, session) {
   sendJson(res, 200, { data: { id: memberId }, success: true });
 }
 
+// =========================================================================
+// 8b. Panel de usuarios registrados (solo el propietario de la organización)
+// =========================================================================
+// Elimina del caché de sesiones todas las sesiones de un usuario (además de
+// las filas de la tabla sessions) para que pierda el acceso de inmediato.
+function purgeUserSessions(userId) {
+  for (const [k, s] of sessionsCache) {
+    if (s.id === userId) sessionsCache.delete(k);
+  }
+}
+
+async function getAdminUsers(res, session) {
+  if (!(await isOrgOwner(session))) {
+    return sendJson(res, 403, { error: 'Solo el propietario de la organización puede ver los usuarios registrados' });
+  }
+  const result = await pool.query(
+    `SELECT u.id, u.email, u.name, u.role, u.permissions, u.plan, u.billing_status,
+            u.phone, u.phone_verified, u.two_factor_enabled, u.notifications_enabled,
+            u.organization_id, u.blocked, u.blocked_at, u.blocked_reason,
+            u.created_at, u.updated_at,
+            o.name AS organization_name,
+            (SELECT COUNT(*) FROM instances i WHERE i.user_id = u.id) AS instance_count,
+            (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS session_count
+     FROM users u
+     LEFT JOIN organizations o ON o.id = u.organization_id
+     ORDER BY u.created_at ASC`
+  ).catch(() => ({ rows: [] }));
+  const data = result.rows.map((r) => ({
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    role: r.role,
+    permissions: r.permissions || [],
+    plan: r.plan,
+    billingStatus: r.billing_status,
+    phone: r.phone,
+    phoneVerified: !!r.phone_verified,
+    twoFactorEnabled: !!r.two_factor_enabled,
+    notificationsEnabled: !!r.notifications_enabled,
+    organizationId: r.organization_id,
+    organizationName: r.organization_name,
+    blocked: !!r.blocked,
+    blockedAt: r.blocked_at,
+    blockedReason: r.blocked_reason,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    instanceCount: Number(r.instance_count || 0),
+    sessionCount: Number(r.session_count || 0),
+  }));
+  sendJson(res, 200, { data, success: true });
+}
+
+async function blockUser(res, id, body, session) {
+  if (!(await isOrgOwner(session))) {
+    return sendJson(res, 403, { error: 'Solo el propietario de la organización puede bloquear usuarios' });
+  }
+  const target = (await pool.query('SELECT * FROM users WHERE id = $1', [id]).catch(() => ({ rows: [] }))).rows[0];
+  if (!target) return sendJson(res, 404, { error: 'Usuario no encontrado' });
+  if (String(target.id) === String(session.id)) return sendJson(res, 400, { error: 'No puedes bloquear tu propia cuenta' });
+  if (isAdminRole(target.role)) {
+    return sendJson(res, 400, { error: 'No puedes bloquear a un administrador ni al propietario de una organización' });
+  }
+  const reason = String(body && body.reason ? body.reason : '').trim().slice(0, 200);
+  await pool.query(
+    `UPDATE users SET blocked = TRUE, blocked_at = NOW(), blocked_reason = $1, updated_at = NOW() WHERE id = $2`,
+    [reason || null, id]
+  );
+  // Revoca todas las sesiones activas: el usuario queda fuera de inmediato.
+  await pool.query('DELETE FROM sessions WHERE user_id = $1', [id]).catch(() => {});
+  purgeUserSessions(id);
+  sendJson(res, 200, { data: { id, blocked: true }, success: true });
+}
+
+async function unblockUser(res, id, session) {
+  if (!(await isOrgOwner(session))) {
+    return sendJson(res, 403, { error: 'Solo el propietario de la organización puede desbloquear usuarios' });
+  }
+  const target = (await pool.query('SELECT id FROM users WHERE id = $1', [id]).catch(() => ({ rows: [] }))).rows[0];
+  if (!target) return sendJson(res, 404, { error: 'Usuario no encontrado' });
+  await pool.query(
+    `UPDATE users SET blocked = FALSE, blocked_at = NULL, blocked_reason = NULL, updated_at = NOW() WHERE id = $1`,
+    [id]
+  );
+  sendJson(res, 200, { data: { id, blocked: false }, success: true });
+}
+
 function enrichOrganization(org, currentUserId) {
   return {
     id: org.id,
@@ -2179,7 +2323,7 @@ function enrichOrganization(org, currentUserId) {
 // 9. CRUD de instancias + integración con Evolution API
 // =========================================================================
 function isOwner(instance, session) {
-  if (session.role === 'admin') return true;
+  if (isAdminRole(session.role)) return true;
   return String(instance.user_id) === String(session.id);
 }
 
@@ -2195,7 +2339,7 @@ async function loadInstanceForUser(id, session) {
 }
 
 async function getInstances(res, session) {
-  const isAdmin = session.role === 'admin';
+  const isAdmin = isAdminRole(session.role);
   const result = await pool.query(`
     SELECT i.*,
       (SELECT COUNT(*)::int FROM groups_ g WHERE g.instance_id = i.id) AS groups_count,
@@ -2257,7 +2401,7 @@ async function createInstance(res, body, session) {
   // Emisora de seguridad (OTP): solo el admin/owner puede habilitarla; los
   // miembros no pueden marcar sus instancias para enviar códigos del sistema.
   const securitySender = body.securitySender === true || body.securitySender === 'true'
-    ? (session.role === 'admin' || session.role === 'owner')
+    ? isAdminRole(session.role)
     : false;
   // n8n es un entorno único del sistema (variables de entorno del admin); no se
   // persiste ni se acepta configuración por instancia.
@@ -2299,7 +2443,7 @@ async function updateInstance(res, id, body, session) {
   if (!isOwner(inst.rows[0], session)) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   // Solo el admin/owner puede cambiar el flag de emisor de seguridad; para los
   // miembros el valor enviado se ignora (se conserva el actual).
-  const canSetSecurity = session.role === 'admin' || session.role === 'owner';
+  const canSetSecurity = isAdminRole(session.role);
   const securitySender = body.securitySender === true || body.securitySender === 'true'
     ? true
     : body.securitySender === false || body.securitySender === 'false'
@@ -2440,11 +2584,10 @@ async function getInstanceStatus(res, id, session) {
   sendJson(res, 200, { data: { status: dbStatus, raw: evoStatus }, success: true });
 }
 async function syncInstances(res, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede sincronizar instancias' });
   const evolutionUrl = body.evolutionUrl || EVO_URL;
   const apiKey = body.apiKey || EVO_KEY;
   try {
-    const result = await reconcileWithEvolution(evolutionUrl, apiKey);
+    const result = await reconcileWithEvolution(evolutionUrl, apiKey, session);
     sendJson(res, 200, result);
   } catch (e) {
     if (e && e.statusCode === 404) {
@@ -2456,7 +2599,10 @@ async function syncInstances(res, body, session) {
 
 // Trae la lista de instancias desde Evolution y la concilia con la BD local
 // (crea las faltantes, actualiza estado / evolution_instance_id). Devuelve resumen.
-async function reconcileWithEvolution(evolutionUrl, apiKey) {
+// Cuando hay sesión, el alcance es la organización del usuario (o sus instancias
+// propias si aún no pertenece a una organización). Sin sesión (sync en segundo
+// plano) reconcilia globalmente y asigna las huérfanas al primer admin/owner.
+async function reconcileWithEvolution(evolutionUrl, apiKey, session) {
   let remoteInstances;
   try {
     remoteInstances = await fetchJson('GET', `${evolutionUrl}/instance/fetchInstances`,
@@ -2470,40 +2616,76 @@ async function reconcileWithEvolution(evolutionUrl, apiKey) {
     ? remoteInstances
     : (remoteInstances.value || []);
   let synced = 0, created = 0;
+  // Alcance de la sesión: organización del usuario (o sus propias instancias).
+  let scopeOrgId = null;
+  if (session) {
+    try {
+      const ur = await pool.query('SELECT organization_id FROM users WHERE id = $1', [session.id]);
+      scopeOrgId = ur.rows[0] ? ur.rows[0].organization_id : null;
+    } catch { /* sin alcance: cae a las instancias propias del usuario */ }
+  }
   // Propietario por defecto para las instancias que Evolution posee y la BD no
-  // conoce: el primer admin/owner del sistema. Si no existe, no se crean
+  // conoce (solo en el sync global de segundo plano). Si no existe, no se crean
   // instancias huérfanas (evita violar la FK instances_user_id_fkey).
   let systemOwnerId = null;
-  try {
-    const owner = await pool.query(
-      `SELECT id FROM users WHERE role IN ('admin', 'owner') ORDER BY created_at ASC LIMIT 1`
-    );
-    systemOwnerId = owner.rows[0] ? owner.rows[0].id : null;
-  } catch { /* sin propietario: se omiten las instancias nuevas */ }
+  if (!session) {
+    try {
+      const owner = await pool.query(
+        `SELECT id FROM users WHERE role IN ('admin', 'owner') ORDER BY created_at ASC LIMIT 1`
+      );
+      systemOwnerId = owner.rows[0] ? owner.rows[0].id : null;
+    } catch { /* sin propietario: se omiten las instancias nuevas */ }
+  }
   for (const remote of remoteList) {
     const name = remote.instanceName || remote.name;
     if (!name) continue;
     const rStatus = remote.connectionStatus || remote.status || remote.state || '';
     const dbStatus = rStatus === 'open' ? 'connected' : rStatus === 'connecting' ? 'connecting' : 'disconnected';
-    const existing = await pool.query(
-      `SELECT * FROM instances WHERE evolution_instance_id = $1 OR name = $2`,
-      [name, name]
-    );
-    if (existing.rows.length > 0) {
-      const e = existing.rows[0];
-      if (e.status !== dbStatus || e.evolution_instance_id !== name) {
+    let existing = null;
+    if (session) {
+      if (scopeOrgId) {
+        const r = await pool.query(
+          `SELECT i.* FROM instances i JOIN users u ON u.id = i.user_id
+           WHERE u.organization_id = $1 AND (i.evolution_instance_id = $2 OR i.name = $2)
+           LIMIT 1`, [scopeOrgId, name]
+        ).catch(() => ({ rows: [] }));
+        existing = r.rows[0] || null;
+      }
+      if (!existing) {
+        const r = await pool.query(
+          `SELECT * FROM instances WHERE user_id = $1 AND (evolution_instance_id = $2 OR name = $2)
+           LIMIT 1`, [session.id, name]
+        ).catch(() => ({ rows: [] }));
+        existing = r.rows[0] || null;
+      }
+    } else {
+      const r = await pool.query(
+        `SELECT * FROM instances WHERE evolution_instance_id = $1 OR name = $2`,
+        [name, name]
+      ).catch(() => ({ rows: [] }));
+      existing = r.rows[0] || null;
+    }
+    if (existing) {
+      if (existing.status !== dbStatus || existing.evolution_instance_id !== name) {
         await pool.query(
           `UPDATE instances SET status = $1, evolution_instance_id = $2, updated_at = NOW() WHERE id = $3`,
-          [dbStatus, name, e.id]
-        );
+          [dbStatus, name, existing.id]
+        ).catch(() => {});
         synced++;
       }
+    } else if (session) {
+      await pool.query(
+        `INSERT INTO instances (id, name, evolution_url, api_key, status, evolution_instance_id, user_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [cuid(), name, evolutionUrl, apiKey, dbStatus, name, session.id]
+      ).catch(() => {});
+      created++;
     } else if (systemOwnerId) {
       await pool.query(
         `INSERT INTO instances (id, name, evolution_url, api_key, status, evolution_instance_id, user_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [cuid(), name, evolutionUrl, apiKey, dbStatus, name, systemOwnerId]
-      );
+      ).catch(() => {});
       created++;
     }
   }
@@ -2565,7 +2747,7 @@ function toTimeString(v) {
   return `${h}:${min}`;
 }
 function enrichInstance(i, role) {
-  const canSeeCredentials = role === 'admin';
+  const canSeeCredentials = isAdminRole(role);
   return {
     id: i.id,
     name: i.name,
@@ -2633,7 +2815,7 @@ const CAMPAIGN_QUERY = `
 `;
 
 function canAccessCampaign(campaign, session) {
-  if (session.role === 'admin') return true;
+  if (isAdminRole(session.role)) return true;
   return String(campaign.owner_user_id) === String(session.id);
 }
 
@@ -2648,7 +2830,7 @@ async function loadCampaignAccess(id) {
 async function getCampaigns(res, req, session) {
   const u = new URL(req.url, `http://${req.headers.host}`);
   const limit = u.searchParams.get('limit');
-  const isAdmin = session.role === 'admin';
+  const isAdmin = isAdminRole(session.role);
   let query = CAMPAIGN_QUERY + (isAdmin ? '' : ' WHERE i.user_id = $1') + ' ORDER BY c.created_at DESC';
   const params = [];
   if (!isAdmin) params.push(session.id);
@@ -2835,7 +3017,7 @@ async function sendCampaign(res, id, session) {
 // 11. Templates
 // =========================================================================
 async function getTemplates(res, session) {
-  const isAdmin = session.role === 'admin';
+  const isAdmin = isAdminRole(session.role);
   const result = await pool.query(
     `SELECT * FROM templates
      ${isAdmin ? '' : 'WHERE user_id = $1'}
@@ -2917,7 +3099,7 @@ function enrichGroup(g) {
 }
 
 async function getGroups(res, session) {
-  const isAdmin = session.role === 'admin';
+  const isAdmin = isAdminRole(session.role);
   const result = await pool.query(
     `SELECT g.*, i.name as instance_name FROM groups_ g
      LEFT JOIN instances i ON i.id = g.instance_id
@@ -3267,7 +3449,7 @@ async function getChatbotDocuments(res, req, session) {
     params.push(iid);
     conds.push('d.instance_id = $' + params.length);
   }
-  if (session.role !== 'admin') {
+  if (!isAdminRole(session.role)) {
     q += ' LEFT JOIN instances i ON i.id = d.instance_id';
     params.push(session.id);
     conds.push('i.user_id = $' + params.length);
@@ -3331,7 +3513,7 @@ async function storeBotDocument(instance, title, content, extra = {}) {
 async function deleteChatbotDocument(res, id, session) {
   const row = (await pool.query('SELECT * FROM bot_documents WHERE id = $1', [id])).rows[0];
   if (!row) return sendJson(res, 404, { error: 'Documento no encontrado' });
-  if (session.role !== 'admin' && !(await loadInstanceForUser(row.instance_id, session))) {
+  if (!isAdminRole(session.role) && !(await loadInstanceForUser(row.instance_id, session))) {
     return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   }
   await pool.query('DELETE FROM bot_documents WHERE id = $1', [id]);
@@ -3541,7 +3723,7 @@ async function togglePauseChat(res, body, session) {
 async function getPausedChats(res, req, session) {
   const u = new URL(req.url, `http://${req.headers.host}`);
   const iid = u.searchParams.get('instanceId');
-  const isAdmin = session.role === 'admin';
+  const isAdmin = isAdminRole(session.role);
   if (iid && !(await loadInstanceForUser(iid, session))) {
     return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   }
@@ -3598,7 +3780,7 @@ function enrichAutoReply(r) {
   };
 }
 async function getAutoReplies(res, session) {
-  const isAdmin = session.role === 'admin';
+  const isAdmin = isAdminRole(session.role);
   const result = await pool.query(
     `SELECT ar.*, i.name as instance_name FROM auto_replies ar
      LEFT JOIN instances i ON i.id = ar.instance_id
@@ -3615,7 +3797,7 @@ async function getAutoReply(res, id, session) {
   );
   if (result.rows.length === 0) return sendJson(res, 404, { error: 'Auto-reply no encontrado' });
   const row = result.rows[0];
-  if (session.role !== 'admin' && String(row.owner_user_id) !== String(session.id)) {
+  if (!isAdminRole(session.role) && String(row.owner_user_id) !== String(session.id)) {
     return sendJson(res, 403, { error: 'No tienes acceso a esta auto-respuesta' });
   }
   sendJson(res, 200, { data: enrichAutoReply(row), success: true });
@@ -3663,7 +3845,7 @@ async function updateAutoReply(res, id, body, session) {
     [id]
   );
   if (existing.rows.length === 0) return sendJson(res, 404, { error: 'Auto-reply no encontrado' });
-  if (session.role !== 'admin' && String(existing.rows[0].owner_user_id) !== String(session.id)) {
+  if (!isAdminRole(session.role) && String(existing.rows[0].owner_user_id) !== String(session.id)) {
     return sendJson(res, 403, { error: 'No tienes acceso a esta auto-respuesta' });
   }
   if (body.instanceId && !(await loadInstanceForUser(body.instanceId, session))) {
@@ -3696,7 +3878,7 @@ async function deleteAutoReply(res, id, session) {
     [id]
   );
   if (existing.rows.length === 0) return sendJson(res, 404, { error: 'Auto-reply no encontrado' });
-  if (session.role !== 'admin' && String(existing.rows[0].owner_user_id) !== String(session.id)) {
+  if (!isAdminRole(session.role) && String(existing.rows[0].owner_user_id) !== String(session.id)) {
     return sendJson(res, 403, { error: 'No tienes acceso a esta auto-respuesta' });
   }
   const result = await pool.query('DELETE FROM auto_replies WHERE id = $1 RETURNING id', [id]);
@@ -3720,7 +3902,7 @@ function computeBillingState(user, now = new Date()) {
     // el job abre la gracia en la siguiente revisión antes de bloquear.
     status = graceEnd ? (now <= graceEnd ? 'overdue' : 'blocked') : 'overdue';
   }
-  if (user.role === 'admin') status = 'active';
+  if (isAdminRole(user.role)) status = 'active';
   return { status, nextBillingDate: periodEnd ? periodEnd.toISOString() : null };
 }
 
@@ -3778,7 +3960,7 @@ const DESTINATION_TYPES = ['banco', 'billetera', 'pagomovil', 'binance_usdt', 'o
 
 async function getPaymentDestinations(res, session) {
   // Admin ve todos los metodos; el usuario solo los activos (donde puede pagar)
-  const q = session.role === 'admin'
+  const q = isAdminRole(session.role)
     ? 'SELECT * FROM payment_destinations ORDER BY sort_order ASC, created_at ASC'
     : 'SELECT * FROM payment_destinations WHERE is_active = TRUE ORDER BY sort_order ASC, created_at ASC';
   const result = await pool.query(q);
@@ -3786,7 +3968,7 @@ async function getPaymentDestinations(res, session) {
 }
 
 async function createPaymentDestination(res, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar métodos de pago' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar métodos de pago' });
   const type = (body.type || 'banco').toString();
   const name = (body.name || '').toString().trim();
   if (!name) return sendJson(res, 400, { error: 'El nombre del método de pago es requerido' });
@@ -3804,7 +3986,7 @@ async function createPaymentDestination(res, body, session) {
 }
 
 async function updatePaymentDestination(res, id, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar métodos de pago' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar métodos de pago' });
   const type = (body.type || 'banco').toString();
   const name = (body.name || '').toString().trim();
   if (!name) return sendJson(res, 400, { error: 'El nombre del método de pago es requerido' });
@@ -3823,7 +4005,7 @@ async function updatePaymentDestination(res, id, body, session) {
 }
 
 async function deletePaymentDestination(res, id, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar métodos de pago' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar métodos de pago' });
   const result = await pool.query('DELETE FROM payment_destinations WHERE id = $1 RETURNING id', [id]);
   if (result.rows.length === 0) return sendJson(res, 404, { error: 'Método de pago no encontrado' });
   sendJson(res, 200, { success: true });
@@ -3849,16 +4031,16 @@ async function reportPayment(res, body, session) {
 }
 
 async function getReportedPayments(res, session) {
-  const q = session.role === 'admin'
+  const q = isAdminRole(session.role)
     ? 'SELECT * FROM reported_payments ORDER BY created_at DESC'
     : 'SELECT * FROM reported_payments WHERE user_id = $1 ORDER BY created_at DESC';
-  const params = session.role === 'admin' ? [] : [session.id];
+  const params = isAdminRole(session.role) ? [] : [session.id];
   const result = await pool.query(q, params);
   sendJson(res, 200, { data: result.rows.map(enrichReportedPayment), success: true });
 }
 
 async function verifyReportedPayment(res, id, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede verificar pagos' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede verificar pagos' });
   const rp = (await pool.query('SELECT * FROM reported_payments WHERE id = $1', [id])).rows[0];
   if (!rp) return sendJson(res, 404, { error: 'Pago reportado no encontrado' });
   if (rp.status !== 'pending') return sendJson(res, 400, { error: 'Este pago ya fue procesado' });
@@ -3893,7 +4075,7 @@ async function verifyReportedPayment(res, id, session) {
 }
 
 async function rejectReportedPayment(res, id, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar pagos' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar pagos' });
   const rp = (await pool.query('SELECT * FROM reported_payments WHERE id = $1', [id])).rows[0];
   if (!rp) return sendJson(res, 404, { error: 'Pago reportado no encontrado' });
   if (rp.status !== 'pending') return sendJson(res, 400, { error: 'Este pago ya fue procesado' });
@@ -3905,7 +4087,7 @@ async function rejectReportedPayment(res, id, body, session) {
 }
 
 function getUserIdScope(session) {
-  return session.role === 'admin' ? null : session.id;
+  return isAdminRole(session.role) ? null : session.id;
 }
 
 // =========================================================================
@@ -3979,14 +4161,14 @@ async function getAddonCatalog() {
 
 // Admin: lee el catálogo de add-ons para poder editar sus precios.
 async function getAddonPrices(res, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar precios de adicionales' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar precios de adicionales' });
   const catalog = await getAddonCatalog();
   sendJson(res, 200, { data: catalog, success: true });
 }
 
 // Admin: actualiza los precios del catálogo de add-ons (unit_amount).
 async function updateAddonPrices(res, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar precios de adicionales' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar precios de adicionales' });
   const requested = Array.isArray((body || {}).addons) ? body.addons : [];
   const catalog = await getAddonCatalog();
   const validKeys = new Set(catalog.map((a) => a.key));
@@ -4016,7 +4198,7 @@ async function updateAddonPrices(res, body, session) {
 // Total mensual del usuario = precio del plan base + total de add-ons.
 // Admin no tiene cargo.
 async function getUserMonthlyAmount(userId, role) {
-  if (role === 'admin') return 0;
+  if (isAdminRole(role)) return 0;
   let base = 0;
   try {
     const u = (await pool.query('SELECT plan FROM users WHERE id = $1', [userId])).rows[0];
@@ -4031,7 +4213,7 @@ async function getUserMonthlyAmount(userId, role) {
 
 // Resuelve los límites del plan de un usuario. Admins no tienen límites.
 async function getUserPlanLimits(userId, role) {
-  if (role === 'admin') return null; // null = sin límites
+  if (isAdminRole(role)) return null; // null = sin límites
   let planSlug = 'starter';
   try {
     const u = (await pool.query('SELECT plan FROM users WHERE id = $1', [userId])).rows[0];
@@ -4105,7 +4287,7 @@ function enrichPlan(p) {
 
 // GET público: los activos para el landing. GET admin (?id=all): todos.
 async function getPlans(res, session) {
-  const q = session && session.role === 'admin'
+  const q = session && isAdminRole(session.role)
     ? 'SELECT * FROM plans ORDER BY sort_order ASC, created_at ASC'
     : 'SELECT * FROM plans WHERE is_active = TRUE ORDER BY sort_order ASC, created_at ASC';
   const result = await pool.query(q);
@@ -4113,7 +4295,7 @@ async function getPlans(res, session) {
 }
 
 async function createPlan(res, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar planes' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar planes' });
   const name = (body.name || '').toString().trim();
   if (!name) return sendJson(res, 400, { error: 'El nombre del plan es requerido' });
   const rawSlug = body.slug !== undefined ? body.slug : name;
@@ -4144,7 +4326,7 @@ async function createPlan(res, body, session) {
 }
 
 async function updatePlan(res, id, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar planes' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar planes' });
   const existing = (await pool.query('SELECT * FROM plans WHERE id = $1', [id])).rows[0];
   if (!existing) return sendJson(res, 404, { error: 'Plan no encontrado' });
   const name = (body.name !== undefined ? body.name : existing.name).toString().trim();
@@ -4186,7 +4368,7 @@ async function updatePlan(res, id, body, session) {
 }
 
 async function deletePlan(res, id, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar planes' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar planes' });
   const result = await pool.query('DELETE FROM plans WHERE id = $1 RETURNING id', [id]);
   if (result.rows.length === 0) return sendJson(res, 404, { error: 'Plan no encontrado' });
   sendJson(res, 200, { success: true });
@@ -4212,7 +4394,7 @@ function enrichTestimonial(t) {
 
 // GET público: los activos para el landing. GET admin (?id=all): todos.
 async function getTestimonials(res, session) {
-  const q = session && session.role === 'admin'
+  const q = session && isAdminRole(session.role)
     ? 'SELECT * FROM testimonials ORDER BY sort_order ASC, created_at ASC'
     : 'SELECT * FROM testimonials WHERE is_active = TRUE ORDER BY sort_order ASC, created_at ASC';
   const result = await pool.query(q);
@@ -4220,7 +4402,7 @@ async function getTestimonials(res, session) {
 }
 
 async function createTestimonial(res, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar testimonios' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar testimonios' });
   const author = (body.author || '').toString().trim();
   const quote = (body.quote || '').toString().trim();
   if (!author) return sendJson(res, 400, { error: 'El autor es requerido' });
@@ -4238,7 +4420,7 @@ async function createTestimonial(res, body, session) {
 }
 
 async function updateTestimonial(res, id, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar testimonios' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar testimonios' });
   const existing = (await pool.query('SELECT * FROM testimonials WHERE id = $1', [id])).rows[0];
   if (!existing) return sendJson(res, 404, { error: 'Testimonio no encontrado' });
   const author = (body.author !== undefined ? body.author : existing.author).toString().trim();
@@ -4266,7 +4448,7 @@ async function updateTestimonial(res, id, body, session) {
 }
 
 async function deleteTestimonial(res, id, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar testimonios' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar testimonios' });
   const result = await pool.query('DELETE FROM testimonials WHERE id = $1 RETURNING id', [id]);
   if (result.rows.length === 0) return sendJson(res, 404, { error: 'Testimonio no encontrado' });
   sendJson(res, 200, { success: true });
@@ -4300,8 +4482,8 @@ async function getBillingInfo(res, session) {
   const planName = limits
     ? (await pool.query('SELECT name FROM plans WHERE slug = $1', [planSlug])).rows[0]?.name
     : null;
-  const addons = session.role === 'admin' ? [] : await getUserAddons(user.id);
-  const basePrice = session.role === 'admin'
+  const addons = isAdminRole(session.role) ? [] : await getUserAddons(user.id);
+  const basePrice = isAdminRole(session.role)
     ? 0
     : parseFloat((await pool.query('SELECT price_monthly FROM plans WHERE slug = $1', [planSlug]).catch(() => ({ rows: [] }))).rows[0]?.price_monthly) || 0;
   const addonTotal = Math.round(addons.reduce((a, x) => a + x.total, 0) * 100) / 100;
@@ -4354,7 +4536,7 @@ async function getInvoices(res, session) {
 // Información para el selector de plan: planes disponibles (starter/profesional),
 // catálogo de add-ons y estado actual del usuario.
 async function getPlanChangeInfo(res, session) {
-  if (session.role === 'admin') return sendJson(res, 403, { error: 'El administrador no gestiona un plan' });
+  if (isAdminRole(session.role)) return sendJson(res, 403, { error: 'El administrador no gestiona un plan' });
   const user = (await pool.query('SELECT * FROM users WHERE id = $1', [session.id])).rows[0];
   if (!user) return sendJson(res, 404, { error: 'Usuario no encontrado' });
 
@@ -4393,7 +4575,7 @@ async function getPlanChangeInfo(res, session) {
 // Se aplica de inmediato. Si el monto mensual sube, genera una factura
 // pendiente por la diferencia.
 async function changeUserPlan(res, body, session) {
-  if (session.role === 'admin') return sendJson(res, 403, { error: 'El administrador no gestiona un plan' });
+  if (isAdminRole(session.role)) return sendJson(res, 403, { error: 'El administrador no gestiona un plan' });
   const planSlug = String((body || {}).planSlug || '').toLowerCase();
   if (!CHANGEABLE_PLAN_SLUGS.includes(planSlug)) {
     return sendJson(res, 400, { error: 'Solo puedes cambiar entre Starter y Profesional' });
@@ -4426,7 +4608,7 @@ async function changeUserPlan(res, body, session) {
 // inmediato; si el monto mensual sube, genera una factura pendiente por la
 // diferencia.
 async function updateUserAddons(res, body, session) {
-  if (session.role === 'admin') return sendJson(res, 403, { error: 'El administrador no gestiona add-ons' });
+  if (isAdminRole(session.role)) return sendJson(res, 403, { error: 'El administrador no gestiona add-ons' });
   const requested = Array.isArray((body || {}).addons) ? body.addons : [];
   const user = (await pool.query('SELECT * FROM users WHERE id = $1', [session.id])).rows[0];
   if (!user) return sendJson(res, 404, { error: 'Usuario no encontrado' });
@@ -4560,7 +4742,7 @@ async function runBillingChecks() {
 // Verificación estilo middleware para endpoints que requieren un plan activo
 // (no bloqueado).
 async function ensureBillingActive(res, session) {
-  if (session.role === 'admin') return true;
+  if (isAdminRole(session.role)) return true;
   const user = (await pool.query('SELECT * FROM users WHERE id = $1', [session.id])).rows[0];
   if (!user) return false;
   const state = computeBillingState(user);
@@ -4574,7 +4756,7 @@ async function ensureBillingActive(res, session) {
 // Verifica el tope de mensajes por cliente antes de enviar. Los admins nunca
 // tienen límite.
 async function checkMessageLimit(res, session) {
-  if (session.role === 'admin') return true;
+  if (isAdminRole(session.role)) return true;
   const limits = await getUserPlanLimits(session.id, session.role);
   const max = limits ? limits.maxMessages : 0;
   if (max > 0) {
@@ -4599,7 +4781,7 @@ async function checkMessageLimit(res, session) {
 // 16. Metrics / Analytics / Conversations
 // =========================================================================
 async function getDashboardMetrics(res, session) {
-  const isAdmin = session.role === 'admin';
+  const isAdmin = isAdminRole(session.role);
   // Los que no son admin solo ven métricas de sus propias instancias.
   const scope = isAdmin ? 'TRUE' : 'i.user_id = $1';
   const scopeParams = isAdmin ? [] : [session.id];
@@ -4714,7 +4896,7 @@ async function getCampaignAnalytics(res, campaignId) {
 async function getConversations(res, req, session) {
   const u = new URL(req.url, `http://${req.headers.host}`);
   const iid = u.searchParams.get('instanceId');
-  const isAdmin = session.role === 'admin';
+  const isAdmin = isAdminRole(session.role);
   if (iid && !(await loadInstanceForUser(iid, session))) {
     return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   }
@@ -5335,7 +5517,7 @@ async function suggestAiReply(res, body, session) {
 // Admin: claves gestionadas por la plataforma (modo SaaS)
 // ---------------------------------------------------------------------------
 async function getSaaSKeys(res, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar las claves del sistema' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar las claves del sistema' });
   const rows = (await pool.query('SELECT * FROM ai_saas_keys ORDER BY created_at DESC')).rows;
   sendJson(res, 200, {
     data: rows.map((r) => ({
@@ -5352,7 +5534,7 @@ async function getSaaSKeys(res, session) {
 }
 
 async function setSaaSKey(res, body, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar las claves del sistema' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar las claves del sistema' });
   const providerId = body.provider || 'gemini';
   if (!providerManager.isSupported(providerId)) return sendJson(res, 400, { error: 'Proveedor no soportado' });
   const rawKey = (body.apiKey || '').trim();
@@ -5379,7 +5561,7 @@ async function setSaaSKey(res, body, session) {
 }
 
 async function deleteSaaSKey(res, keyId, session) {
-  if (session.role !== 'admin') return sendJson(res, 403, { error: 'Solo el administrador puede gestionar las claves del sistema' });
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar las claves del sistema' });
   const row = (await pool.query('DELETE FROM ai_saas_keys WHERE id = $1 RETURNING id, provider', [keyId])).rows[0];
   if (!row) return sendJson(res, 404, { error: 'Clave no encontrada' });
   logAiAudit(session, 'saas_key_removed', `Clave de sistema de ${providerLabel(row.provider)} eliminada`);
@@ -6034,7 +6216,7 @@ server.on('upgrade', async (req, socket, head) => {
 });
 
 wss.on('connection', async (ws, req, session) => {
-  ws.isAdmin = session.role === 'admin';
+  ws.isAdmin = isAdminRole(session.role);
   ws.userId = session.id;
   ws.send(JSON.stringify({ type: 'hello', data: { user: session.email } }));
   // Envía el snapshot actual para que el cliente quede al día al conectarse

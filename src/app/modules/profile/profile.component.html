@@ -14,8 +14,8 @@
           <span class="summary-name">{{ user?.name || 'Usuario' }}</span>
           <span class="summary-email">{{ user?.email }}</span>
         </div>
-        <span class="role-badge" [class.is-admin]="user?.role === 'admin'">
-          <mat-icon>{{ user?.role === 'admin' ? 'admin_panel_settings' : 'person' }}</mat-icon>
+        <span class="role-badge" [class.is-admin]="user?.role === 'admin' || user?.role === 'owner'">
+          <mat-icon>{{ user?.role === 'admin' || user?.role === 'owner' ? 'admin_panel_settings' : 'person' }}</mat-icon>
           {{ roleLabel }}
         </span>
         <mat-divider></mat-divider>

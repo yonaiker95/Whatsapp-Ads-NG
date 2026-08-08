@@ -92,7 +92,8 @@ export class BillingComponent implements OnInit, OnDestroy {
   }
 
   get isAdmin(): boolean {
-    return this.authService.currentUser()?.role === 'admin';
+    const role = this.authService.currentUser()?.role;
+    return role === 'admin' || role === 'owner';
   }
 
   ngOnInit(): void {
