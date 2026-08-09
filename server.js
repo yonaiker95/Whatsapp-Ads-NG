@@ -3166,17 +3166,19 @@ async function updateCampaign(res, id, body, session) {
   }
   const startTime = toTimeString(body.startTime);
   const endTime = toTimeString(body.endTime);
+  // scheduled_at, template_id, start_time y end_time se asignan directamente
+  // (no COALESCE) para permitir limpiarlos al editar (p. ej. "Sin plantilla"
+  // o quitar la programación); el frontend envía el formulario completo.
   const result = await pool.query(
     `UPDATE campaigns SET name = COALESCE($1, name), description = COALESCE($2, description),
      status = COALESCE($3, status), active = COALESCE($4, active),
-     scheduled_at = COALESCE($5, scheduled_at), template_id = COALESCE($6, template_id),
+     scheduled_at = $5, template_id = $6,
      instance_id = COALESCE($7, instance_id), group_ids = COALESCE($8, group_ids),
      tags = COALESCE($9, tags),
      recurrence = COALESCE($10, recurrence),
      recurrence_config = COALESCE($11, recurrence_config),
      concurrence = COALESCE($12, concurrence),
-     start_time = COALESCE($13, start_time),
-     end_time = COALESCE($14, end_time),
+     start_time = $13, end_time = $14,
      interval_value = COALESCE($15, interval_value),
      interval_unit = COALESCE($16, interval_unit),
      exclude_tags = COALESCE($17, exclude_tags),

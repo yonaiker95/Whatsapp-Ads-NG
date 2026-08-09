@@ -138,7 +138,7 @@ export class CampaignListComponent implements OnInit, OnDestroy {
 
   openFormDialog(campaign?: Campaign): void {
     const dialogRef = this.dialog.open(CampaignFormDialogComponent, {
-      width: '900px',
+      width: '740px',
       maxWidth: '95vw',
       maxHeight: '90vh',
       data: { mode: campaign ? 'edit' : 'create', campaign },

@@ -38,24 +38,79 @@
   }
 }
 
-mat-dialog-content {
-  padding-top: 20px;
+mat-dialog-content.dialog-content {
+  padding: 16px 24px 0;
+  max-height: calc(90vh - 170px);
+  overflow-y: auto;
+}
+
+.load-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 0;
+  color: var(--text-secondary);
+  text-align: center;
+
+  .load-icon {
+    font-size: 40px;
+    width: 40px;
+    height: 40px;
+    opacity: 0.6;
+  }
 }
 
 form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding-bottom: 4px;
+  gap: 16px;
+  padding-bottom: 8px;
 }
 
-.form-section-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  margin-top: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
+.form-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.form-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border);
+
+  mat-icon {
+    color: var(--primary);
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  p {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+}
+
+.form-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .form-row {
@@ -72,8 +127,163 @@ form {
   width: 100%;
 }
 
+.schedule-toggle {
+  display: flex;
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+
+  ::ng-deep .mat-button-toggle {
+    flex: 1;
+    border: none;
+
+    .mat-button-toggle-label-content {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-weight: 600;
+      line-height: 20px;
+    }
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  ::ng-deep .mat-button-toggle-appearance-standard .mat-button-toggle-focus-overlay {
+    background: transparent;
+  }
+}
+
+.hint-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  border: 1px dashed var(--border);
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    flex-shrink: 0;
+  }
+
+  &.warning {
+    background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+    border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+    color: var(--warning);
+  }
+}
+
+.warn-hint {
+  color: var(--warning);
+}
+
+.option-with-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+
+  .option-status {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(21, 128, 61, 0.1);
+    color: var(--success);
+    flex-shrink: 0;
+
+    &.offline {
+      background: rgba(180, 83, 9, 0.12);
+      color: var(--warning);
+    }
+
+    &.pending {
+      background: rgba(30, 64, 175, 0.1);
+      color: var(--info);
+    }
+  }
+}
+
+.trigger-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+
+    &.online {
+      background: var(--success);
+    }
+
+    &.offline {
+      background: var(--warning);
+    }
+
+    &.pending {
+      background: var(--info);
+    }
+  }
+}
+
+.checkbox-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-height: 56px;
+  background: var(--surface-hover);
+
+  .advanced-hint {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+}
+
+.dialog-footer {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+
+  button + button {
+    margin-left: 8px;
+  }
+}
+
 @media (max-width: 560px) {
   .form-row {
     grid-template-columns: 1fr;
+  }
+
+  mat-dialog-content.dialog-content {
+    padding: 14px 16px 0;
+  }
+
+  .dialog-header {
+    padding: 16px 16px 0;
+  }
+
+  .dialog-footer {
+    padding: 12px 16px;
   }
 }

@@ -7,6 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatIconModule } from '@angular/material/icon';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatChipsModule } from '@angular/material/chips';
@@ -15,8 +16,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatNativeDateModule, MAT_DATE_LOCALE } from '@angular/material/core';
-import { Subject, takeUntil } from 'rxjs';
 import { MatChipInputEvent } from '@angular/material/chips';
+import { Subject, forkJoin, takeUntil } from 'rxjs';
 import { ClockPickerDialogComponent } from '../../../../shared/components/clock-picker/clock-picker.dialog';
 import { CampaignService } from '../../../../core/services/campaign.service';
 import { InstanceService } from '../../../../core/services/instance.service';
@@ -32,6 +33,20 @@ export interface CampaignDialogData {
   campaign?: Campaign;
 }
 
+const INSTANCE_STATUS_LABELS: Record<string, string> = {
+  connected: 'Conectada',
+  disconnected: 'Desconectada',
+  connecting: 'Conectando',
+  qrcoded: 'Código QR',
+};
+
+const INSTANCE_STATUS_CLASS: Record<string, string> = {
+  connected: 'online',
+  connecting: 'pending',
+  qrcoded: 'pending',
+  disconnected: 'offline',
+};
+
 @Component({
   selector: 'app-campaign-form-dialog',
   standalone: true,
@@ -43,6 +58,7 @@ export interface CampaignDialogData {
     MatInputModule,
     MatSelectModule,
     MatButtonModule,
+    MatButtonToggleModule,
     MatIconModule,
     MatCheckboxModule,
     MatChipsModule,
@@ -61,6 +77,9 @@ export class CampaignFormDialogComponent implements OnDestroy {
   isEdit = false;
   campaignId: string | null = null;
   submitting = false;
+  loading = true;
+  loadError = false;
+  today = new Date();
 
   instances: Instance[] = [];
   groups: Group[] = [];
@@ -118,6 +137,72 @@ export class CampaignFormDialogComponent implements OnDestroy {
     return this.submitting ? 'Guardando...' : this.isEdit ? 'Actualizar' : 'Crear';
   }
 
+  get scheduleMode(): string {
+    return this.form.get('scheduleMode')?.value || 'now';
+  }
+
+  get recurrenceValue(): string {
+    return this.form.get('recurrence')?.value || 'none';
+  }
+
+  get templateId(): string {
+    return this.form.get('templateId')?.value || '';
+  }
+
+  get instanceOptions(): Instance[] {
+    const currentId = this.form.get('instanceId')?.value;
+    return this.instances.filter((i) => i.status === 'connected' || i.id === currentId);
+  }
+
+  get selectedInstance(): Instance | null {
+    return this.instances.find((i) => i.id === this.form.get('instanceId')?.value) || null;
+  }
+
+  get selectedInstanceId(): string {
+    return this.form.get('instanceId')?.value || '';
+  }
+
+  get visibleGroups(): Group[] {
+    const instId = this.selectedInstanceId;
+    const list = instId ? this.groups.filter((g) => g.instanceId === instId) : [];
+    const selected = (this.form.get('groupIds')?.value || []) as string[];
+    const ids = new Set(list.map((g) => g.id));
+    for (const id of selected) {
+      if (ids.has(id)) continue;
+      const g = this.groups.find((x) => x.id === id);
+      if (g) {
+        list.push(g);
+        ids.add(id);
+      }
+    }
+    return list;
+  }
+
+  get hasGroupsForInstance(): boolean {
+    if (!this.selectedInstanceId) return false;
+    return this.groups.some((g) => g.instanceId === this.selectedInstanceId);
+  }
+
+  get selectedGroupsInfo(): { count: number; participants: number } {
+    const selected = (this.form.get('groupIds')?.value || []) as string[];
+    let participants = 0;
+    for (const id of selected) {
+      const g = this.groups.find((x) => x.id === id);
+      participants += g?.participants || 0;
+    }
+    return { count: selected.length, participants };
+  }
+
+  get suggestedTags(): string[] {
+    const current = (this.form.get('tags')?.value || []) as string[];
+    return this.availableTags.filter((t) => !current.includes(t));
+  }
+
+  get suggestedExcludeTags(): string[] {
+    const current = (this.form.get('excludeTags')?.value || []) as string[];
+    return this.availableTags.filter((t) => !current.includes(t));
+  }
+
   buildForm(campaign?: Campaign): void {
     const scheduled = campaign?.scheduledAt ? new Date(campaign.scheduledAt) : null;
     this.form = this.fb.group({
@@ -128,6 +213,7 @@ export class CampaignFormDialogComponent implements OnDestroy {
       tags: [[]],
       excludeTags: [[]],
       templateId: [''],
+      scheduleMode: [scheduled ? 'scheduled' : 'now'],
       scheduledDate: [scheduled],
       scheduledTime: [scheduled ? this.toTimeString(scheduled) : ''],
       recurrence: ['none'],
@@ -135,7 +221,7 @@ export class CampaignFormDialogComponent implements OnDestroy {
       endTime: [''],
       intervalUnit: ['minutes'],
       intervalValue: [1],
-      concurrence: [1],
+      concurrence: [1, [Validators.required, Validators.min(1), Validators.max(20)]],
       active: [true],
     }, { validator: this.validateTimeWindow });
 
@@ -188,23 +274,53 @@ export class CampaignFormDialogComponent implements OnDestroy {
   };
 
   loadData(): void {
-    this.instanceService.getAll()
+    this.loading = true;
+    this.loadError = false;
+    forkJoin({
+      instances: this.instanceService.getAll(),
+      groups: this.groupService.getAll(),
+      templates: this.templateService.getAll(),
+    })
       .pipe(takeUntil(this.destroy$))
-      .subscribe((instances) => {
-        this.instances = instances.filter((i) => i.status === 'connected');
+      .subscribe({
+        next: ({ instances, groups, templates }) => {
+          this.instances = instances;
+          this.groups = groups;
+          this.templates = templates;
+          this.loading = false;
+        },
+        error: () => {
+          this.loading = false;
+          this.loadError = true;
+        },
       });
+  }
 
-    this.groupService.getAll()
-      .pipe(takeUntil(this.destroy$))
-      .subscribe((groups) => {
-        this.groups = groups;
-      });
+  instanceStatusLabel(status: string): string {
+    return INSTANCE_STATUS_LABELS[status] || status;
+  }
 
-    this.templateService.getAll()
-      .pipe(takeUntil(this.destroy$))
-      .subscribe((templates) => {
-        this.templates = templates;
-      });
+  instanceStatusClass(status: string): string {
+    return INSTANCE_STATUS_CLASS[status] || 'offline';
+  }
+
+  onInstanceChange(): void {
+    const instId = this.selectedInstanceId;
+    const selected = (this.form.get('groupIds')?.value || []) as string[];
+    const allowed = new Set(this.groups.filter((g) => g.instanceId === instId).map((g) => g.id));
+    const kept = selected.filter((id) => allowed.has(id) || !instId);
+    this.form.get('groupIds')?.setValue(kept);
+  }
+
+  onScheduleModeChange(): void {
+    if (this.scheduleMode === 'scheduled') {
+      if (!this.form.get('scheduledTime')?.value) {
+        this.form.get('scheduledTime')?.setValue('09:00');
+      }
+      if (!this.form.get('scheduledDate')?.value) {
+        this.form.get('scheduledDate')?.setValue(new Date());
+      }
+    }
   }
 
   save(): void {
@@ -218,7 +334,7 @@ export class CampaignFormDialogComponent implements OnDestroy {
     const value = this.form.value;
 
     let scheduledAt: string | undefined;
-    if (value.scheduledDate) {
+    if (this.scheduleMode === 'scheduled' && value.scheduledDate) {
       const date = new Date(value.scheduledDate);
       if (value.scheduledTime) {
         const [h, m] = this.parseTime(value.scheduledTime);
@@ -226,6 +342,8 @@ export class CampaignFormDialogComponent implements OnDestroy {
       }
       scheduledAt = date.toISOString();
     }
+
+    const isRecurring = this.scheduleMode === 'scheduled' && value.recurrence !== 'none';
 
     const data: CampaignFormData = {
       name: value.name,
@@ -236,11 +354,11 @@ export class CampaignFormDialogComponent implements OnDestroy {
       excludeTags: value.excludeTags,
       templateId: value.templateId || undefined,
       scheduledAt,
-      recurrence: value.recurrence,
-      startTime: value.startTime || undefined,
-      endTime: value.endTime || undefined,
-      intervalUnit: value.intervalUnit,
-      intervalValue: value.intervalValue,
+      recurrence: isRecurring ? value.recurrence : 'none',
+      startTime: isRecurring ? value.startTime || undefined : undefined,
+      endTime: isRecurring ? value.endTime || undefined : undefined,
+      intervalUnit: isRecurring && value.recurrence === 'custom' ? value.intervalUnit : undefined,
+      intervalValue: isRecurring && value.recurrence === 'custom' ? value.intervalValue : undefined,
       concurrence: value.concurrence,
       active: value.active,
     };
@@ -263,6 +381,14 @@ export class CampaignFormDialogComponent implements OnDestroy {
 
   cancel(): void {
     this.dialogRef.close(false);
+  }
+
+  clearScheduleDate(): void {
+    this.form.get('scheduledDate')?.setValue(null);
+  }
+
+  clearScheduleTime(): void {
+    this.form.get('scheduledTime')?.setValue('');
   }
 
   addTag(event: MatChipInputEvent, type: 'tags' | 'excludeTags'): void {

@@ -8,176 +8,290 @@
   </div>
 </div>
 
-<mat-dialog-content>
-  <form [formGroup]="form" (ngSubmit)="save()">
-    <div class="form-section-label">Información básica</div>
-    <div class="form-row">
-      <mat-form-field appearance="outline">
-        <mat-label>Nombre de la campaña *</mat-label>
-        <input matInput formControlName="name" placeholder="Ej: Promoción Black Friday">
-        <mat-error *ngIf="form.get('name')?.hasError('required')">El nombre es requerido</mat-error>
-        <mat-error *ngIf="form.get('name')?.hasError('minlength')">Mínimo 3 caracteres</mat-error>
-      </mat-form-field>
-      <mat-form-field appearance="outline">
-        <mat-label>Descripción</mat-label>
-        <textarea matInput formControlName="description" rows="3" placeholder="Descripción opcional..."></textarea>
-      </mat-form-field>
+<mat-dialog-content class="dialog-content">
+  <div class="load-state" *ngIf="loading">
+    <mat-spinner diameter="36"></mat-spinner>
+    <p>Cargando instancias, grupos y plantillas...</p>
+  </div>
+
+  <div class="load-state" *ngIf="loadError">
+    <mat-icon class="load-icon">error_outline</mat-icon>
+    <p>No se pudieron cargar los datos.</p>
+    <button mat-stroked-button type="button" (click)="loadData()">Reintentar</button>
+  </div>
+
+  <form *ngIf="!loading && !loadError" [formGroup]="form" (ngSubmit)="save()">
+    <div class="form-section">
+      <div class="form-section-header">
+        <mat-icon>info</mat-icon>
+        <div>
+          <h3>Información básica</h3>
+          <p>Nombre, instancia y destinatarios</p>
+        </div>
+      </div>
+      <div class="form-body">
+        <div class="form-row">
+          <mat-form-field appearance="outline">
+            <mat-label>Nombre de la campaña *</mat-label>
+            <input matInput formControlName="name" placeholder="Ej: Promoción Black Friday">
+            <mat-error *ngIf="form.get('name')?.hasError('required')">El nombre es requerido</mat-error>
+            <mat-error *ngIf="form.get('name')?.hasError('minlength')">Mínimo 3 caracteres</mat-error>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Descripción</mat-label>
+            <textarea matInput formControlName="description" rows="2" placeholder="Descripción opcional..."></textarea>
+          </mat-form-field>
+        </div>
+
+        <div class="form-row">
+          <mat-form-field appearance="outline">
+            <mat-label>Instancia *</mat-label>
+            <mat-select formControlName="instanceId" required (selectionChange)="onInstanceChange()">
+              <mat-select-trigger>
+                <span class="trigger-status" *ngIf="selectedInstance">
+                  <span class="dot" [class]="instanceStatusClass(selectedInstance.status)"></span>
+                  {{ selectedInstance.name }}
+                </span>
+                <span *ngIf="!selectedInstance">Selecciona una instancia</span>
+              </mat-select-trigger>
+              <mat-option *ngFor="let inst of instanceOptions" [value]="inst.id">
+                <div class="option-with-status">
+                  <span>{{ inst.name }}</span>
+                  <span class="option-status" [class]="instanceStatusClass(inst.status)">
+                    {{ instanceStatusLabel(inst.status) }}
+                  </span>
+                </div>
+              </mat-option>
+            </mat-select>
+            <mat-error *ngIf="form.get('instanceId')?.hasError('required')">Selecciona una instancia</mat-error>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Plantilla del mensaje</mat-label>
+            <mat-select formControlName="templateId">
+              <mat-option value="">Sin plantilla</mat-option>
+              <mat-option *ngFor="let template of templates" [value]="template.id">
+                {{ template.name }}
+              </mat-option>
+            </mat-select>
+            <mat-hint *ngIf="templateId">Se usará como contenido del mensaje</mat-hint>
+            <mat-hint *ngIf="!templateId" class="warn-hint">Obligatoria para poder enviar la campaña</mat-hint>
+          </mat-form-field>
+        </div>
+
+        <div class="hint-box warning" *ngIf="instanceOptions.length === 0">
+          <mat-icon>warning</mat-icon>
+          <span>No tienes instancias conectadas. Conecta una instancia escaneando su código QR antes de crear una campaña.</span>
+        </div>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Grupos destinatarios *</mat-label>
+          <mat-select formControlName="groupIds" multiple required>
+            <mat-select-trigger>
+              <span *ngIf="selectedGroupsInfo.count === 0">Selecciona uno o más grupos</span>
+              <span *ngIf="selectedGroupsInfo.count > 0">
+                {{ selectedGroupsInfo.count }} {{ selectedGroupsInfo.count === 1 ? 'grupo' : 'grupos' }} ·
+                {{ selectedGroupsInfo.participants.toLocaleString('es') }} destinatarios
+              </span>
+            </mat-select-trigger>
+            <mat-option *ngFor="let group of visibleGroups" [value]="group.id">
+              {{ group.name }} ({{ group.participants }} participantes)
+            </mat-option>
+          </mat-select>
+          <mat-error *ngIf="form.get('groupIds')?.hasError('required')">Selecciona al menos un grupo</mat-error>
+        </mat-form-field>
+
+        <div class="hint-box" *ngIf="!selectedInstanceId">
+          <mat-icon>info</mat-icon>
+          <span>Selecciona primero una instancia para ver sus grupos sincronizados.</span>
+        </div>
+        <div class="hint-box warning" *ngIf="selectedInstanceId && !hasGroupsForInstance">
+          <mat-icon>warning</mat-icon>
+          <span>Esta instancia no tiene grupos sincronizados. Ve al módulo Grupos y sincroniza antes de crear la campaña.</span>
+        </div>
+      </div>
     </div>
 
-    <div class="form-section-label">Configuración de envío</div>
-    <div class="form-row">
-      <mat-form-field appearance="outline">
-        <mat-label>Instancia *</mat-label>
-        <mat-select formControlName="instanceId" required>
-          <mat-option *ngFor="let instance of instances" [value]="instance.id">
-            {{ instance.name }}
-          </mat-option>
-        </mat-select>
-        <mat-error *ngIf="form.get('instanceId')?.hasError('required')">Selecciona una instancia</mat-error>
-      </mat-form-field>
+    <div class="form-section">
+      <div class="form-section-header">
+        <mat-icon>schedule</mat-icon>
+        <div>
+          <h3>Programación</h3>
+          <p>Elige cuándo y con qué frecuencia se envía</p>
+        </div>
+      </div>
+      <div class="form-body">
+        <mat-button-toggle-group formControlName="scheduleMode" class="schedule-toggle" aria-label="Modo de envío">
+          <mat-button-toggle value="now">
+            <mat-icon>flash_on</mat-icon>
+            Enviar ahora
+          </mat-button-toggle>
+          <mat-button-toggle value="scheduled">
+            <mat-icon>schedule</mat-icon>
+            Programar
+          </mat-button-toggle>
+        </mat-button-toggle-group>
 
-      <mat-form-field appearance="outline">
-        <mat-label>Plantilla</mat-label>
-        <mat-select formControlName="templateId">
-          <mat-option value="">Sin plantilla</mat-option>
-          <mat-option *ngFor="let template of templates" [value]="template.id">
-            {{ template.name }}
-          </mat-option>
-        </mat-select>
-      </mat-form-field>
-    </div>
-
-    <mat-form-field appearance="outline" class="full-width">
-      <mat-label>Grupos destinatarios *</mat-label>
-      <mat-select formControlName="groupIds" multiple required>
-        <mat-option *ngFor="let group of groups" [value]="group.id">
-          {{ group.name }} ({{ group.participants }} participantes)
-        </mat-option>
-      </mat-select>
-      <mat-hint>Selecciona uno o más grupos</mat-hint>
-      <mat-error *ngIf="form.get('groupIds')?.hasError('required')">Selecciona al menos un grupo</mat-error>
-    </mat-form-field>
-
-    <div class="form-row">
-      <mat-form-field appearance="outline">
-        <mat-label>Etiquetas a incluir</mat-label>
-        <mat-chip-grid #tagGrid aria-label="Etiquetas">
-          <mat-chip-row *ngFor="let tag of form.get('tags')?.value || []" (removed)="removeTag(tag, 'tags')">
-            {{ tag }}
-            <button matChipRemove>
-              <mat-icon>cancel</mat-icon>
+        <div class="form-row" *ngIf="scheduleMode === 'scheduled'">
+          <mat-form-field appearance="outline">
+            <mat-label>Fecha de envío *</mat-label>
+            <input matInput [matDatepicker]="picker" formControlName="scheduledDate" readonly
+                   (click)="picker.open()" placeholder="DD/MM/AAAA" [min]="today">
+            <mat-datepicker-toggle matIconSuffix [for]="picker"></mat-datepicker-toggle>
+            <button mat-icon-button matIconSuffix type="button" *ngIf="form.get('scheduledDate')?.value"
+                    (click)="clearScheduleDate()" aria-label="Quitar fecha">
+              <mat-icon>close</mat-icon>
             </button>
-          </mat-chip-row>
-          <input
-            placeholder="Agregar etiqueta..."
-            [matChipInputFor]="tagGrid"
-            [matAutocomplete]="tagAuto"
-            (matChipInputTokenEnd)="addTag($event, 'tags')" />
-        </mat-chip-grid>
-        <mat-autocomplete #tagAuto>
-          <mat-option *ngFor="let tag of availableTags" [value]="tag">{{ tag }}</mat-option>
-        </mat-autocomplete>
-      </mat-form-field>
+            <mat-datepicker #picker></mat-datepicker>
+          </mat-form-field>
 
-      <mat-form-field appearance="outline">
-        <mat-label>Etiquetas a excluir</mat-label>
-        <mat-chip-grid #excludeTagGrid aria-label="Etiquetas excluidas">
-          <mat-chip-row *ngFor="let tag of form.get('excludeTags')?.value || []" (removed)="removeTag(tag, 'excludeTags')">
-            {{ tag }}
-            <button matChipRemove>
-              <mat-icon>cancel</mat-icon>
+          <mat-form-field appearance="outline">
+            <mat-label>Hora de envío</mat-label>
+            <input matInput formControlName="scheduledTime" readonly (click)="openClock('scheduledTime', 'Hora de envío')"
+                   placeholder="HH:MM">
+            <button mat-icon-button matIconSuffix type="button" (click)="openClock('scheduledTime', 'Hora de envío')">
+              <mat-icon>schedule</mat-icon>
             </button>
-          </mat-chip-row>
-          <input
-            placeholder="Agregar etiqueta..."
-            [matChipInputFor]="excludeTagGrid"
-            [matAutocomplete]="excludeTagAuto"
-            (matChipInputTokenEnd)="addTag($event, 'excludeTags')" />
-        </mat-chip-grid>
-        <mat-autocomplete #excludeTagAuto>
-          <mat-option *ngFor="let tag of availableTags" [value]="tag">{{ tag }}</mat-option>
-        </mat-autocomplete>
-      </mat-form-field>
+            <button mat-icon-button matIconSuffix type="button" *ngIf="form.get('scheduledTime')?.value"
+                    (click)="clearScheduleTime()" aria-label="Quitar hora">
+              <mat-icon>close</mat-icon>
+            </button>
+          </mat-form-field>
+        </div>
+
+        <mat-form-field appearance="outline" class="full-width" *ngIf="scheduleMode === 'scheduled'">
+          <mat-label>Recurrencia</mat-label>
+          <mat-select formControlName="recurrence">
+            <mat-option *ngFor="let opt of recurrenceOptions" [value]="opt.value">{{ opt.label }}</mat-option>
+          </mat-select>
+          <mat-hint>Con recurrencia puedes limitar el envío a una ventana de horas diaria</mat-hint>
+        </mat-form-field>
+
+        <div class="form-row" *ngIf="scheduleMode === 'scheduled' && recurrenceValue !== 'none'">
+          <mat-form-field appearance="outline">
+            <mat-label>Hora de inicio</mat-label>
+            <input matInput formControlName="startTime" readonly (click)="openClock('startTime', 'Hora de inicio')"
+                   placeholder="HH:MM">
+            <button mat-icon-button matIconSuffix type="button" (click)="openClock('startTime', 'Hora de inicio')">
+              <mat-icon>schedule</mat-icon>
+            </button>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Hora de fin</mat-label>
+            <input matInput formControlName="endTime" readonly (click)="openClock('endTime', 'Hora de fin')"
+                   placeholder="HH:MM">
+            <button mat-icon-button matIconSuffix type="button" (click)="openClock('endTime', 'Hora de fin')">
+              <mat-icon>schedule</mat-icon>
+            </button>
+            <mat-error *ngIf="form.hasError('endBeforeStart')">Debe ser posterior a la hora de inicio</mat-error>
+          </mat-form-field>
+        </div>
+
+        <div class="form-row" *ngIf="scheduleMode === 'scheduled' && recurrenceValue === 'custom'">
+          <mat-form-field appearance="outline">
+            <mat-label>Valor del intervalo</mat-label>
+            <input matInput type="number" formControlName="intervalValue" min="1">
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Unidad</mat-label>
+            <mat-select formControlName="intervalUnit">
+              <mat-option *ngFor="let opt of intervalUnitOptions" [value]="opt.value">{{ opt.label }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+      </div>
     </div>
 
-    <div class="form-section-label">Programación</div>
-    <div class="form-row">
-      <mat-form-field appearance="outline">
-        <mat-label>Fecha de envío</mat-label>
-        <input matInput [matDatepicker]="datePicker" formControlName="scheduledDate"
-               readonly (click)="datePicker.open()" placeholder="DD/MM/AAAA">
-        <mat-datepicker-toggle matIconSuffix [for]="datePicker"></mat-datepicker-toggle>
-        <mat-datepicker #datePicker></mat-datepicker>
-        <mat-hint>Deja vacío para envío inmediato</mat-hint>
-      </mat-form-field>
+    <div class="form-section">
+      <div class="form-section-header">
+        <mat-icon>sell</mat-icon>
+        <div>
+          <h3>Segmentación por etiquetas</h3>
+          <p>Filtra los destinatarios dentro de los grupos</p>
+        </div>
+      </div>
+      <div class="form-body">
+        <div class="form-row">
+          <mat-form-field appearance="outline">
+            <mat-label>Etiquetas a incluir</mat-label>
+            <mat-chip-grid #tagGrid aria-label="Etiquetas a incluir">
+              <mat-chip-row *ngFor="let tag of form.get('tags')?.value || []" (removed)="removeTag(tag, 'tags')">
+                {{ tag }}
+                <button matChipRemove>
+                  <mat-icon>cancel</mat-icon>
+                </button>
+              </mat-chip-row>
+              <input
+                placeholder="Agregar etiqueta..."
+                [matChipInputFor]="tagGrid"
+                [matAutocomplete]="tagAuto"
+                (matChipInputTokenEnd)="addTag($event, 'tags')" />
+            </mat-chip-grid>
+            <mat-autocomplete #tagAuto>
+              <mat-option *ngFor="let tag of suggestedTags" [value]="tag">{{ tag }}</mat-option>
+            </mat-autocomplete>
+            <mat-hint>Solo reciben los contactos con estas etiquetas</mat-hint>
+          </mat-form-field>
 
-      <mat-form-field appearance="outline">
-        <mat-label>Hora de envío</mat-label>
-        <input matInput formControlName="scheduledTime" readonly (click)="openClock('scheduledTime', 'Hora de envío')"
-               placeholder="HH:MM">
-        <button mat-icon-button matIconSuffix type="button" (click)="openClock('scheduledTime', 'Hora de envío')">
-          <mat-icon>schedule</mat-icon>
-        </button>
-      </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Etiquetas a excluir</mat-label>
+            <mat-chip-grid #excludeTagGrid aria-label="Etiquetas a excluir">
+              <mat-chip-row *ngFor="let tag of form.get('excludeTags')?.value || []" (removed)="removeTag(tag, 'excludeTags')">
+                {{ tag }}
+                <button matChipRemove>
+                  <mat-icon>cancel</mat-icon>
+                </button>
+              </mat-chip-row>
+              <input
+                placeholder="Agregar etiqueta..."
+                [matChipInputFor]="excludeTagGrid"
+                [matAutocomplete]="excludeTagAuto"
+                (matChipInputTokenEnd)="addTag($event, 'excludeTags')" />
+            </mat-chip-grid>
+            <mat-autocomplete #excludeTagAuto>
+              <mat-option *ngFor="let tag of suggestedExcludeTags" [value]="tag">{{ tag }}</mat-option>
+            </mat-autocomplete>
+            <mat-hint>Los contactos con estas etiquetas no reciben el mensaje</mat-hint>
+          </mat-form-field>
+        </div>
+      </div>
     </div>
 
-    <mat-form-field appearance="outline" class="full-width">
-      <mat-label>Recurrencia</mat-label>
-      <mat-select formControlName="recurrence">
-        <mat-option *ngFor="let opt of recurrenceOptions" [value]="opt.value">{{ opt.label }}</mat-option>
-      </mat-select>
-      <mat-hint>Ventana de envío diaria cuando hay recurrencia</mat-hint>
-    </mat-form-field>
+    <div class="form-section">
+      <div class="form-section-header">
+        <mat-icon>tune</mat-icon>
+        <div>
+          <h3>Opciones avanzadas</h3>
+          <p>Ajustes adicionales del envío</p>
+        </div>
+      </div>
+      <div class="form-body">
+        <div class="form-row">
+          <mat-form-field appearance="outline">
+            <mat-label>Concurrencia</mat-label>
+            <input matInput type="number" formControlName="concurrence" min="1" max="20">
+            <mat-hint>Mensajes simultáneos (1-20)</mat-hint>
+            <mat-error *ngIf="form.get('concurrence')?.errors?.['min'] || form.get('concurrence')?.errors?.['max']">
+              Debe estar entre 1 y 20
+            </mat-error>
+          </mat-form-field>
 
-    <div class="form-row" *ngIf="form.get('recurrence')?.value !== 'none'">
-      <mat-form-field appearance="outline">
-        <mat-label>Hora de inicio</mat-label>
-        <input matInput formControlName="startTime" readonly (click)="openClock('startTime', 'Hora de inicio')"
-               placeholder="HH:MM">
-        <button mat-icon-button matIconSuffix type="button" (click)="openClock('startTime', 'Hora de inicio')">
-          <mat-icon>schedule</mat-icon>
-        </button>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Hora de fin</mat-label>
-        <input matInput formControlName="endTime" readonly (click)="openClock('endTime', 'Hora de fin')"
-               placeholder="HH:MM">
-        <button mat-icon-button matIconSuffix type="button" (click)="openClock('endTime', 'Hora de fin')">
-          <mat-icon>schedule</mat-icon>
-        </button>
-        <mat-error *ngIf="form.hasError('endBeforeStart')">Debe ser posterior a la hora de inicio</mat-error>
-      </mat-form-field>
+          <div class="checkbox-cell">
+            <mat-checkbox formControlName="active">Campaña activa</mat-checkbox>
+            <span class="advanced-hint">Las campañas activas cuentan para el límite de tu plan</span>
+          </div>
+        </div>
+      </div>
     </div>
-
-    <div class="form-row" *ngIf="form.get('recurrence')?.value === 'custom'">
-      <mat-form-field appearance="outline">
-        <mat-label>Valor intervalo</mat-label>
-        <input matInput type="number" formControlName="intervalValue" min="1">
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Unidad</mat-label>
-        <mat-select formControlName="intervalUnit">
-          <mat-option *ngFor="let opt of intervalUnitOptions" [value]="opt.value">{{ opt.label }}</mat-option>
-        </mat-select>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline">
-        <mat-label>Concurrencia</mat-label>
-        <input matInput type="number" formControlName="concurrence" min="1" max="10">
-        <mat-hint>Mensajes simultáneos</mat-hint>
-      </mat-form-field>
-    </div>
-
-    <div class="form-section-label">Opciones avanzadas</div>
-    <mat-checkbox formControlName="active">Campaña activa</mat-checkbox>
   </form>
 </mat-dialog-content>
 
-<mat-dialog-actions align="end">
-  <button mat-button type="button" (click)="cancel()">Cancelar</button>
-  <button mat-raised-button color="primary" (click)="save()" [disabled]="submitting">
+<mat-dialog-actions align="end" class="dialog-footer">
+  <button mat-stroked-button type="button" (click)="cancel()">Cancelar</button>
+  <button mat-raised-button color="primary" (click)="save()" [disabled]="submitting || loading || loadError">
     <mat-spinner diameter="18" *ngIf="submitting"></mat-spinner>
     {{ saveLabel }}
   </button>
