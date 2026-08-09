@@ -10,6 +10,8 @@
 - **Autenticación con OTP por WhatsApp**: validación del número de teléfono (registro, restablecimiento de contraseña, cambio de número) y verificación en dos pasos (2FA) opcional.
 - **Centro de IA**: módulo de configuración de proveedores de IA (SaaS o BYOK) que genera las respuestas del chatbot.
 - **Infraestructura**: PostgreSQL, Redis, Evolution API y n8n ejecutados en contenedores Docker.
+- **Onboarding obligatorio**: al registrarse, el asistente guía la creación de la organización (el primer usuario queda como propietario) o la unión a la existente; no se puede usar el panel sin completarlo (el admin global está exento).
+- **Usuarios y bloqueo en cascada**: cada usuario ve a los miembros de su organización y el administrador global gestiona a los propietarios; bloquear a un propietario (o la falta de pago de su organización) bloquea automáticamente a todos sus miembros.
 
 El flujo del chatbot conversacional es **n8n → app (AI Center) → Evolution**: n8n recibe el DM entrante en un webhook dinámico por instancia, la app genera la respuesta con la configuración del Centro de IA y n8n la envía de vuelta por Evolution API.
 
@@ -172,7 +174,7 @@ El esquema se crea automáticamente al iniciar el backend (`server.js`). Tablas:
 
 | Tabla | Descripción |
 |-------|-------------|
-| `users` | Usuarios del sistema (rol, organización y permisos por módulo) |
+| `users` | Usuarios del sistema (rol, organización, `onboarding_completed` y permisos por módulo) |
 | `instances` | Instancias de WhatsApp (URL de Evolution, API Key, estado, teléfono, rol de verificación) |
 | `groups_` | Grupos sincronizados por instancia |
 | `templates` | Plantillas de mensajes (contenido, variables) |
@@ -260,6 +262,10 @@ erDiagram
         text phone
         boolean phone_verified
         boolean two_factor_enabled
+        boolean onboarding_completed
+        boolean blocked
+        datetime blocked_at
+        text blocked_reason
     }
     organizations {
         text id PK
@@ -508,6 +514,20 @@ Todas las rutas están prefijadas con `/api`. Las rutas (excepto autenticación 
 
 > Los endpoints del instalador son públicos y solo están disponibles mientras el sistema no está instalado.
 
+### Onboarding obligatorio
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/onboarding` | Estado de onboarding del usuario (`{ completed, hasOrganization, isOwner, organization }`) |
+| POST | `/api/onboarding/complete` | Crea la organización (el usuario pasa a `owner`) o se une a la existente y marca `onboarding_completed = TRUE` |
+
+Tras registrarse, el usuario **no puede usar el panel** hasta completar el onboarding: los guards del frontend redirigen `/app` a `/onboarding` (y `/onboarding` al panel una vez completado). El administrador global (`role = 'admin'`) está exento y `GET /api/onboarding` le devuelve siempre `completed: true`.
+
+- **Primer usuario**: `completeOnboarding` crea la organización con el nombre/descripción enviados, promueve al usuario a `owner`, asigna `organization_id` y refresca sus sesiones (role).
+- **Miembros siguientes**: si la organización ya existe (localizada por `organization_id` o el `owner_id` de respaldo), el usuario se une como `user` conservando sus permisos.
+- **Concurrencia**: la creación se serializa con `pg_advisory_xact_lock(hashtext('wa_ads_onboarding_org')::bigint)` dentro de la transacción para evitar dos organizaciones simultáneas.
+- **Pasos del asistente**: propietario → *Organización, Equipo, WhatsApp, Campaña*; miembro → *Organización (unirse), WhatsApp, Campaña*. Los pasos *Equipo, WhatsApp y Campaña* son opcionales (se pueden saltar); el onboarding queda completado en el paso de organización.
+
 ### Instancias
 
 | Método | Ruta | Descripción |
@@ -626,16 +646,20 @@ Todas las rutas están prefijadas con `/api`. Las rutas (excepto autenticación 
 
 Solo el propietario (o el admin global) puede crear, editar o eliminar miembros. Los permisos se envían como array de claves válidas (ver sección 6) y se persisten en `users.permissions`.
 
-### Usuarios registrados (panel del propietario)
+### Usuarios del sistema (panel de usuarios)
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| GET | `/api/users` | Lista todos los usuarios registrados (información completa, estado, instancias y sesiones) |
+| GET | `/api/users` | Lista los usuarios visibles (miembros de la organización del usuario; el admin global ve a los propietarios de todas las organizaciones) |
 | GET | `/api/users/audit` | Historial de bloqueos/desbloqueos (últimos 100 eventos, más reciente primero) |
 | POST | `/api/users/:id/block` | Bloquea al usuario del sistema (`reason` opcional); revoca sus sesiones activas |
 | POST | `/api/users/:id/unblock` | Desbloquea al usuario |
 
-Solo el **propietario de la organización** (`organizations.owner_id`) puede usar estos endpoints; el resto recibe 403. Al bloquear a un usuario se borran sus sesiones de inmediato y no puede volver a iniciar sesión. No se puede bloquear la propia cuenta ni a administradores/propietarios de otras organizaciones. La columna `blocked` (con `blocked_at` y `blocked_reason`) se añade automáticamente a `users` al arrancar.
+El listado está acotado por alcance: un **miembro de la organización** ve (y puede bloquear) únicamente a los usuarios de su organización (`users.organization_id`); el **admin global** ve a los propietarios de todas las organizaciones. El propietario gestiona a sus miembros; el admin global gestiona a los propietarios.
+
+- **Bloqueo en cascada**: bloquear a un **propietario** (solo el admin global) bloquea también a todos los miembros de su organización con el mismo motivo; el desbloqueo del propietario restaura a los miembros bloqueados por esa cascada (mismo `blocked_reason`).
+- **Bloqueo por falta de pago**: cuando el estado de facturación de un propietario pasa a `blocked` (créditos agotados/vencido), su organización entera se bloquea con el motivo `Falta de pago de la organización`; al confirmar el pago (`POST /api/billing/invoices/:id/pay`) se desbloquea toda la organización.
+- No se puede bloquear la propia cuenta ni a administradores/propietarios de otras organizaciones (salvo el admin global sobre un propietario). Al bloquear a un usuario se borran sus sesiones de inmediato y no puede volver a iniciar sesión. La columna `blocked` (con `blocked_at` y `blocked_reason`) se añade automáticamente a `users` al arrancar.
 
 Cada bloqueo/desbloqueo se registra en la tabla `user_block_audit` (actor, objetivo, acción, motivo y fecha). El panel muestra ese historial en una tarjeta propia, paginación local del listado (10/25/50 por página) y, si el usuario bloqueado tiene la app abierta, recibe por WebSocket el evento `account:blocked` (motivo incluido) que muestra un diálogo y cierra su sesión al instante; si no está conectado, lo verá al intentar iniciar sesión (se rechaza con el motivo).
 
@@ -937,19 +961,21 @@ src/app/
 
 | Zona | Líneas aprox. | Contenido |
 |------|---------------|-----------|
-| Esquema de BD | 340+ | Tablas de la app, del Centro de IA y `otp_codes` |
-| Setup / instalador | 740+ | `handleSetup`, endpoints `/api/setup/*`, `updateEnvFile`, `buildDbUrl`, `testDbConnection` |
-| Autenticación y OTP | 830+ | `genOtpCode`, `sendOtpByWhatsApp`, `createOtp`, `verifyOtpRow`, `checkOtpByPhone`, `verifyOtpByPhone/Token` |
-| Permisos y gate | 900+ | Catálogo `PERMISSION_LABELS`, `sanitizePermissions`, `hasPermission`, `permForModule` y gate en el router |
-| Webhook de Evolution | 575+ | Autenticación por `apikey` y despacho de eventos |
-| Instancias | 1000+ | CRUD, conexión/QR, estado, sincronización con Evolution |
-| API de autenticación | 1430+ | Register, send-code, verify, 2FA, forgot, settings, phone (rutas `/api/auth/*`) |
-| AI Center | 2530+ | Config, validación, cuota, uso, claves SaaS |
-| Webhook/chatbot | 3100+ | `handleWebhook`, `syncInstancePhone`, `handleN8nChatbot` |
-| n8n dinámico | 3245+ | Helpers globales (`n8nBaseUrl`, `n8nApiKey`, `n8nEnabled`), `ensureN8nWorkflow`, `buildN8nChatbotWorkflow` |
-| IA del chatbot | 3460+ | `generateChatbotReply` (usa el AI Center del tenant) |
-| Organizaciones | 1800+ | `getCurrentOrganization`, `createOrganization`, `getOrganizationMembers`, `addOrganizationMember`, `updateOrganizationMember`, `removeOrganizationMember` |
-| Arranque | 5050+ | `start()`: modo setup vs. instalado, bucles de sync y billing |
+| Esquema de BD | 177+ | `initDb` y migraciones (tablas de la app, del Centro de IA y `otp_codes`; `ALTER TABLE ... onboarding_completed`/`blocked`) |
+| Permisos y gate | 974+ | Catálogo `PERMISSION_LABELS`, `sanitizePermissions`, `hasPermission`, `permForModule` y gate en el router |
+| Autenticación y OTP | 966+ | `genOtpCode`, `sendOtpByWhatsApp`, `createOtp`, `verifyOtpRow`, `checkOtpByPhone`, `verifyOtpByPhone/Token` |
+| Setup / instalador | 1305+ | `handleSetup`, endpoints `/api/setup/*`, `updateEnvFile`, `buildDbUrl`, `testDbConnection` |
+| Router API | 1553+ | Despacho por recurso (`case 'onboarding'`, `'users'`, ...) y gate de permisos por módulo |
+| Organizaciones | 2122+ | `getCurrentOrganization`, `createOrganization`, `getOrganizationMembers`, `addOrganizationMember`, `updateOrganizationMember`, `removeOrganizationMember` |
+| Onboarding obligatorio | 2157+ | `getOnboardingStatus`, `completeOnboarding` (crear/unirse con advisory lock) |
+| Usuarios del sistema | 2401+ | `getAdminUsers` (alcance por org/admin), `blockUser`/`unblockUser` (cascada), `getUsersAudit` |
+| Instancias | 2617+ | CRUD, conexión/QR, estado, sincronización con Evolution |
+| Billing | 4172+ | `computeBillingState`, `verifyReportedPayment`, `runBillingChecks` (bloqueo en cascada por falta de pago) |
+| AI Center | 5489+ | `getAiOverview`, config, validación, cuota, uso, claves SaaS |
+| Webhook / chatbot | 5956+ | `syncInstancePhone`, `handleWebhook`, `handleN8nChatbot` |
+| n8n dinámico | 6109+ | `buildN8nChatbotWorkflow`, `ensureN8nWorkflow` (workflow por instancia `dm-chatbot-<id>`) |
+| IA del chatbot | 6300+ | `generateChatbotReply` (usa el AI Center del tenant) |
+| Arranque | 6554+ | `start()`: modo setup vs. instalado, bucles de sync y billing |
 
 ## 15. Resolución de problemas
 

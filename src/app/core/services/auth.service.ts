@@ -151,6 +151,14 @@ export class AuthService {
     });
   }
 
+  // Re-consulta la sesión del servidor y actualiza el estado local. Se usa tras
+  // completar el onboarding (el usuario puede pasar de 'user' a 'owner').
+  refreshSession(): Observable<User> {
+    return this.fetchSession().pipe(
+      tap((user) => this.setSession(user))
+    );
+  }
+
   private fetchSession(): Observable<User> {
     return this.http.get<NextAuthSession>(`${this.API_URL}/auth/session`, { withCredentials: true }).pipe(
       map((session) => {
@@ -167,6 +175,8 @@ export class AuthService {
           phoneVerified: !!session.user.phoneVerified,
           twoFactorEnabled: !!session.user.twoFactorEnabled,
           notificationsEnabled: session.user.notificationsEnabled !== false,
+          onboardingCompleted: !!session.user.onboardingCompleted,
+          organizationId: session.user.organizationId || null,
         };
       })
     );

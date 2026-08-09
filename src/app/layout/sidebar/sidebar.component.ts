@@ -65,7 +65,7 @@ export class SidebarComponent {
       items: [
         { label: 'Facturación', icon: 'receipt_long', route: '/app/billing', permission: 'billing' },
         { label: 'Organización y equipo', icon: 'diversity_3', route: '/app/organization', permission: 'organization' },
-        { label: 'Usuarios', icon: 'group', route: '/app/users', ownerOnly: true },
+        { label: 'Usuarios', icon: 'group', route: '/app/users' },
         { label: 'Planes', icon: 'workspace_premium', route: '/app/plans', adminOnly: true },
         { label: 'Testimonios', icon: 'rate_review', route: '/app/testimonials', adminOnly: true },
         { label: 'Mi perfil', icon: 'person', route: '/app/profile' },

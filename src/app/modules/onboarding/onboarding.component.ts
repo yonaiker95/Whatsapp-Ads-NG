@@ -11,6 +11,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { Subscription, interval, switchMap } from 'rxjs';
 import { OrganizationService } from '../../core/services/organization.service';
+import { OnboardingService } from '../../core/services/onboarding.service';
+import { AuthService } from '../../core/services/auth.service';
 import { InstanceService } from '../../core/services/instance.service';
 import { CampaignService } from '../../core/services/campaign.service';
 import { Instance } from '../../core/models/instance.model';
@@ -46,27 +48,38 @@ import { Instance } from '../../core/models/instance.model';
         </div>
 
         <mat-card class="ob-card">
-          <!-- STEP 1: Organización -->
+          <!-- STEP 1: Organización (crear o unirse) -->
           <div *ngIf="currentStep === 0">
-            <div class="step-header">
-              <mat-icon>domain</mat-icon>
-              <div>
-                <h2>Tu organización</h2>
-                <p>¿Cómo se llama tu empresa o proyecto?</p>
+            @if (joinMode) {
+              <div class="step-header">
+                <mat-icon>groups</mat-icon>
+                <div>
+                  <h2>{{ isOrgOwner ? 'Tu organización está lista' : 'Únete a tu organización' }}</h2>
+                  <p *ngIf="!isOrgOwner">Tu equipo ya tiene un espacio configurado. Te unirás a <strong>{{ existingOrgName }}</strong>.</p>
+                  <p *ngIf="isOrgOwner">Tu espacio <strong>{{ existingOrgName }}</strong> ya está creado. Continúa para terminar tu configuración.</p>
+                </div>
               </div>
-            </div>
-            <form [formGroup]="orgForm" class="ob-form">
-              <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Nombre de la organización *</mat-label>
-                <input matInput formControlName="name" placeholder="Ej: Agencia Andina" autocomplete="organization">
-                <mat-error *ngIf="orgForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
-                <mat-error *ngIf="orgForm.get('name')?.hasError('minlength')">Mínimo 2 caracteres</mat-error>
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Descripción</mat-label>
-                <textarea matInput formControlName="description" rows="2" placeholder="Opcional. ¿A qué se dedica tu organización?"></textarea>
-              </mat-form-field>
-            </form>
+            } @else {
+              <div class="step-header">
+                <mat-icon>domain</mat-icon>
+                <div>
+                  <h2>Tu organización</h2>
+                  <p>¿Cómo se llama tu empresa o proyecto?</p>
+                </div>
+              </div>
+              <form [formGroup]="orgForm" class="ob-form">
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Nombre de la organización *</mat-label>
+                  <input matInput formControlName="name" placeholder="Ej: Agencia Andina" autocomplete="organization">
+                  <mat-error *ngIf="orgForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
+                  <mat-error *ngIf="orgForm.get('name')?.hasError('minlength')">Mínimo 2 caracteres</mat-error>
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Descripción</mat-label>
+                  <textarea matInput formControlName="description" rows="2" placeholder="Opcional. ¿A qué se dedica tu organización?"></textarea>
+                </mat-form-field>
+              </form>
+            }
           </div>
 
           <!-- STEP 2: Usuario del equipo -->
@@ -179,7 +192,7 @@ import { Instance } from '../../core/models/instance.model';
             <button mat-button type="button" (click)="goBack()" *ngIf="currentStep > 0" [disabled]="busy">
               <mat-icon>arrow_back</mat-icon> Atrás
             </button>
-            <button mat-button type="button" (click)="skipStep()" *ngIf="currentStep === 1 || currentStep === 2 || currentStep === 3" [disabled]="busy">
+            <button mat-button type="button" (click)="skipStep()" *ngIf="currentStep > 0" [disabled]="busy">
               Saltar paso
             </button>
             <span class="spacer"></span>
@@ -192,10 +205,6 @@ import { Instance } from '../../core/models/instance.model';
             </button>
           </mat-card-actions>
         </mat-card>
-
-        <p class="ob-skip-all">
-          <a href="javascript:void(0)" (click)="finishOnboarding()">Omitir y entrar al panel</a>
-        </p>
       </div>
     </div>
   `,
@@ -267,6 +276,9 @@ export class OnboardingComponent implements OnInit, OnDestroy {
   currentStep = 0;
   busy = false;
   hidePassword = true;
+  joinMode = false;
+  isOrgOwner = false;
+  existingOrgName = '';
 
   orgForm: FormGroup;
   memberForm: FormGroup;
@@ -286,6 +298,8 @@ export class OnboardingComponent implements OnInit, OnDestroy {
     private router: Router,
     private snackBar: MatSnackBar,
     private organizationService: OrganizationService,
+    private onboardingService: OnboardingService,
+    private authService: AuthService,
     private instanceService: InstanceService,
     private campaignService: CampaignService
   ) {
@@ -308,12 +322,22 @@ export class OnboardingComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.organizationService.getCurrent().subscribe({
-      next: (org) => {
-        if (org) {
-          this.orgForm.patchValue({ name: org.name, description: org.description || '' });
+    this.onboardingService.getStatus().subscribe({
+      next: (status) => {
+        if (status.completed) {
+          this.router.navigate(['/app/dashboard']);
+          return;
+        }
+        // Si la organización ya existe (miembro invitado por el owner) el primer
+        // paso es unirse en lugar de crearla, y no se muestra el paso de equipo.
+        this.joinMode = !!status.hasOrganization;
+        this.isOrgOwner = !!status.isOwner;
+        this.existingOrgName = status.organization?.name || '';
+        if (this.joinMode) {
+          this.steps = ['Organización', 'WhatsApp', 'Campaña'];
         }
       },
+      error: () => {},
     });
     this.instanceService.getAll().subscribe({
       next: (instances) => {
@@ -346,10 +370,11 @@ export class OnboardingComponent implements OnInit, OnDestroy {
   }
 
   isStepValid(): boolean {
-    if (this.currentStep === 0) return this.orgForm.valid;
-    if (this.currentStep === 1) return true;
-    if (this.currentStep === 2) return this.instance ? true : this.instanceForm.valid;
-    if (this.currentStep === 3) return true;
+    const label = this.steps[this.currentStep];
+    if (label === 'Organización') return this.joinMode ? true : this.orgForm.valid;
+    if (label === 'Equipo') return true;
+    if (label === 'WhatsApp') return this.instance ? true : this.instanceForm.valid;
+    if (label === 'Campaña') return true;
     return false;
   }
 
@@ -360,38 +385,51 @@ export class OnboardingComponent implements OnInit, OnDestroy {
   }
 
   skipStep(): void {
-    if (this.currentStep === 1) {
-      this.currentStep = 2;
-    } else if (this.currentStep === 2) {
-      this.currentStep = 3;
-    } else if (this.currentStep === 3) {
+    if (this.busy) return;
+    const label = this.steps[this.currentStep];
+    if (label === 'Campaña') {
       this.finishOnboarding();
+      return;
+    }
+    if (label === 'Equipo' || label === 'WhatsApp') {
+      this.currentStep = Math.min(this.currentStep + 1, this.steps.length - 1);
     }
   }
 
   nextStep(): void {
     if (this.busy) return;
-    if (this.currentStep === 0) {
-      this.createOrganization();
-    } else if (this.currentStep === 1) {
+    const label = this.steps[this.currentStep];
+    if (label === 'Organización') {
+      this.completeOrganizationStep();
+    } else if (label === 'Equipo') {
       this.addMember();
-    } else if (this.currentStep === 2) {
+    } else if (label === 'WhatsApp') {
       this.setupInstance();
-    } else if (this.currentStep === 3) {
+    } else if (label === 'Campaña') {
       this.createCampaign();
     }
   }
 
-  createOrganization(): void {
+  // Paso 1: crea la organización (primer usuario -> se convierte en owner) o
+  // une al usuario a la organización existente de su equipo.
+  completeOrganizationStep(): void {
+    if (!this.joinMode && this.orgForm.invalid) {
+      this.orgForm.markAllAsTouched();
+      return;
+    }
     this.busy = true;
-    this.organizationService.create(this.orgForm.value).subscribe({
-      next: () => {
+    const value = this.orgForm.value;
+    this.onboardingService.complete(this.joinMode ? {} : { name: value.name, description: value.description }).subscribe({
+      next: (result) => {
         this.busy = false;
+        if (result.isOwner && !this.joinMode) {
+          this.steps = ['Organización', 'Equipo', 'WhatsApp', 'Campaña'];
+        }
         this.currentStep = 1;
       },
       error: (err) => {
         this.busy = false;
-        this.snackBar.open(err?.error?.error || 'Error al crear la organización', 'Cerrar', { duration: 5000 });
+        this.snackBar.open(err?.error?.error || 'Error al configurar la organización', 'Cerrar', { duration: 5000 });
       },
     });
   }
@@ -500,6 +538,12 @@ export class OnboardingComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.busy = false;
+        if (err?.status === 403) {
+          // El miembro no tiene permiso de campañas: este paso es opcional y
+          // el onboarding se considera completado igualmente.
+          this.finishOnboarding();
+          return;
+        }
         this.snackBar.open(err?.error?.error || 'Error al crear la campaña', 'Cerrar', { duration: 5000 });
       },
     });
@@ -507,6 +551,11 @@ export class OnboardingComponent implements OnInit, OnDestroy {
 
   finishOnboarding(): void {
     this.stopPolling();
-    this.router.navigate(['/app/dashboard']);
+    // Refresca la sesión: el primer usuario acaba de pasar a ser 'owner' y el
+    // panel debe reflejarlo de inmediato (sidebar, permisos, usuarios).
+    this.authService.refreshSession().subscribe({
+      next: () => this.router.navigate(['/app/dashboard']),
+      error: () => this.router.navigate(['/app/dashboard']),
+    });
   }
 }

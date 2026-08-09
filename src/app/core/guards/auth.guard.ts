@@ -19,6 +19,7 @@ export const guestGuard: CanActivateFn = (route, state) => {
   if (!authService.getAuthState().isAuthenticated) {
     return true;
   }
-  router.navigate(['/app/dashboard']);
+  const user = authService.getAuthState().user;
+  router.navigate([user?.role === 'admin' || user?.onboardingCompleted ? '/app/dashboard' : '/onboarding']);
   return false;
 };

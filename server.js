@@ -420,6 +420,9 @@ async function initDb() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked_reason TEXT;
+      -- Onboarding obligatorio: el usuario debe completar la configuración
+      -- inicial (organización, WhatsApp, campaña) antes de usar el panel.
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE;
       -- Auditoría de bloqueos/desbloqueos realizados por el propietario.
       CREATE TABLE IF NOT EXISTS user_block_audit (
         id BIGSERIAL PRIMARY KEY,
@@ -800,7 +803,11 @@ async function createSession(u) {
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [hashSid(sid), u.id, u.email, u.name, u.role, expiresAt.toISOString()]
   ).catch(() => {});
-  const session = { id: u.id, email: u.email, name: u.name, role: u.role, expiresAt: expiresAt.getTime() };
+  const session = {
+    id: u.id, email: u.email, name: u.name, role: u.role, expiresAt: expiresAt.getTime(),
+    onboardingCompleted: !!u.onboarding_completed,
+    organizationId: u.organization_id || null,
+  };
   sessionsCache.set(sid, session);
   return { sid, session };
 }
@@ -825,6 +832,20 @@ async function getSession(sid) {
     return null;
   }
   session = { id: s.user_id, email: s.email, name: s.name, role: s.role, expiresAt };
+  // Añade el estado de onboarding y la organización de la sesión consultando el
+  // usuario real: la tabla sessions no guarda estos campos y el rol puede haber
+  // cambiado (p. ej. el primer usuario pasa a ser 'owner' tras el onboarding).
+  const userRow = (await pool.query(
+    'SELECT onboarding_completed, organization_id, role FROM users WHERE id = $1', [s.user_id]
+  ).catch(() => ({ rows: [] }))).rows[0];
+  if (userRow) {
+    session.onboardingCompleted = !!userRow.onboarding_completed;
+    session.organizationId = userRow.organization_id || null;
+    session.role = userRow.role || session.role;
+  } else {
+    session.onboardingCompleted = false;
+    session.organizationId = null;
+  }
   sessionsCache.set(sid, session);
   return session;
 }
@@ -1529,6 +1550,12 @@ async function handleRequest(req, res, pathname) {
       return sendJson(res, 403, { error: 'No tienes permiso para acceder a este módulo' });
     }
     switch (base) {
+      // -- Onboarding obligatorio (cualquier usuario autenticado) --
+      case 'onboarding':
+        if (method === 'GET' && !id) return await getOnboardingStatus(res, session);
+        if (method === 'POST' && id === 'complete') return await completeOnboarding(res, await parseBody(req), session);
+        break;
+
       // -- Planes (solo admin: crear / editar / eliminar) --
       case 'plans':
         if (method === 'GET' && id === 'all') return await getPlans(res, session);
@@ -2058,7 +2085,7 @@ async function handleAuth(req, res, pathname) {
   if (pathname === '/api/auth/session' && req.method === 'GET') {
     if (session) {
       const userRow = (await pool.query(
-        'SELECT phone, phone_verified, two_factor_enabled, notifications_enabled, permissions FROM users WHERE id = $1', [session.id]
+        'SELECT phone, phone_verified, two_factor_enabled, notifications_enabled, permissions, onboarding_completed, organization_id FROM users WHERE id = $1', [session.id]
       ).catch(() => ({ rows: [] }))).rows[0] || {};
       return sendJson(res, 200, {
         user: {
@@ -2067,6 +2094,8 @@ async function handleAuth(req, res, pathname) {
           phoneVerified: !!userRow.phone_verified,
           twoFactorEnabled: !!userRow.two_factor_enabled,
           notificationsEnabled: userRow.notifications_enabled !== false,
+          onboardingCompleted: userRow.onboarding_completed !== false,
+          organizationId: userRow.organization_id || null,
           permissions: userRow.permissions || [],
         },
         expires: new Date(session.expiresAt).toISOString(),
@@ -2122,6 +2151,111 @@ async function createOrganization(res, body, session) {
     [id, 'owner', session.id]);
   const org = (await pool.query('SELECT * FROM organizations WHERE id = $1', [id])).rows[0];
   sendJson(res, 201, { data: enrichOrganization(org, session.id), success: true });
+}
+
+// =========================================================================
+// 8c. Onboarding obligatorio
+// =========================================================================
+async function getOnboardingStatus(res, session) {
+  // El administrador global está exento del onboarding: nunca crea ni se une a
+  // una organización y conserva su rol.
+  if (session.role === 'admin') {
+    return sendJson(res, 200, {
+      data: { completed: true, hasOrganization: false, isOwner: false, organization: null },
+      success: true,
+    });
+  }
+  const user = (await pool.query('SELECT * FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0] || null;
+  let org = null;
+  let isOwner = false;
+  if (user) {
+    if (user.organization_id) {
+      org = (await pool.query('SELECT * FROM organizations WHERE id = $1', [user.organization_id]).catch(() => ({ rows: [] }))).rows[0] || null;
+    }
+    if (!org) {
+      org = (await pool.query('SELECT * FROM organizations WHERE owner_id = $1 ORDER BY created_at DESC LIMIT 1', [user.id]).catch(() => ({ rows: [] }))).rows[0] || null;
+    }
+    isOwner = !!org && String(org.owner_id) === String(user.id);
+  }
+  sendJson(res, 200, {
+    data: {
+      completed: !!user && user.onboarding_completed !== false,
+      hasOrganization: !!org,
+      isOwner,
+      organization: org ? { id: org.id, name: org.name, description: org.description } : null,
+    },
+    success: true,
+  });
+}
+
+// Crea la organización (si aún no existe) o une al usuario a la de su equipo,
+// y marca el onboarding como completado. La primera persona en completarlo se
+// convierte en propietario (owner); el resto se une como usuario.
+async function completeOnboarding(res, body, session) {
+  const name = (body.name || '').toString().trim().slice(0, 120) || null;
+  const description = (body.description || '').toString().trim().slice(0, 500) || null;
+
+  // El administrador global no pasa por el onboarding: solo se marca como
+  // completado sin tocar su rol ni crear organización.
+  if (session.role === 'admin') {
+    await pool.query(
+      `UPDATE users SET onboarding_completed = TRUE, updated_at = NOW() WHERE id = $1`,
+      [session.id]
+    ).catch(() => {});
+    return sendJson(res, 200, {
+      data: { completed: true, organizationId: null, isOwner: false, role: 'admin' },
+      success: true,
+    });
+  }
+
+  await pool.query('BEGIN');
+  let org = null;
+  let role = 'user';
+  try {
+    // Bloqueo a nivel de toda la app dentro de la transacción: evita que dos
+    // primeros usuarios creen dos organizaciones al completar a la vez.
+    await pool.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', ['wa_ads_onboarding_org']);
+
+    const u = (await pool.query('SELECT * FROM users WHERE id = $1', [session.id])).rows[0];
+    if (!u) {
+      await pool.query('ROLLBACK');
+      return sendJson(res, 404, { error: 'Usuario no encontrado' });
+    }
+    if (u.organization_id) {
+      org = (await pool.query('SELECT * FROM organizations WHERE id = $1', [u.organization_id])).rows[0] || null;
+    }
+    if (!org) {
+      org = (await pool.query('SELECT * FROM organizations WHERE owner_id = $1 ORDER BY created_at DESC LIMIT 1', [u.id])).rows[0] || null;
+    }
+    if (!org) {
+      const orgId = cuid();
+      const orgName = name || u.name || 'Mi organización';
+      await pool.query(
+        `INSERT INTO organizations (id, name, description, owner_id) VALUES ($1, $2, $3, $4)`,
+        [orgId, orgName, description, u.id]
+      );
+      org = (await pool.query('SELECT * FROM organizations WHERE id = $1', [orgId])).rows[0];
+    }
+    role = String(org.owner_id) === String(u.id) ? 'owner' : 'user';
+    await pool.query(
+      `UPDATE users SET organization_id = $1, role = $2, onboarding_completed = TRUE, updated_at = NOW() WHERE id = $3`,
+      [org.id, role, u.id]
+    );
+    await pool.query('COMMIT');
+  } catch (e) {
+    await pool.query('ROLLBACK').catch(() => {});
+    console.error('[onboarding] completeOnboarding error:', e.message);
+    return sendJson(res, 500, { error: 'No se pudo completar el onboarding' });
+  }
+
+  // Refresca el rol en todas sus sesiones activas para que el panel lo
+  // reconozca de inmediato (el owner pasa a ver los controles de organización).
+  await updateUserSessionsInStore(session.id, { role });
+
+  sendJson(res, 200, {
+    data: { completed: true, organizationId: org.id, isOwner: role === 'owner', role },
+    success: true,
+  });
 }
 
 // Carga la organización de la sesión actual: primero la asociada al usuario
@@ -2245,9 +2379,39 @@ function purgeUserSessions(userId) {
   }
 }
 
+// Refresca campos de las sesiones activas de un usuario (tabla sessions y
+// caché). Solo las columnas existentes en la tabla sessions; el resto de
+// campos (onboarding, organización) se leen siempre del usuario real.
+async function updateUserSessionsInStore(userId, fields) {
+  const allowed = ['role', 'name', 'email'];
+  const entries = Object.entries(fields).filter(([k]) => allowed.includes(k));
+  if (entries.length === 0) return;
+  const sets = entries.map(([k], i) => `${k} = $${i + 1}`);
+  const values = entries.map(([, v]) => v);
+  values.push(userId);
+  await pool.query(
+    `UPDATE sessions SET ${sets.join(', ')} WHERE user_id = $${values.length}`,
+    values
+  ).catch(() => {});
+  for (const [k, s] of sessionsCache) {
+    if (s.id === userId) sessionsCache.set(k, { ...s, ...Object.fromEntries(entries) });
+  }
+}
+
 async function getAdminUsers(res, session) {
-  if (!(await isOrgOwner(session))) {
-    return sendJson(res, 403, { error: 'Solo el propietario de la organización puede ver los usuarios registrados' });
+  // El administrador global ve todos los propietarios de organizaciones; el
+  // resto de usuarios ve únicamente los miembros de su propia organización.
+  let where = 'TRUE';
+  let params = [];
+  if (session.role === 'admin') {
+    where = "u.role = 'owner'";
+  } else {
+    const user = (await pool.query('SELECT organization_id FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
+    if (!user || !user.organization_id) {
+      return sendJson(res, 404, { error: 'Aún no tienes una organización' });
+    }
+    where = 'u.organization_id = $1';
+    params = [user.organization_id];
   }
   const result = await pool.query(
     `SELECT u.id, u.email, u.name, u.role, u.permissions, u.plan, u.billing_status,
@@ -2259,7 +2423,9 @@ async function getAdminUsers(res, session) {
             (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS session_count
      FROM users u
      LEFT JOIN organizations o ON o.id = u.organization_id
-     ORDER BY u.created_at ASC`
+     WHERE ${where}
+     ORDER BY u.created_at ASC`,
+    params
   ).catch(() => ({ rows: [] }));
   const data = result.rows.map((r) => ({
     id: r.id,
@@ -2287,41 +2453,97 @@ async function getAdminUsers(res, session) {
 }
 
 async function blockUser(res, id, body, session) {
-  if (!(await isOrgOwner(session))) {
-    return sendJson(res, 403, { error: 'Solo el propietario de la organización puede bloquear usuarios' });
+  const isGlobalAdmin = session.role === 'admin';
+  if (!isGlobalAdmin && !(await isOrgOwner(session))) {
+    return sendJson(res, 403, { error: 'No tienes permisos para bloquear usuarios' });
   }
+  const actorUser = (await pool.query('SELECT * FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
   const target = (await pool.query('SELECT * FROM users WHERE id = $1', [id]).catch(() => ({ rows: [] }))).rows[0];
   if (!target) return sendJson(res, 404, { error: 'Usuario no encontrado' });
   if (String(target.id) === String(session.id)) return sendJson(res, 400, { error: 'No puedes bloquear tu propia cuenta' });
-  if (isAdminRole(target.role)) {
-    return sendJson(res, 400, { error: 'No puedes bloquear a un administrador ni al propietario de una organización' });
+  if (target.role === 'admin') {
+    return sendJson(res, 400, { error: 'No puedes bloquear a un administrador' });
+  }
+  // Un propietario solo bloquea a miembros de su propia organización y nunca a
+  // otro propietario; el administrador global sí puede bloquear a los dueños.
+  if (!isGlobalAdmin) {
+    if (target.role === 'owner') {
+      return sendJson(res, 400, { error: 'No puedes bloquear a otro propietario de organización' });
+    }
+    const actorOrg = actorUser ? actorUser.organization_id : null;
+    if (!actorOrg || String(target.organization_id) !== String(actorOrg)) {
+      return sendJson(res, 403, { error: 'Solo puedes bloquear usuarios de tu organización' });
+    }
   }
   const reason = String(body && body.reason ? body.reason : '').trim().slice(0, 200);
-  await pool.query(
-    `UPDATE users SET blocked = TRUE, blocked_at = NOW(), blocked_reason = $1, updated_at = NOW() WHERE id = $2`,
-    [reason || null, id]
-  );
-  // Revoca todas las sesiones activas: el usuario queda fuera de inmediato.
-  await pool.query('DELETE FROM sessions WHERE user_id = $1', [id]).catch(() => {});
-  purgeUserSessions(id);
-  logBlockAudit(session, target, 'block', reason || null);
-  // Notifica en tiempo real (si tiene la app abierta) para que cierre sesión
-  // y vea el motivo; la sesión ya fue revocada arriba.
-  wsSendToUser(id, 'account:blocked', { reason: reason || null, blockedAt: new Date().toISOString() });
-  sendJson(res, 200, { data: { id, blocked: true }, success: true });
+  // Bloquear al propietario bloquea en cascada a todos los usuarios de su
+  // organización (dueño incluido), con el mismo motivo.
+  const targets = target.role === 'owner' && target.organization_id
+    ? (await pool.query('SELECT * FROM users WHERE organization_id = $1', [target.organization_id]).catch(() => ({ rows: [] }))).rows
+    : [target];
+  for (const t of targets) {
+    await pool.query(
+      `UPDATE users SET blocked = TRUE, blocked_at = NOW(), blocked_reason = $1, updated_at = NOW() WHERE id = $2`,
+      [reason || null, t.id]
+    );
+    // Revoca todas las sesiones activas: los usuarios quedan fuera de inmediato.
+    await pool.query('DELETE FROM sessions WHERE user_id = $1', [t.id]).catch(() => {});
+    purgeUserSessions(t.id);
+    logBlockAudit(session, t, 'block', reason || null);
+    // Notifica en tiempo real (si tiene la app abierta) para que cierre sesión.
+    wsSendToUser(t.id, 'account:blocked', { reason: reason || null, blockedAt: new Date().toISOString() });
+  }
+  sendJson(res, 200, { data: { id, blocked: true, cascade: targets.length > 1 }, success: true });
 }
 
 async function unblockUser(res, id, session) {
-  if (!(await isOrgOwner(session))) {
-    return sendJson(res, 403, { error: 'Solo el propietario de la organización puede desbloquear usuarios' });
+  const isGlobalAdmin = session.role === 'admin';
+  if (!isGlobalAdmin && !(await isOrgOwner(session))) {
+    return sendJson(res, 403, { error: 'No tienes permisos para desbloquear usuarios' });
   }
+  const actorUser = (await pool.query('SELECT * FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
   const target = (await pool.query('SELECT * FROM users WHERE id = $1', [id]).catch(() => ({ rows: [] }))).rows[0];
   if (!target) return sendJson(res, 404, { error: 'Usuario no encontrado' });
-  await pool.query(
-    `UPDATE users SET blocked = FALSE, blocked_at = NULL, blocked_reason = NULL, updated_at = NOW() WHERE id = $1`,
-    [id]
-  );
-  logBlockAudit(session, target, 'unblock', null);
+  if (!isGlobalAdmin) {
+    const actorOrg = actorUser ? actorUser.organization_id : null;
+    if (!actorOrg || String(target.organization_id) !== String(actorOrg)) {
+      return sendJson(res, 403, { error: 'Solo puedes desbloquear usuarios de tu organización' });
+    }
+  }
+  if (target.role === 'owner') {
+    // Desbloquear al propietario levanta también el bloqueo en cascada de su
+    // organización: los miembros que quedaron bloqueados con el mismo motivo
+    // (bloqueo manual o falta de pago) vuelven a estar activos.
+    const reason = (target.blocked_reason || '').toString().trim();
+    await pool.query(
+      `UPDATE users SET blocked = FALSE, blocked_at = NULL, blocked_reason = NULL, updated_at = NOW() WHERE id = $1`,
+      [target.id]
+    );
+    if (target.organization_id) {
+      const members = (await pool.query(
+        `SELECT * FROM users WHERE organization_id = $1 AND blocked = TRUE AND id <> $2`,
+        [target.organization_id, target.id]
+      ).catch(() => ({ rows: [] }))).rows;
+      for (const m of members) {
+        // El bloqueo en cascada copia el motivo del dueño (puede ser NULL);
+        // solo se levantan esos bloqueos, no los individuales con otro motivo.
+        if (((m.blocked_reason || '').toString().trim()) === reason) {
+          await pool.query(
+            `UPDATE users SET blocked = FALSE, blocked_at = NULL, blocked_reason = NULL, updated_at = NOW() WHERE id = $1`,
+            [m.id]
+          );
+          logBlockAudit(session, m, 'unblock', null);
+        }
+      }
+    }
+    logBlockAudit(session, target, 'unblock', null);
+  } else {
+    await pool.query(
+      `UPDATE users SET blocked = FALSE, blocked_at = NULL, blocked_reason = NULL, updated_at = NOW() WHERE id = $1`,
+      [id]
+    );
+    logBlockAudit(session, target, 'unblock', null);
+  }
   sendJson(res, 200, { data: { id, blocked: false }, success: true });
 }
 
@@ -2336,10 +2558,11 @@ async function logBlockAudit(actor, target, action, reason) {
   ).catch(() => {});
 }
 
-// Últimos eventos de bloqueo/desbloqueo (solo el propietario de la organización).
+// Últimos eventos de bloqueo/desbloqueo (propietario de la organización o
+// administrador global).
 async function getUsersAudit(res, session) {
-  if (!(await isOrgOwner(session))) {
-    return sendJson(res, 403, { error: 'Solo el propietario de la organización puede ver el historial' });
+  if (session.role !== 'admin' && !(await isOrgOwner(session))) {
+    return sendJson(res, 403, { error: 'No tienes permisos para ver el historial' });
   }
   const result = await pool.query(
     `SELECT id, actor_id, actor_name, target_id, target_name, action, reason, created_at
@@ -3955,7 +4178,7 @@ function computeBillingState(user, now = new Date()) {
     // el job abre la gracia en la siguiente revisión antes de bloquear.
     status = graceEnd ? (now <= graceEnd ? 'overdue' : 'blocked') : 'overdue';
   }
-  if (isAdminRole(user.role)) status = 'active';
+  if (user.role === 'admin') status = 'active';
   return { status, nextBillingDate: periodEnd ? periodEnd.toISOString() : null };
 }
 
@@ -4110,6 +4333,18 @@ async function verifyReportedPayment(res, id, session) {
      grace_period_end = NULL, updated_at = NOW() WHERE id = $3`,
     [now, periodEnd, rp.user_id]
   );
+  // Al pagar el propietario se reactiva toda la organización: se levanta el
+  // bloqueo en cascada por falta de pago (dueño y miembros).
+  const payer = (await pool.query(
+    'SELECT role, organization_id FROM users WHERE id = $1', [rp.user_id]
+  ).catch(() => ({ rows: [] }))).rows[0];
+  if (payer && payer.role === 'owner' && payer.organization_id) {
+    await pool.query(
+      `UPDATE users SET blocked = FALSE, blocked_at = NULL, blocked_reason = NULL, updated_at = NOW()
+       WHERE organization_id = $1 AND blocked_reason = $2`,
+      [payer.organization_id, 'Falta de pago de la organización']
+    );
+  }
   const pending = (await pool.query(
     "SELECT id FROM invoices WHERE user_id = $1 AND status = 'pending' ORDER BY created_at ASC LIMIT 1",
     [rp.user_id]
@@ -4788,6 +5023,23 @@ async function runBillingChecks() {
         `UPDATE users SET billing_status = 'blocked', updated_at = NOW() WHERE id = $1`,
         [u.id]
       );
+      // Falta de pago del propietario: la organización entera queda bloqueada
+      // (dueño incluido) hasta que se confirme el pago de la factura.
+      if (u.role === 'owner' && u.organization_id) {
+        const reason = 'Falta de pago de la organización';
+        const members = (await pool.query(
+          'SELECT * FROM users WHERE organization_id = $1', [u.organization_id]
+        ).catch(() => ({ rows: [] }))).rows;
+        for (const m of members) {
+          await pool.query(
+            `UPDATE users SET blocked = TRUE, blocked_at = NOW(), blocked_reason = $1, updated_at = NOW() WHERE id = $2`,
+            [reason, m.id]
+          );
+          await pool.query('DELETE FROM sessions WHERE user_id = $1', [m.id]).catch(() => {});
+          purgeUserSessions(m.id);
+          wsSendToUser(m.id, 'account:blocked', { reason, blockedAt: new Date().toISOString() });
+        }
+      }
     }
   }
 }

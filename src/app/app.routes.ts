@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard, guestGuard } from './core/guards/auth.guard';
 import { setupGuard } from './core/guards/setup.guard';
+import { onboardingGuard, onboardingCompleteGuard } from './core/guards/onboarding.guard';
 import { LayoutComponent } from './layout/layout.component';
 import { authRoutes } from './modules/auth/auth.routes';
 import { ShieldComponent } from './shared/layouts/shield/shield.component';
@@ -38,7 +39,7 @@ export const routes: Routes = [
   {
     path: 'app',
     component: LayoutComponent,
-    canActivate: [authGuard],
+    canActivate: [authGuard, onboardingGuard],
     children: [
       {
         path: 'dashboard',
@@ -135,7 +136,7 @@ export const routes: Routes = [
   {
     path: 'onboarding',
     loadComponent: () => import('./modules/onboarding/onboarding.component').then(m => m.OnboardingComponent),
-    canActivate: [authGuard],
+    canActivate: [authGuard, onboardingCompleteGuard],
   },
   {
     path: 'setup',

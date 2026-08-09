@@ -59,8 +59,16 @@ export class UsersComponent implements OnInit, OnDestroy {
     return this.authService.currentUser()?.role === 'owner';
   }
 
+  get isAdmin(): boolean {
+    return this.authService.currentUser()?.role === 'admin';
+  }
+
   get currentUserId(): string | null {
     return this.authService.currentUser()?.id || null;
+  }
+
+  get viewTitle(): string {
+    return this.isAdmin ? 'Propietarios de organizaciones' : 'Usuarios de mi organización';
   }
 
   get stats(): { total: number; active: number; blocked: number; admins: number } {
@@ -98,7 +106,9 @@ export class UsersComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.load();
-    this.loadAudit();
+    if (this.isOwner || this.isAdmin) {
+      this.loadAudit();
+    }
   }
 
   ngOnDestroy(): void {
@@ -216,15 +226,21 @@ export class UsersComponent implements OnInit, OnDestroy {
   }
 
   canBlock(u: RegisteredUser): boolean {
-    return this.isOwner && !u.blocked && !this.isProtected(u);
+    if (u.blocked || u.role === 'admin' || u.id === this.currentUserId) return false;
+    if (this.isAdmin) return true;
+    if (this.isOwner) return u.role === 'user';
+    return false;
   }
 
   canUnblock(u: RegisteredUser): boolean {
-    return this.isOwner && u.blocked && !this.isProtected(u);
+    if (!u.blocked || u.role === 'admin') return false;
+    if (this.isAdmin) return true;
+    if (this.isOwner) return u.role === 'user';
+    return false;
   }
 
   isProtected(u: RegisteredUser): boolean {
-    return u.role === 'owner' || u.role === 'admin' || u.id === this.currentUserId;
+    return u.role === 'admin' || u.id === this.currentUserId;
   }
 
   formatDate(value?: string | null): string {

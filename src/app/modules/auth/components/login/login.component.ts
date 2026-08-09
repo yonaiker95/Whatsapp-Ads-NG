@@ -46,8 +46,13 @@ export class LoginComponent implements OnInit {
 
   ngOnInit(): void {
     if (this.authService.getAuthState().isAuthenticated) {
-      this.router.navigate(['/app/dashboard']);
+      this.navigateAfterAuth();
     }
+  }
+
+  private navigateAfterAuth(): void {
+    const user = this.authService.getAuthState().user;
+    this.router.navigate([user?.onboardingCompleted ? '/app/dashboard' : '/onboarding']);
   }
 
   onSubmit(): void {
@@ -67,7 +72,7 @@ export class LoginComponent implements OnInit {
           this.snackBar.open('Ingresa el código que te enviamos por WhatsApp.', 'Cerrar', { duration: 4000 });
           return;
         }
-        this.router.navigate(['/app/dashboard']);
+        this.navigateAfterAuth();
       },
       error: (error) => {
         this.loading = false;
@@ -88,7 +93,7 @@ export class LoginComponent implements OnInit {
     this.authService.verifyTwoFactor(this.twoFactorToken, this.codeForm.value.code).subscribe({
       next: () => {
         this.loading = false;
-        this.router.navigate(['/app/dashboard']);
+        this.navigateAfterAuth();
       },
       error: (error) => {
         this.loading = false;

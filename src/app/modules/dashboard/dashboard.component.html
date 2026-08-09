@@ -12,7 +12,7 @@
     </div>
   </div>
 
-  @if (!loadingOrg && !hasOrganization) {
+  @if (!loadingOrg && !hasOrganization && !isAdmin) {
     <mat-card class="onboarding-banner" appearance="outlined">
       <mat-card-content>
         <div class="ob-banner-icon"><mat-icon>rocket_launch</mat-icon></div>

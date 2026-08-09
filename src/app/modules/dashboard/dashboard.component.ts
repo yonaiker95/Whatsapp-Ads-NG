@@ -6,6 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatButtonModule } from '@angular/material/button';
+import { AuthService } from '../../core/services/auth.service';
 import { ReportsService } from '../../core/services/reports.service';
 import { CampaignService } from '../../core/services/campaign.service';
 import { OrganizationService } from '../../core/services/organization.service';
@@ -50,8 +51,13 @@ export class DashboardComponent implements OnInit, OnDestroy {
   constructor(
     private reportsService: ReportsService,
     private campaignService: CampaignService,
-    private organizationService: OrganizationService
+    private organizationService: OrganizationService,
+    private authService: AuthService,
   ) {}
+
+  get isAdmin(): boolean {
+    return this.authService.currentUser()?.role === 'admin';
+  }
 
   ngOnInit(): void {
     this.loadOrganizationStatus();

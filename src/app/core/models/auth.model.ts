@@ -8,6 +8,8 @@ export interface User {
   phoneVerified?: boolean;
   twoFactorEnabled?: boolean;
   notificationsEnabled?: boolean;
+  onboardingCompleted?: boolean;
+  organizationId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -49,6 +51,8 @@ export interface NextAuthSession {
     phoneVerified?: boolean;
     twoFactorEnabled?: boolean;
     notificationsEnabled?: boolean;
+    onboardingCompleted?: boolean;
+    organizationId?: string | null;
   };
   expires: string;
 }
