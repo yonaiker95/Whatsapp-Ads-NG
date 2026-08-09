@@ -420,6 +420,18 @@ async function initDb() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked BOOLEAN NOT NULL DEFAULT FALSE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked_at TIMESTAMPTZ;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked_reason TEXT;
+      -- Auditoría de bloqueos/desbloqueos realizados por el propietario.
+      CREATE TABLE IF NOT EXISTS user_block_audit (
+        id BIGSERIAL PRIMARY KEY,
+        actor_id TEXT NOT NULL,
+        actor_name TEXT,
+        target_id TEXT NOT NULL,
+        target_name TEXT,
+        action TEXT NOT NULL CHECK (action IN ('block', 'unblock')),
+        reason TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_block_audit_created ON user_block_audit (created_at DESC);
       -- Procedencia de cada documento del bot: 'manual' (pegado a mano),
       -- 'sheet' / 'docs' / 'calendar' (importados desde la cuenta de Google).
       ALTER TABLE bot_documents ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual';
@@ -1537,6 +1549,7 @@ async function handleRequest(req, res, pathname) {
 
       // -- Usuarios registrados (solo el propietario de la organización) --
       case 'users':
+        if (method === 'GET' && id === 'audit') return await getUsersAudit(res, session);
         if (method === 'GET' && !id) return await getAdminUsers(res, session);
         if (method === 'POST' && id && action === 'block') return await blockUser(res, id, await parseBody(req), session);
         if (method === 'POST' && id && action === 'unblock') return await unblockUser(res, id, session);
@@ -2291,6 +2304,10 @@ async function blockUser(res, id, body, session) {
   // Revoca todas las sesiones activas: el usuario queda fuera de inmediato.
   await pool.query('DELETE FROM sessions WHERE user_id = $1', [id]).catch(() => {});
   purgeUserSessions(id);
+  logBlockAudit(session, target, 'block', reason || null);
+  // Notifica en tiempo real (si tiene la app abierta) para que cierre sesión
+  // y vea el motivo; la sesión ya fue revocada arriba.
+  wsSendToUser(id, 'account:blocked', { reason: reason || null, blockedAt: new Date().toISOString() });
   sendJson(res, 200, { data: { id, blocked: true }, success: true });
 }
 
@@ -2298,13 +2315,49 @@ async function unblockUser(res, id, session) {
   if (!(await isOrgOwner(session))) {
     return sendJson(res, 403, { error: 'Solo el propietario de la organización puede desbloquear usuarios' });
   }
-  const target = (await pool.query('SELECT id FROM users WHERE id = $1', [id]).catch(() => ({ rows: [] }))).rows[0];
+  const target = (await pool.query('SELECT * FROM users WHERE id = $1', [id]).catch(() => ({ rows: [] }))).rows[0];
   if (!target) return sendJson(res, 404, { error: 'Usuario no encontrado' });
   await pool.query(
     `UPDATE users SET blocked = FALSE, blocked_at = NULL, blocked_reason = NULL, updated_at = NOW() WHERE id = $1`,
     [id]
   );
+  logBlockAudit(session, target, 'unblock', null);
   sendJson(res, 200, { data: { id, blocked: false }, success: true });
+}
+
+// Registra una acción de bloqueo/desbloqueo en la tabla de auditoría.
+async function logBlockAudit(actor, target, action, reason) {
+  const actorName = actor && actor.name ? actor.name : (actor && actor.email ? actor.email : String(actor && actor.id || ''));
+  const targetName = target && target.name ? target.name : (target && target.email ? target.email : String(target && target.id || ''));
+  await pool.query(
+    `INSERT INTO user_block_audit (actor_id, actor_name, target_id, target_name, action, reason)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [String(actor && actor.id || ''), actorName, String(target && target.id || ''), targetName, action, reason || null]
+  ).catch(() => {});
+}
+
+// Últimos eventos de bloqueo/desbloqueo (solo el propietario de la organización).
+async function getUsersAudit(res, session) {
+  if (!(await isOrgOwner(session))) {
+    return sendJson(res, 403, { error: 'Solo el propietario de la organización puede ver el historial' });
+  }
+  const result = await pool.query(
+    `SELECT id, actor_id, actor_name, target_id, target_name, action, reason, created_at
+     FROM user_block_audit
+     ORDER BY created_at DESC
+     LIMIT 100`
+  ).catch(() => ({ rows: [] }));
+  const data = result.rows.map((r) => ({
+    id: String(r.id),
+    actorId: r.actor_id,
+    actorName: r.actor_name,
+    targetId: r.target_id,
+    targetName: r.target_name,
+    action: r.action,
+    reason: r.reason,
+    createdAt: r.created_at,
+  }));
+  sendJson(res, 200, { data, success: true });
 }
 
 function enrichOrganization(org, currentUserId) {
@@ -6179,6 +6232,17 @@ function wsBroadcast(type, data) {
     }
     try {
       client.send(JSON.stringify({ type, data: maskInstanceForRole(data, client.isAdmin) }));
+    } catch { /* ignore */ }
+  }
+}
+
+// Envía un evento solo a las conexiones WebSocket del usuario indicado.
+function wsSendToUser(userId, type, data) {
+  for (const client of wss.clients) {
+    if (client.readyState !== 1) continue;
+    if (client.userId === undefined || String(client.userId) !== String(userId)) continue;
+    try {
+      client.send(JSON.stringify({ type, data }));
     } catch { /* ignore */ }
   }
 }

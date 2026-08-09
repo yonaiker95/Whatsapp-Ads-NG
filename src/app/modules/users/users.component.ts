@@ -12,10 +12,11 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { MatDividerModule } from '@angular/material/divider';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { Subject, takeUntil } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { UsersService } from '../../core/services/users.service';
-import { RegisteredUser } from '../../core/models/user-admin.model';
+import { RegisteredUser, BlockAuditEntry } from '../../core/models/user-admin.model';
 
 @Component({
   selector: 'app-users',
@@ -23,7 +24,7 @@ import { RegisteredUser } from '../../core/models/user-admin.model';
   imports: [
     CommonModule, FormsModule, MatCardModule, MatIconModule, MatButtonModule, MatChipsModule,
     MatTableModule, MatFormFieldModule, MatInputModule, MatProgressSpinnerModule,
-    MatTooltipModule, MatSnackBarModule, MatDividerModule,
+    MatTooltipModule, MatSnackBarModule, MatDividerModule, MatPaginatorModule,
   ],
   templateUrl: './users.component.html',
   styleUrls: ['./users.component.scss'],
@@ -37,6 +38,12 @@ export class UsersComponent implements OnInit, OnDestroy {
   blockTargetId: string | null = null;
   blockReason = '';
   actioningId: string | null = null;
+
+  pageIndex = 0;
+  pageSize = 10;
+
+  auditEntries: BlockAuditEntry[] = [];
+  loadingAudit = false;
 
   displayedColumns = ['usuario', 'rol', 'organizacion', 'plan', 'estado', 'registrado', 'acciones', 'expand'];
 
@@ -79,8 +86,19 @@ export class UsersComponent implements OnInit, OnDestroy {
     });
   }
 
+  get paginatedUsers(): RegisteredUser[] {
+    const start = this.pageIndex * this.pageSize;
+    return this.filteredUsers.slice(start, start + this.pageSize);
+  }
+
+  onPage(event: PageEvent): void {
+    this.pageIndex = event.pageIndex;
+    this.pageSize = event.pageSize;
+  }
+
   ngOnInit(): void {
     this.load();
+    this.loadAudit();
   }
 
   ngOnDestroy(): void {
@@ -97,6 +115,19 @@ export class UsersComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.loading = false;
+      },
+    });
+  }
+
+  loadAudit(): void {
+    this.loadingAudit = true;
+    this.usersService.audit().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (res) => {
+        this.auditEntries = res.data || [];
+        this.loadingAudit = false;
+      },
+      error: () => {
+        this.loadingAudit = false;
       },
     });
   }
@@ -123,6 +154,7 @@ export class UsersComponent implements OnInit, OnDestroy {
         this.actioningId = null;
         this.blockTargetId = null;
         this.load();
+        this.loadAudit();
         this.snackBar.open('Usuario bloqueado', 'Cerrar', { duration: 3000 });
       },
       error: (err) => {
@@ -138,6 +170,7 @@ export class UsersComponent implements OnInit, OnDestroy {
       next: () => {
         this.actioningId = null;
         this.load();
+        this.loadAudit();
         this.snackBar.open('Usuario desbloqueado', 'Cerrar', { duration: 3000 });
       },
       error: (err) => {
@@ -149,10 +182,16 @@ export class UsersComponent implements OnInit, OnDestroy {
 
   clearSearch(): void {
     this.search = '';
+    this.pageIndex = 0;
+  }
+
+  onSearch(): void {
+    this.pageIndex = 0;
   }
 
   setFilter(f: 'all' | 'active' | 'blocked'): void {
     this.filter = f;
+    this.pageIndex = 0;
   }
 
   roleLabel(role: string): string {
@@ -192,6 +231,21 @@ export class UsersComponent implements OnInit, OnDestroy {
     if (!value) return '—';
     try {
       return new Date(value).toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch {
+      return value;
+    }
+  }
+
+  formatDateTime(value?: string | null): string {
+    if (!value) return '—';
+    try {
+      return new Date(value).toLocaleString('es-ES', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
     } catch {
       return value;
     }

@@ -191,6 +191,7 @@ El esquema se crea automáticamente al iniciar el backend (`server.js`). Tablas:
 | `ai_audit_logs` | Auditoría de acciones de IA (guardado, rotación, validación) |
 | `otp_codes` | Códigos de verificación por WhatsApp (OTP) por teléfono, propósito y estado |
 | `sessions` | Sesiones activas (cookie de sesión) |
+| `user_block_audit` | Auditoría de bloqueos/desbloqueos realizados por el propietario |
 | `organizations` | Organizaciones (inquilinos) |
 | `plans` | Planes de suscripción |
 | `plan_addons` | Complementos por plan |
@@ -630,10 +631,13 @@ Solo el propietario (o el admin global) puede crear, editar o eliminar miembros.
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/users` | Lista todos los usuarios registrados (información completa, estado, instancias y sesiones) |
+| GET | `/api/users/audit` | Historial de bloqueos/desbloqueos (últimos 100 eventos, más reciente primero) |
 | POST | `/api/users/:id/block` | Bloquea al usuario del sistema (`reason` opcional); revoca sus sesiones activas |
 | POST | `/api/users/:id/unblock` | Desbloquea al usuario |
 
 Solo el **propietario de la organización** (`organizations.owner_id`) puede usar estos endpoints; el resto recibe 403. Al bloquear a un usuario se borran sus sesiones de inmediato y no puede volver a iniciar sesión. No se puede bloquear la propia cuenta ni a administradores/propietarios de otras organizaciones. La columna `blocked` (con `blocked_at` y `blocked_reason`) se añade automáticamente a `users` al arrancar.
+
+Cada bloqueo/desbloqueo se registra en la tabla `user_block_audit` (actor, objetivo, acción, motivo y fecha). El panel muestra ese historial en una tarjeta propia, paginación local del listado (10/25/50 por página) y, si el usuario bloqueado tiene la app abierta, recibe por WebSocket el evento `account:blocked` (motivo incluido) que muestra un diálogo y cierra su sesión al instante; si no está conectado, lo verá al intentar iniciar sesión (se rechaza con el motivo).
 
 ### Centro de IA
 

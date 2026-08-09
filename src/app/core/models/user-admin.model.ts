@@ -20,3 +20,14 @@ export interface RegisteredUser {
   instanceCount: number;
   sessionCount: number;
 }
+
+export interface BlockAuditEntry {
+  id: string;
+  actorId: string;
+  actorName?: string | null;
+  targetId: string;
+  targetName?: string | null;
+  action: 'block' | 'unblock';
+  reason?: string | null;
+  createdAt?: string;
+}

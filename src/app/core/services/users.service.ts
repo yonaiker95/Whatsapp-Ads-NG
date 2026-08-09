@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from './api.service';
-import { RegisteredUser } from '../models/user-admin.model';
+import { RegisteredUser, BlockAuditEntry } from '../models/user-admin.model';
 
 @Injectable({ providedIn: 'root' })
 export class UsersService {
@@ -9,6 +9,10 @@ export class UsersService {
 
   list(): Observable<{ data: RegisteredUser[]; success: boolean }> {
     return this.api.get<RegisteredUser[]>('/users');
+  }
+
+  audit(): Observable<{ data: BlockAuditEntry[]; success: boolean }> {
+    return this.api.get<BlockAuditEntry[]>('/users/audit');
   }
 
   block(id: string, reason: string): Observable<{ data: { id: string; blocked: boolean }; success: boolean }> {

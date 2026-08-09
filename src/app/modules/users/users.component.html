@@ -61,7 +61,7 @@
           <mat-form-field appearance="outline" class="search-field">
             <mat-label>Buscar usuario</mat-label>
             <mat-icon matPrefix>search</mat-icon>
-            <input matInput [(ngModel)]="search" placeholder="Nombre, correo u organización">
+            <input matInput [(ngModel)]="search" (ngModelChange)="onSearch()" placeholder="Nombre, correo u organización">
             <button *ngIf="search" matSuffix mat-icon-button aria-label="Limpiar" (click)="clearSearch()">
               <mat-icon>close</mat-icon>
             </button>
@@ -80,7 +80,7 @@
           </div>
         } @else {
           <div class="table-wrapper">
-            <table mat-table [dataSource]="filteredUsers" class="users-table">
+            <table mat-table [dataSource]="paginatedUsers" class="users-table">
               <ng-container matColumnDef="usuario">
                 <th mat-header-cell *matHeaderCellDef> Usuario </th>
                 <td mat-cell *matCellDef="let u" (click)="toggleExpand(u)">
@@ -256,8 +256,62 @@
               <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="user-row"></tr>
             </table>
           </div>
+          <mat-paginator
+            [length]="filteredUsers.length"
+            [pageSize]="pageSize"
+            [pageIndex]="pageIndex"
+            [pageSizeOptions]="[10, 25, 50]"
+            [showFirstLastButtons]="true"
+            (page)="onPage($event)"
+            aria-label="Paginación de usuarios">
+          </mat-paginator>
         }
       }
     </mat-card-content>
   </mat-card>
+
+  @if (isOwner) {
+    <mat-card class="audit-card">
+      <mat-card-header>
+        <mat-icon mat-card-avatar>history</mat-icon>
+        <mat-card-title>Historial de bloqueos y desbloqueos</mat-card-title>
+        <mat-card-subtitle>Acciones del propietario sobre las cuentas registradas</mat-card-subtitle>
+      </mat-card-header>
+      <mat-card-content>
+        @if (loadingAudit) {
+          <div class="loading-container">
+            <mat-spinner diameter="32"></mat-spinner>
+            <p>Cargando historial...</p>
+          </div>
+        } @else if (auditEntries.length === 0) {
+          <div class="empty-state">
+            <mat-icon>manage_history</mat-icon>
+            <h3>Sin eventos registrados</h3>
+            <p>Cuando bloquees o desbloquees usuarios, la acción quedará registrada aquí.</p>
+          </div>
+        } @else {
+          <div class="audit-list">
+            @for (entry of auditEntries; track entry.id) {
+              <div class="audit-item" [class.audit-block]="entry.action === 'block'">
+                <span class="audit-badge">
+                  <mat-icon>{{ entry.action === 'block' ? 'block' : 'lock_open' }}</mat-icon>
+                </span>
+                <div class="audit-meta">
+                  <span class="audit-title">
+                    <strong>{{ entry.actorName || entry.actorId }}</strong>
+                    {{ entry.action === 'block' ? 'bloqueó a' : 'desbloqueó a' }}
+                    <strong>{{ entry.targetName || entry.targetId }}</strong>
+                  </span>
+                  @if (entry.reason) {
+                    <span class="audit-reason">Motivo: {{ entry.reason }}</span>
+                  }
+                </div>
+                <span class="audit-date">{{ formatDateTime(entry.createdAt) }}</span>
+              </div>
+            }
+          </div>
+        }
+      </mat-card-content>
+    </mat-card>
+  }
 </div>
