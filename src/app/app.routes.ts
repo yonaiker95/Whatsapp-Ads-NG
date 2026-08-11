@@ -92,21 +92,6 @@ export const routes: Routes = [
         data: { title: 'Conversaciones' },
       },
       {
-        path: 'catalogo',
-        loadComponent: () => import('./modules/negocio/catalogo/catalogo.component').then(m => m.CatalogoComponent),
-        data: { title: 'Catálogo y precios' },
-      },
-      {
-        path: 'documentos',
-        loadComponent: () => import('./modules/negocio/documentos/documentos.component').then(m => m.DocumentosComponent),
-        data: { title: 'Documentos' },
-      },
-      {
-        path: 'agenda',
-        loadComponent: () => import('./modules/negocio/agenda/agenda.component').then(m => m.AgendaComponent),
-        data: { title: 'Agenda y citas' },
-      },
-      {
         path: 'billing',
         loadComponent: () => import('./modules/billing/billing.component').then(m => m.BillingComponent),
         data: { title: 'Facturación' },

@@ -50,6 +50,43 @@
             <input matInput formControlName="mediaUrl" placeholder="https://ejemplo.com/imagen.jpg">
           </mat-form-field>
         </div>
+
+        <div class="form-section-label">Botones de acción (máx. 3)</div>
+        <div class="buttons-editor" formArrayName="buttons">
+          <div class="button-row" *ngFor="let btn of buttons.controls; let i = index" [formGroupName]="i">
+            <mat-form-field appearance="outline" class="btn-type">
+              <mat-label>Tipo</mat-label>
+              <mat-select formControlName="type">
+                <mat-option value="reply">Respuesta</mat-option>
+                <mat-option value="url">URL</mat-option>
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="btn-text">
+              <mat-label>Texto del botón</mat-label>
+              <input matInput formControlName="text" placeholder="Ej: Ver oferta">
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="btn-value">
+              <mat-label>{{ buttonValueLabel(btn.get('type')?.value) }}</mat-label>
+              <input matInput formControlName="value" [placeholder]="buttonValuePlaceholder(btn.get('type')?.value)">
+              <mat-error *ngIf="btn.errors?.['invalidUrl']">Ingresa un enlace válido (https://...)</mat-error>
+            </mat-form-field>
+            <button mat-icon-button type="button" class="btn-remove" (click)="removeButton(i)" aria-label="Quitar botón">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+          <div class="buttons-footer">
+            <button mat-stroked-button type="button" (click)="addButton()" [disabled]="!canAddButton">
+              <mat-icon>add</mat-icon>
+              Agregar botón
+            </button>
+            <span class="buttons-hint" *ngIf="!canAddButton">Máximo 3 botones por mensaje</span>
+          </div>
+          <div class="buttons-note">
+            En cuentas vinculadas por QR los botones se envían como un botón de texto
+            dibujado al pie del mensaje, con el enlace tappable y vista previa.
+            Los botones interactivos reales solo los entrega la Cloud API oficial de Meta.
+          </div>
+        </div>
       </div>
     </div>
 
@@ -85,6 +122,12 @@
                 class="preview-token"
                 [class.token-var]="token.variable">{{ token.text }}</span>
             </ng-container>
+            <div class="bubble-buttons" *ngIf="previewButtons.length > 0">
+              <div class="bubble-button" *ngFor="let btn of previewButtons">
+                <mat-icon *ngIf="btn.type === 'url'">open_in_new</mat-icon>
+                <span>{{ btn.text }}</span>
+              </div>
+            </div>
             <span class="bubble-time">ahora</span>
           </div>
           <div class="chat-bubble chat-bubble-empty" *ngIf="previewTokens.length === 0 && !previewMedia">

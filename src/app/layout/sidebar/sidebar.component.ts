@@ -54,15 +54,6 @@ export class SidebarComponent {
       ],
     },
     {
-      label: 'Negocio',
-      items: [
-        { label: 'Catálogo y precios', icon: 'storefront', route: '/app/catalogo' },
-        { label: 'Inventario', icon: 'inventory_2', route: '/app/catalogo?tab=inventario' },
-        { label: 'Documentos', icon: 'folder_open', route: '/app/documentos' },
-        { label: 'Agenda y citas', icon: 'calendar_month', route: '/app/agenda' },
-      ],
-    },
-    {
       label: 'Crecimiento',
       items: [
         { label: 'Centro de IA', icon: 'psychology', route: '/app/ai-center', permission: 'ai_center' },

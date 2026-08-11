@@ -175,7 +175,7 @@ function fetchJson(method, url, headers, body) {
 let pool = new Pool({ connectionString: DB_URL });
 
 // Cliente de Google (OAuth + Sheets/Docs/Calendar) para alimentar el
-// conocimiento del bot desde la cuenta del usuario.
+// conocimiento del bot desde la cuenta de Google de cada instancia.
 const googleClient = createGoogleClient({
   getPool: () => pool,
   encryptSecret,
@@ -300,6 +300,7 @@ async function initDb() {
       ALTER TABLE instances ADD COLUMN IF NOT EXISTS phone TEXT;
       ALTER TABLE instances ADD COLUMN IF NOT EXISTS verification_role TEXT DEFAULT 'all';
       ALTER TABLE instances ADD COLUMN IF NOT EXISTS security_sender BOOLEAN DEFAULT FALSE;
+      ALTER TABLE instances ADD COLUMN IF NOT EXISTS integration TEXT DEFAULT 'WHATSAPP-BAILEYS';
       CREATE TABLE IF NOT EXISTS groups_ (
         id TEXT PRIMARY KEY,
         instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE,
@@ -385,52 +386,6 @@ async function initDb() {
         updated_at TIMESTAMPTZ DEFAULT NOW(),
         UNIQUE(instance_id, jid)
       );
-      CREATE TABLE IF NOT EXISTS products (
-        id TEXT PRIMARY KEY,
-        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-        organization_id TEXT,
-        name TEXT NOT NULL,
-        description TEXT DEFAULT '',
-        category TEXT DEFAULT '',
-        sku TEXT DEFAULT '',
-        price NUMERIC(12,2) DEFAULT 0,
-        cost NUMERIC(12,2) DEFAULT 0,
-        stock NUMERIC(12,2) DEFAULT 0,
-        unit TEXT DEFAULT 'unidad',
-        image TEXT DEFAULT '',
-        active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE TABLE IF NOT EXISTS documents (
-        id TEXT PRIMARY KEY,
-        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-        organization_id TEXT,
-        title TEXT NOT NULL,
-        type TEXT DEFAULT 'documento',
-        content TEXT DEFAULT '',
-        active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE TABLE IF NOT EXISTS appointments (
-        id TEXT PRIMARY KEY,
-        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-        organization_id TEXT,
-        title TEXT NOT NULL,
-        description TEXT DEFAULT '',
-        customer_name TEXT DEFAULT '',
-        customer_jid TEXT DEFAULT '',
-        start_at TIMESTAMPTZ NOT NULL,
-        end_at TIMESTAMPTZ,
-        status TEXT DEFAULT 'pendiente',
-        location TEXT DEFAULT '',
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      ALTER TABLE products ADD COLUMN IF NOT EXISTS image TEXT DEFAULT '';
-      ALTER TABLE documents ADD COLUMN IF NOT EXISTS summary TEXT;
-      ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_minutes INT DEFAULT 0;
       CREATE TABLE IF NOT EXISTS auto_replies (
         id TEXT PRIMARY KEY,
         instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE,
@@ -510,9 +465,13 @@ async function initDb() {
       ALTER TABLE bot_documents ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual';
       ALTER TABLE bot_documents ADD COLUMN IF NOT EXISTS source_ref TEXT;
       ALTER TABLE bot_documents ADD COLUMN IF NOT EXISTS source_url TEXT;
-      -- Conexión OAuth de la cuenta de Google del usuario (tokens cifrados).
+      -- Conexión OAuth de la cuenta de Google asociada a CADA instancia
+      -- (tokens cifrados). Cada WhatsApp conecta su propia cuenta de Google y el
+      -- bot lee de ahí su catálogo, documentos y agenda en tiempo real.
       CREATE TABLE IF NOT EXISTS google_connections (
-        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        instance_id TEXT UNIQUE REFERENCES instances(id) ON DELETE CASCADE,
         google_email TEXT NOT NULL,
         access_token_enc TEXT NOT NULL,
         refresh_token_enc TEXT,
@@ -521,6 +480,29 @@ async function initDb() {
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+      ALTER TABLE google_connections ADD COLUMN IF NOT EXISTS instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE;
+      ALTER TABLE google_connections ADD COLUMN IF NOT EXISTS id TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_google_connections_instance ON google_connections (instance_id) WHERE instance_id IS NOT NULL;
+      -- Fuentes de Google por instancia: qué hoja de cálculo, documentos y
+      -- calendario alimentan al bot (lectura en vivo). Reemplaza a las tablas
+      -- de Negocio eliminadas.
+      CREATE TABLE IF NOT EXISTS instance_google_sources (
+        id TEXT PRIMARY KEY,
+        instance_id TEXT UNIQUE REFERENCES instances(id) ON DELETE CASCADE,
+        sheet_id TEXT,
+        sheet_name TEXT,
+        sheet_range TEXT DEFAULT 'A1:Z200',
+        doc_ids TEXT[] DEFAULT '{}',
+        calendar_id TEXT,
+        calendar_days INT DEFAULT 30,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      -- Se eliminan las tablas del módulo Negocio (catálogo, inventario,
+      -- documentos y agenda) porque toda esa información se lee en vivo de la
+      -- cuenta de Google asociada a la instancia.
+      DROP TABLE IF EXISTS products CASCADE;
+      DROP TABLE IF EXISTS documents CASCADE;
+      DROP TABLE IF EXISTS appointments CASCADE;
       -- Auto-respuestas: una regla en modo IA puede alimentarse de un documento
       -- específico de la instancia (la parte del conocimiento que le interese).
       ALTER TABLE auto_replies ADD COLUMN IF NOT EXISTS document_id TEXT;
@@ -1831,32 +1813,6 @@ async function handleRequest(req, res, pathname) {
         if (method === 'POST' && id === 'sync') return await syncConversations(res, (await parseBody(req)).instanceId, session);
         break;
 
-      // -- Productos / Catálogo / Precios / Inventario --
-      case 'products':
-        if (method === 'GET' && id === 'categories') return await getProductCategories(res, session);
-        if (method === 'GET' && !id) return await getProducts(res, req, session);
-        if (method === 'POST' && !id) return await createProduct(res, await parseBody(req), session);
-        if (method === 'PUT' && id) return await updateProduct(res, id, await parseBody(req), session);
-        if (method === 'DELETE' && id) return await deleteProduct(res, id, session);
-        break;
-
-      // -- Documentos (políticas, menús, FAQ, contratos) --
-      case 'documents':
-        if (method === 'GET' && id === 'types') return await getDocumentTypes(res, session);
-        if (method === 'GET' && !id) return await getDocuments(res, req, session);
-        if (method === 'POST' && !id) return await createDocument(res, await parseBody(req), session);
-        if (method === 'PUT' && id) return await updateDocument(res, id, await parseBody(req), session);
-        if (method === 'DELETE' && id) return await deleteDocument(res, id, session);
-        break;
-
-      // -- Agenda / Citas / Eventos --
-      case 'appointments':
-        if (method === 'GET' && !id) return await getAppointments(res, req, session);
-        if (method === 'POST' && !id) return await createAppointment(res, await parseBody(req), session);
-        if (method === 'PUT' && id) return await updateAppointment(res, id, await parseBody(req), session);
-        if (method === 'DELETE' && id) return await deleteAppointment(res, id, session);
-        break;
-
       // -- Mensajes (envío) --
       case 'messages':
         if (method === 'POST' && id === 'send') {
@@ -2937,8 +2893,8 @@ async function createInstance(res, body, session) {
   // n8n es un entorno único del sistema (variables de entorno del admin); no se
   // persiste ni se acepta configuración por instancia.
   const result = await pool.query(
-    `INSERT INTO instances (id, name, evolution_url, api_key, phone, status, user_id, verification_role, security_sender)
-     VALUES ($1, $2, $3, $4, $5, 'disconnected', $6, $7, $8) RETURNING *`,
+    `INSERT INTO instances (id, name, evolution_url, api_key, phone, status, user_id, verification_role, security_sender, integration)
+     VALUES ($1, $2, $3, $4, $5, 'disconnected', $6, $7, $8, 'WHATSAPP-BAILEYS') RETURNING *`,
     [id, body.name, evolutionUrl, apiKey, phone, session.id, verificationRole, securitySender]
   );
   // Crea la instancia en Evolution API
@@ -3306,6 +3262,7 @@ function enrichInstance(i, role) {
     phone: i.phone || null,
     status: i.status,
     evolutionInstanceId: i.evolution_instance_id,
+    integration: i.integration || 'WHATSAPP-BAILEYS',
     verificationRole: i.verification_role || 'all',
     securitySender: !!i.security_sender,
     groups_count: i.groups_count || 0,
@@ -3357,7 +3314,7 @@ function enrichCampaign(c) {
 
 const CAMPAIGN_QUERY = `
   SELECT c.*,
-    i.name AS instance_name, i.evolution_url AS instance_evo_url,
+    i.name AS instance_name, i.evolution_url AS instance_evo_url, i.integration AS instance_integration,
     t.name AS template_name
   FROM campaigns c
   LEFT JOIN instances i ON i.id = c.instance_id
@@ -3562,11 +3519,55 @@ async function executeCampaign(id, opts = {}) {
   const tc = c.template_content || {};
   const hasMedia = !!(tc.mediaUrl && tc.mediaType);
   const evo = { baseUrl: evolutionBaseUrl(c), apiKey: c.api_key };
+  const msg = tc.text || '';
+  // Botones de acción (reply/url): como máximo 3, que es el límite de WhatsApp.
+  const buttons = (Array.isArray(tc.buttons) ? tc.buttons : [])
+    .filter((b) => b && b.text && (b.type === 'reply' || b.type === 'url'))
+    .slice(0, 3);
+  const hasButtons = buttons.length > 0;
+  // Los botones interactivos solo se entregan de forma fiable con la Cloud API
+  // oficial de Meta. En cuentas QR (Baileys) Meta los bloquea (la API responde
+  // 201 pero el mensaje nunca llega), así que se degradan a texto numerado.
+  const isCloudApi = /cloud|official|business/i.test(String(c.instance_integration || ''));
+  const useInteractiveButtons = hasButtons && isCloudApi;
+  const messageType = hasButtons ? 'buttons' : hasMedia ? 'media' : 'text';
+  // CTA en texto para cuentas QR (Baileys): los botones interactivos los bloquea
+  // Meta en esta vía, así que se dibujan como "botones" de texto al pie del
+  // mensaje: una caja con caracteres unicode en formato código (monospace) que
+  // semeja un botón real, y el enlace debajo, tappable y con vista previa.
+  const ctaBox = (lines) => {
+    const lns = lines.map((l) => String(l));
+    const w = Math.max(...lns.map((l) => l.length));
+    const hbar = '─'.repeat(w + 2);
+    const body = lns.map((l) => `│ ${l}${' '.repeat(w - l.length)} │`);
+    return ['```', '┌' + hbar + '┐', ...body, '└' + hbar + '┘', '```'].join('\n');
+  };
+  const ctaBlocks = buttons.map((b) => {
+    const box = ctaBox([b.text]);
+    const value = b.type === 'url' && b.value ? String(b.value).trim() : '';
+    return b.type === 'url' && /^https?:\/\/\S+$/i.test(value) ? box + '\n\n' + value : box;
+  });
+  const textWithButtons = msg + (ctaBlocks.length ? '\n\n' + ctaBlocks.join('\n\n') : '');
 
   for (const group of groups.rows) {
+    let ok = true;
     try {
-      const msg = tc.text || '';
-      if (hasMedia) {
+      if (useInteractiveButtons) {
+        await fetchJson('POST', `${evo.baseUrl}/message/sendButtons/${c.instance_name}`,
+          { apikey: evo.apiKey }, {
+            number: group.jid,
+            title: msg,
+            description: '',
+            footer: '',
+            buttons: buttons.map((b) => {
+              if (b.type === 'url' && /^https?:\/\/\S+$/i.test(String(b.value || '').trim())) {
+                return { type: 'url', displayText: b.text, url: b.value.trim() };
+              }
+              return { type: 'reply', displayText: b.text, id: b.value || b.text };
+            }),
+            delay: 3000,
+          });
+      } else if (hasMedia) {
         const mediaUrl = tc.mediaUrl.startsWith('/')
           ? `${process.env.SERVER_APP_URL || 'http://host.docker.internal:3000'}${tc.mediaUrl}`
           : tc.mediaUrl;
@@ -3575,14 +3576,15 @@ async function executeCampaign(id, opts = {}) {
             number: group.jid,
             mediatype: tc.mediaType,
             media: mediaUrl,
-            caption: msg,
+            caption: textWithButtons || msg,
             delay: 3000,
           });
       } else {
         await fetchJson('POST', `${evo.baseUrl}/message/sendText/${c.instance_name}`,
           { apikey: evo.apiKey }, {
             number: group.jid,
-            text: msg,
+            text: textWithButtons || msg,
+            linkPreview: true,
             delay: 3000,
           });
       }
@@ -3590,7 +3592,19 @@ async function executeCampaign(id, opts = {}) {
     } catch (e) {
       console.warn(`Send failed to ${group.jid}:`, e.message);
       failed++;
+      ok = false;
     }
+    // Cada envío individual (programado o inmediato) queda registrado en
+    // message_logs para que las métricas del dashboard, reportes y analítica
+    // de campaña lo contabilicen por grupo.
+    await pool.query(
+      `INSERT INTO message_logs (id, instance_id, campaign_id, group_jid, group_name,
+         content, message_type, status, direction)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'outgoing')`,
+      [cuid(), c.instance_id, id, group.jid, group.name || '',
+       useInteractiveButtons ? msg : textWithButtons, messageType,
+       ok ? 'sent' : 'failed']
+    ).catch((e) => console.warn('message_logs insert failed:', e.message));
   }
 
   const nextAt = computeNextScheduled(c);
@@ -4300,7 +4314,7 @@ async function testChatbotDocumentQuery(res, body, session) {
 }
 
 // ---------------------------------------------------------------------------
-// Integración con Google (OAuth + importación de hojas/documentos/agenda)
+// Integración con Google (OAuth por instancia + fuentes de hojas/docs/agenda)
 // ---------------------------------------------------------------------------
 async function googleOAuthCallback(res, q) {
   const code = q.searchParams.get('code');
@@ -4325,29 +4339,36 @@ async function googleOAuthCallback(res, q) {
 async function handleGoogleRoutes(res, req, session, seg) {
   const method = req.method;
   const q = new URL(req.url, `http://${req.headers.host}`);
+  const iid = q.searchParams.get('instanceId') || '';
+  if (iid && !(await loadInstanceForUser(iid, session))) {
+    return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  }
   if (method === 'GET' && seg[0] === 'auth-url') {
     if (!googleClient.isConfigured()) {
       return sendJson(res, 400, {
         error: 'Google no está configurado: faltan GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET (guía en DOCUMENTACION.md)',
       });
     }
-    return sendJson(res, 200, { data: { url: googleClient.buildAuthUrl(session.id) }, success: true });
+    if (!iid) return sendJson(res, 400, { error: 'Selecciona la instancia antes de conectar Google' });
+    return sendJson(res, 200, { data: { url: googleClient.buildAuthUrl(session.id, iid) }, success: true });
   }
   if (method === 'GET' && seg[0] === 'status') {
-    const conn = await googleClient.getConnection(session.id).catch(() => null);
+    if (!iid) return sendJson(res, 200, { data: { connected: false, email: null }, success: true });
+    const conn = await googleClient.getConnection(iid).catch(() => null);
     return sendJson(res, 200, {
       data: { connected: Boolean(conn && conn.email), email: conn ? conn.email : null },
       success: true,
     });
   }
   if (method === 'DELETE' && seg.length === 0) {
-    await googleClient.disconnect(session.id);
+    if (!iid) return sendJson(res, 400, { error: 'instanceId requerido' });
+    await googleClient.disconnect(iid);
     return sendJson(res, 200, { success: true });
   }
   if (method === 'GET' && seg[0] === 'files') {
     const kind = q.searchParams.get('kind') === 'docs' ? 'docs' : 'sheets';
     try {
-      const files = await googleClient.listFiles(session.id, kind);
+      const files = await googleClient.listFiles(iid, kind);
       return sendJson(res, 200, { data: files, success: true });
     } catch (e) {
       return sendJson(res, 400, { error: googleApiErrorMessage(e) });
@@ -4355,16 +4376,70 @@ async function handleGoogleRoutes(res, req, session, seg) {
   }
   if (method === 'GET' && seg[0] === 'calendars') {
     try {
-      const calendars = await googleClient.listCalendars(session.id);
+      const calendars = await googleClient.listCalendars(iid);
       return sendJson(res, 200, { data: calendars, success: true });
     } catch (e) {
       return sendJson(res, 400, { error: googleApiErrorMessage(e) });
     }
   }
+  if (method === 'GET' && seg[0] === 'sources') {
+    if (!iid) return sendJson(res, 400, { error: 'instanceId requerido' });
+    const result = await pool.query('SELECT * FROM instance_google_sources WHERE instance_id = $1', [iid]);
+    const row = result.rows[0] || null;
+    return sendJson(res, 200, {
+      data: row ? {
+        sheetId: row.sheet_id || '',
+        sheetName: row.sheet_name || '',
+        sheetRange: row.sheet_range || 'A1:Z200',
+        docIds: Array.isArray(row.doc_ids) ? row.doc_ids : [],
+        calendarId: row.calendar_id || '',
+        calendarDays: row.calendar_days || 30,
+      } : null,
+      success: true,
+    });
+  }
+  if (method === 'POST' && seg[0] === 'sources') {
+    return await saveGoogleSources(res, await parseBody(req), session);
+  }
   if (method === 'POST' && seg[0] === 'import') {
     return await importGoogleSource(res, await parseBody(req), session);
   }
   return sendJson(res, 404, { error: 'Not found' });
+}
+
+async function saveGoogleSources(res, body, session) {
+  if (!body.instanceId) return sendJson(res, 400, { error: 'instanceId requerido' });
+  const inst = await loadInstanceForUser(body.instanceId, session);
+  if (!inst) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  const docIds = Array.isArray(body.docIds)
+    ? body.docIds.map((d) => String(d).trim()).filter(Boolean)
+    : [];
+  const existing = await pool.query('SELECT * FROM instance_google_sources WHERE instance_id = $1', [body.instanceId]);
+  const payload = [
+    String(body.sheetId || ''),
+    String(body.sheetName || ''),
+    String(body.sheetRange || 'A1:Z200'),
+    docIds,
+    String(body.calendarId || ''),
+    Math.min(Math.max(parseInt(body.calendarDays, 10) || 30, 1), 365),
+  ];
+  if (existing.rows.length > 0) {
+    await pool.query(
+      `UPDATE instance_google_sources
+       SET sheet_id = $1, sheet_name = $2, sheet_range = $3, doc_ids = $4,
+           calendar_id = $5, calendar_days = $6, updated_at = NOW()
+       WHERE instance_id = $7`,
+      [...payload, body.instanceId]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO instance_google_sources
+         (id, instance_id, sheet_id, sheet_name, sheet_range, doc_ids, calendar_id, calendar_days)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [cuid(), body.instanceId, ...payload]
+    );
+  }
+  sendJson(res, 200, { success: true });
 }
 
 function googleApiErrorMessage(e) {
@@ -4384,13 +4459,13 @@ async function importGoogleSource(res, body, session) {
   try {
     if (type === 'sheet') {
       if (!body.fileId) return sendJson(res, 400, { error: 'Selecciona una hoja de cálculo' });
-      imported = await googleClient.importSheet(session.id, body.fileId);
+      imported = await googleClient.importSheet(inst.id, body.fileId);
     } else if (type === 'docs') {
       if (!body.fileId) return sendJson(res, 400, { error: 'Selecciona un documento' });
-      imported = await googleClient.importDocs(session.id, body.fileId);
+      imported = await googleClient.importDocs(inst.id, body.fileId);
     } else if (type === 'calendar') {
       if (!body.calendarId) return sendJson(res, 400, { error: 'Selecciona un calendario' });
-      imported = await googleClient.importCalendar(session.id, body.calendarId, body.days);
+      imported = await googleClient.importCalendar(inst.id, body.calendarId, body.days);
     } else {
       return sendJson(res, 400, { error: 'Tipo de fuente no válido' });
     }
@@ -5843,281 +5918,6 @@ async function syncConversations(res, instanceId, session) {
   sendJson(res, 200, { data: { synced: chatList.length, created, updated, total }, success: true });
 }
 
-// =========================================================================
-// 17. Productos / Catálogo / Precios / Inventario
-// =========================================================================
-function enrichProduct(r) {
-  return {
-    id: r.id,
-    name: r.name,
-    description: r.description || '',
-    category: r.category || '',
-    sku: r.sku || '',
-    price: r.price != null ? Number(r.price) : 0,
-    cost: r.cost != null ? Number(r.cost) : 0,
-    stock: r.stock != null ? Number(r.stock) : 0,
-    unit: r.unit || 'unidad',
-    image: r.image || '',
-    active: r.active,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
-}
-
-async function getProductScope(session) {
-  if (isAdminRole(session.role)) return { cond: '', params: [] };
-  return { cond: ' AND user_id = $1', params: [session.id] };
-}
-
-async function getProducts(res, req, session) {
-  const u = new URL(req.url, `http://${req.headers.host}`);
-  const { cond, params } = await getProductScope(session);
-  const filters = [];
-  const cat = u.searchParams.get('category');
-  const onlyActive = u.searchParams.get('active');
-  const q = u.searchParams.get('q');
-  if (cat) { filters.push(`category = $${params.length + 1}`); params.push(cat); }
-  if (onlyActive === 'true') { filters.push('active = TRUE'); }
-  if (q) { filters.push(`(name ILIKE $${params.length + 1} OR sku ILIKE $${params.length + 1} OR description ILIKE $${params.length + 1})`); params.push(`%${q}%`); }
-  const where = filters.length ? 'WHERE 1=1' + cond + ' AND ' + filters.join(' AND ') : 'WHERE 1=1' + cond;
-  const result = await pool.query(
-    `SELECT * FROM products ${where} ORDER BY category, name`, params
-  );
-  const list = result.rows.map(enrichProduct);
-  const totalValue = list.reduce((s, p) => s + (p.active ? p.price * p.stock : 0), 0);
-  const totalStock = list.reduce((s, p) => s + p.stock, 0);
-  sendJson(res, 200, { data: list, summary: { totalValue, totalStock }, success: true });
-}
-
-async function getProductCategories(res, session) {
-  const { cond, params } = await getProductScope(session);
-  const result = await pool.query(
-    `SELECT DISTINCT category FROM products WHERE category <> '' AND category IS NOT NULL ${cond} ORDER BY category`, params
-  );
-  sendJson(res, 200, { data: result.rows.map(r => r.category), success: true });
-}
-
-async function createProduct(res, body, session) {
-  const { name, description, category, sku, price, cost, stock, unit, image } = body;
-  if (!name || !String(name).trim()) return sendJson(res, 400, { error: 'El nombre del producto es requerido' });
-  const org = (await pool.query('SELECT organization_id FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
-  const result = await pool.query(
-    `INSERT INTO products (id, user_id, organization_id, name, description, category, sku, price, cost, stock, unit, image)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-    [cuid(), session.id, org?.organization_id || null, String(name).trim(),
-     description || '', category || '', sku || '',
-     price != null ? price : 0, cost != null ? cost : 0,
-     stock != null ? stock : 0, unit || 'unidad', image || '']
-  );
-  sendJson(res, 201, { data: enrichProduct(result.rows[0]), success: true });
-}
-
-async function updateProduct(res, id, body, session) {
-  const { cond, params } = await getProductScope(session);
-  const cur = (await pool.query(`SELECT * FROM products WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
-  if (!cur) return sendJson(res, 404, { error: 'Producto no encontrado' });
-  const result = await pool.query(
-    `UPDATE products SET
-       name = COALESCE(NULLIF($1, ''), name),
-       description = COALESCE($2, description),
-       category = COALESCE(NULLIF($3, ''), category),
-       sku = COALESCE(NULLIF($4, ''), sku),
-       price = COALESCE($5, price),
-       cost = COALESCE($6, cost),
-       stock = COALESCE($7, stock),
-       unit = COALESCE(NULLIF($8, ''), unit),
-       image = COALESCE($9, image),
-       active = COALESCE($10, active),
-       updated_at = NOW()
-     WHERE id = $11 RETURNING *`,
-    [body.name ?? null, body.description ?? null, body.category ?? null, body.sku ?? null,
-     body.price ?? null, body.cost ?? null, body.stock ?? null, body.unit ?? null,
-     body.image ?? null, body.active ?? null, id]
-  );
-  sendJson(res, 200, { data: enrichProduct(result.rows[0]), success: true });
-}
-
-async function deleteProduct(res, id, session) {
-  const { cond, params } = await getProductScope(session);
-  const cur = (await pool.query(`SELECT id FROM products WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
-  if (!cur) return sendJson(res, 404, { error: 'Producto no encontrado' });
-  await pool.query('DELETE FROM products WHERE id = $1', [id]);
-  sendJson(res, 200, { success: true });
-}
-
-// =========================================================================
-// 18. Documentos (políticas, menús, FAQ, contratos)
-// =========================================================================
-function enrichDocument(r) {
-  return {
-    id: r.id,
-    title: r.title,
-    type: r.type || 'documento',
-    content: r.content || '',
-    summary: r.summary || '',
-    active: r.active,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
-}
-
-async function getDocuments(res, req, session) {
-  const u = new URL(req.url, `http://${req.headers.host}`);
-  const { cond, params } = await getProductScope(session);
-  const filters = [];
-  const type = u.searchParams.get('type');
-  const q = u.searchParams.get('q');
-  if (type) { filters.push(`type = $${params.length + 1}`); params.push(type); }
-  if (q) { filters.push(`(title ILIKE $${params.length + 1} OR content ILIKE $${params.length + 1})`); params.push(`%${q}%`); }
-  const where = filters.length ? 'WHERE 1=1' + cond + ' AND ' + filters.join(' AND ') : 'WHERE 1=1' + cond;
-  const result = await pool.query(
-    `SELECT * FROM documents ${where} ORDER BY type, title`, params
-  );
-  sendJson(res, 200, { data: result.rows.map(enrichDocument), success: true });
-}
-
-async function getDocumentTypes(res, session) {
-  const { cond, params } = await getProductScope(session);
-  const result = await pool.query(
-    `SELECT DISTINCT type FROM documents WHERE type <> '' AND type IS NOT NULL ${cond} ORDER BY type`, params
-  );
-  sendJson(res, 200, { data: result.rows.map(r => r.type), success: true });
-}
-
-async function createDocument(res, body, session) {
-  const { title, type, content, summary, active } = body;
-  if (!title || !String(title).trim()) return sendJson(res, 400, { error: 'El título del documento es requerido' });
-  const org = (await pool.query('SELECT organization_id FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
-  const result = await pool.query(
-    `INSERT INTO documents (id, user_id, organization_id, title, type, content, summary, active)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [cuid(), session.id, org?.organization_id || null, String(title).trim(),
-     type || 'documento', content || '', summary || '', active !== false]
-  );
-  sendJson(res, 201, { data: enrichDocument(result.rows[0]), success: true });
-}
-
-async function updateDocument(res, id, body, session) {
-  const { cond, params } = await getProductScope(session);
-  const cur = (await pool.query(`SELECT id FROM documents WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
-  if (!cur) return sendJson(res, 404, { error: 'Documento no encontrado' });
-  const result = await pool.query(
-    `UPDATE documents SET
-       title = COALESCE(NULLIF($1, ''), title),
-       type = COALESCE(NULLIF($2, ''), type),
-       content = COALESCE($3, content),
-       summary = COALESCE($4, summary),
-       active = COALESCE($5, active),
-       updated_at = NOW()
-     WHERE id = $6 RETURNING *`,
-    [body.title ?? null, body.type ?? null, body.content ?? null,
-     body.summary ?? null, body.active ?? null, id]
-  );
-  sendJson(res, 200, { data: enrichDocument(result.rows[0]), success: true });
-}
-
-async function deleteDocument(res, id, session) {
-  const { cond, params } = await getProductScope(session);
-  const cur = (await pool.query(`SELECT id FROM documents WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
-  if (!cur) return sendJson(res, 404, { error: 'Documento no encontrado' });
-  await pool.query('DELETE FROM documents WHERE id = $1', [id]);
-  sendJson(res, 200, { success: true });
-}
-
-// =========================================================================
-// 19. Agenda / Citas / Eventos / Disponibilidad
-// =========================================================================
-function enrichAppointment(r) {
-  return {
-    id: r.id,
-    title: r.title,
-    description: r.description || '',
-    customerName: r.customer_name || '',
-    customerJid: r.customer_jid || '',
-    startAt: r.start_at,
-    endAt: r.end_at,
-    status: r.status || 'pendiente',
-    location: r.location || '',
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  };
-}
-
-async function getAppointments(res, req, session) {
-  const u = new URL(req.url, `http://${req.headers.host}`);
-  const { cond, params } = await getProductScope(session);
-  const filters = [];
-  const status = u.searchParams.get('status');
-  const from = u.searchParams.get('from');
-  const to = u.searchParams.get('to');
-  if (status) { filters.push(`status = $${params.length + 1}`); params.push(status); }
-  if (from) { filters.push(`start_at >= $${params.length + 1}`); params.push(from); }
-  if (to) { filters.push(`start_at < $${params.length + 1}`); params.push(to); }
-  const where = filters.length ? 'WHERE 1=1' + cond + ' AND ' + filters.join(' AND ') : 'WHERE 1=1' + cond;
-  const result = await pool.query(
-    `SELECT * FROM appointments ${where} ORDER BY start_at ASC`, params
-  );
-  sendJson(res, 200, { data: result.rows.map(enrichAppointment), success: true });
-}
-
-async function createAppointment(res, body, session) {
-  const { title, description, customerName, customerJid, startAt, endAt, status, location } = body;
-  if (!title || !String(title).trim()) return sendJson(res, 400, { error: 'El título de la cita es requerido' });
-  if (!startAt) return sendJson(res, 400, { error: 'La fecha de inicio es requerida' });
-  const start = new Date(startAt);
-  if (isNaN(start.getTime())) return sendJson(res, 400, { error: 'Fecha de inicio inválida' });
-  const end = endAt ? new Date(endAt) : new Date(start.getTime() + 60 * 60 * 1000);
-  if (isNaN(end.getTime())) return sendJson(res, 400, { error: 'Fecha de fin inválida' });
-  const org = (await pool.query('SELECT organization_id FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
-  const result = await pool.query(
-    `INSERT INTO appointments (id, user_id, organization_id, title, description, customer_name, customer_jid, start_at, end_at, status, location)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-    [cuid(), session.id, org?.organization_id || null, String(title).trim(),
-     description || '', customerName || '', customerJid || '',
-     start.toISOString(), end.toISOString(), status || 'pendiente', location || '']
-  );
-  sendJson(res, 201, { data: enrichAppointment(result.rows[0]), success: true });
-}
-
-async function updateAppointment(res, id, body, session) {
-  const { cond, params } = await getProductScope(session);
-  const cur = (await pool.query(`SELECT id FROM appointments WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
-  if (!cur) return sendJson(res, 404, { error: 'Cita no encontrada' });
-  let start = body.startAt ?? null;
-  let end = body.endAt ?? null;
-  if (start) {
-    start = new Date(start);
-    if (isNaN(start.getTime())) return sendJson(res, 400, { error: 'Fecha de inicio inválida' });
-  }
-  if (end) {
-    end = new Date(end);
-    if (isNaN(end.getTime())) return sendJson(res, 400, { error: 'Fecha de fin inválida' });
-  }
-  const result = await pool.query(
-    `UPDATE appointments SET
-       title = COALESCE(NULLIF($1, ''), title),
-       description = COALESCE($2, description),
-       customer_name = COALESCE(NULLIF($3, ''), customer_name),
-       customer_jid = COALESCE(NULLIF($4, ''), customer_jid),
-       start_at = COALESCE($5, start_at),
-       end_at = COALESCE($6, end_at),
-       status = COALESCE(NULLIF($7, ''), status),
-       location = COALESCE(NULLIF($8, ''), location),
-       updated_at = NOW()
-     WHERE id = $9 RETURNING *`,
-    [body.title ?? null, body.description ?? null, body.customerName ?? null,
-     body.customerJid ?? null, start, end, body.status ?? null, body.location ?? null, id]
-  );
-  sendJson(res, 200, { data: enrichAppointment(result.rows[0]), success: true });
-}
-
-async function deleteAppointment(res, id, session) {
-  const { cond, params } = await getProductScope(session);
-  const cur = (await pool.query(`SELECT id FROM appointments WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
-  if (!cur) return sendJson(res, 404, { error: 'Cita no encontrada' });
-  await pool.query('DELETE FROM appointments WHERE id = $1', [id]);
-  sendJson(res, 200, { success: true });
-}
 
 async function getConversationHistory(res, req, session) {
   const u = new URL(req.url, `http://${req.headers.host}`);
@@ -6794,7 +6594,18 @@ async function processAutoReply(instance, rule, targetJid, senderJid, senderName
     let reply;
     if (rule.use_ai === true) {
       const instructions = rule.ai_instructions || 'Responde de forma breve y natural, en el mismo idioma del cliente.';
-      let system = `Eres el asistente de atención al cliente de esta empresa. Reglas de esta auto-respuesta: ${instructions}`;
+      // La auto-respuesta en modo IA utiliza el chatbot de su instancia (prompt
+      // de sistema y conocimiento configurados) como base, y añade las reglas
+      // particulares de esta respuesta junto con los datos del negocio de la
+      // instancia leídos en tiempo real.
+      const bot = (await pool.query(
+        'SELECT * FROM chatbot_configs WHERE instance_id = $1', [instance.id]
+      )).rows[0];
+      const parts = [];
+      const basePrompt = bot ? buildChatbotSystemPrompt(bot) : '';
+      if (basePrompt) parts.push(basePrompt);
+      parts.push(`Eres el asistente de atención al cliente de esta empresa. Reglas de esta auto-respuesta: ${instructions}`);
+      let system = parts.join('\n\n');
       if (rule.document_id) {
         const doc = (await pool.query('SELECT title FROM bot_documents WHERE id = $1', [rule.document_id])).rows[0];
         const ctx = await retrieveBotContext(instance, content, 4, null, rule.document_id);
@@ -6802,6 +6613,14 @@ async function processAutoReply(instance, rule, targetJid, senderJid, senderName
           const docs = ctx.map((c) => `- ${c.content}`).join('\n');
           system += `\n\nINFORMACIÓN DE REFERENCIA DEL DOCUMENTO${doc && doc.title ? ` "${doc.title}"` : ''} (úsala solo si responde a la consulta del cliente):\n${docs}`;
         }
+      }
+      try {
+        const live = await buildGoogleBusinessContext(instance.id);
+        if (live) {
+          system += `\n\nDATOS ACTUALES DE LA CUENTA DE GOOGLE DE LA INSTANCIA (leídos en vivo al responder)\nUsa estos datos como fuente de verdad; si la pregunta no guarda relación, ignóralos:\n${live}`;
+        }
+      } catch (e) {
+        console.warn('[google-context] auto-respuesta falló al leer datos de Google:', e.message);
       }
       const history = (await pool.query(
         `SELECT sender_jid, content, direction FROM message_logs
@@ -6841,11 +6660,23 @@ async function syncInstancePhone(i) {
     );
     const ownerJid = (found && found.ownerJid) || '';
     const number = String(ownerJid).replace(/@s\.whatsapp\.net$/i, '').replace(/@c\.us$/i, '');
-    if (!number || number === i.phone) return;
-    await pool.query('UPDATE instances SET phone = $1, updated_at = NOW() WHERE id = $2', [number, i.id]);
+    const integration = (found && (found.integration || found.clientName)) || null;
+    const updates = [];
+    const params = [];
+    if (number && number !== i.phone) {
+      updates.push('phone = $' + (params.length + 1));
+      params.push(number);
+    }
+    if (integration && integration !== i.integration) {
+      updates.push('integration = $' + (params.length + 1));
+      params.push(integration);
+    }
+    if (updates.length === 0) return;
+    params.push(i.id);
+    await pool.query(`UPDATE instances SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${params.length}`, params);
     const row = (await pool.query('SELECT * FROM instances WHERE id = $1', [i.id])).rows[0];
     pushInstanceUpdate(row);
-    console.log(`[evo] Número obtenido para ${i.name}: ${number}`);
+    if (number) console.log(`[evo] Número obtenido para ${i.name}: ${number}`);
   } catch (e) {
     console.warn(`[evo] sync phone error (${i.name}): ${e.message}`);
   }
@@ -7177,60 +7008,60 @@ async function handleN8nChatbot(instance, senderJid, senderName, content) {
 // de la interfaz IAProvider y genera una respuesta para un DM privado. No
 // envía: el llamador decide cómo entregarla (Evolution directo, o workflow n8n).
 // ---------------------------------------------------------------------------
-// Lee en tiempo real los datos del negocio (catálogo, precios, inventario,
-// documentos y agenda) desde la BD para que el bot responda con la información
-// más actualizada, nunca con datos estáticos.
-async function buildLiveBusinessContext(userId, question) {
+// Lee EN VIVO la información de la cuenta de Google asociada a la instancia:
+// catálogo y precios desde Google Sheets, documentos desde Google Docs/Drive y
+// agenda desde Google Calendar. Reemplaza a las tablas de Negocio eliminadas.
+async function buildGoogleBusinessContext(instanceId) {
+  const conn = await googleClient.getConnection(instanceId).catch(() => null);
+  if (!conn || !conn.accessToken) return null;
+  const sources = (await pool.query('SELECT * FROM instance_google_sources WHERE instance_id = $1', [instanceId]).catch(() => ({ rows: [] }))).rows[0];
+  if (!sources) return null;
   const blocks = [];
 
-  const products = (await pool.query(
-    `SELECT name, category, price, stock, unit, sku FROM products
-     WHERE user_id = $1 AND active = TRUE AND price > 0
-     ORDER BY category, name LIMIT 40`, [userId]
-  )).rows;
-  if (products.length > 0) {
-    const byCat = {};
-    for (const p of products) {
-      const cat = p.category || 'General';
-      (byCat[cat] = byCat[cat] || []).push(p);
+  if (sources.sheet_id) {
+    try {
+      const sheet = await googleClient.importSheet(instanceId, sources.sheet_id, {
+        sheetName: sources.sheet_name || '',
+        range: sources.sheet_range || 'A1:Z200',
+      });
+      if (sheet && sheet.content) {
+        blocks.push(`CATÁLOGO Y PRECIOS (leídos en vivo de Google Sheets)\n${sheet.content}`);
+      }
+    } catch (e) {
+      console.warn(`[google-context] falló la hoja de cálculo de la instancia ${instanceId}:`, e.message);
     }
-    const lines = [];
-    for (const [cat, items] of Object.entries(byCat)) {
-      lines.push(`${cat}:`);
-      for (const p of items) {
-        lines.push(`  - ${p.name} (${p.sku || 'sin sku'}): $${Number(p.price).toFixed(2)}${p.stock != null && p.stock !== 0 ? ` | stock: ${Number(p.stock)} ${p.unit || ''}` : ''}`);
+  }
+
+  const docIds = Array.isArray(sources.doc_ids) ? sources.doc_ids : [];
+  if (docIds.length > 0) {
+    const docs = [];
+    for (const docId of docIds) {
+      try {
+        const doc = await googleClient.importDocs(instanceId, docId);
+        if (doc && doc.content) {
+          docs.push(`- [${doc.title}]: ${String(doc.content).replace(/\s+/g, ' ').slice(0, 2000)}`);
+        }
+      } catch (e) {
+        console.warn(`[google-context] falló un documento de la instancia ${instanceId}:`, e.message);
       }
     }
-    blocks.push(`CATÁLOGO Y PRECIOS (actualizado)\n${lines.join('\n')}`);
+    if (docs.length > 0) {
+      blocks.push(`DOCUMENTOS DE LA EMPRESA (leídos en vivo de Google Docs)\n${docs.join('\n')}`);
+    }
   }
 
-  const documents = (await pool.query(
-    `SELECT title, type, content FROM documents
-     WHERE user_id = $1 AND active = TRUE
-     ORDER BY type, title LIMIT 25`, [userId]
-  )).rows;
-  if (documents.length > 0) {
-    const lines = documents.map((d) => {
-      const snippet = (d.content || '').replace(/\s+/g, ' ').slice(0, 400);
-      return `- [${d.type || 'documento'}] ${d.title}${snippet ? `: ${snippet}` : ''}`;
-    });
-    blocks.push(`DOCUMENTOS DE LA EMPRESA (políticas, menús, FAQ, contratos)\n${lines.join('\n')}`);
+  if (sources.calendar_id) {
+    try {
+      const cal = await googleClient.importCalendar(instanceId, sources.calendar_id, sources.calendar_days || 30);
+      if (cal && cal.content) {
+        blocks.push(`AGENDA Y CITAS PRÓXIMAS (leídas en vivo de Google Calendar)\n${cal.content}`);
+      }
+    } catch (e) {
+      console.warn(`[google-context] falló el calendario de la instancia ${instanceId}:`, e.message);
+    }
   }
 
-  const upcoming = (await pool.query(
-    `SELECT title, customer_name, start_at, end_at, status FROM appointments
-     WHERE user_id = $1 AND start_at >= NOW() - INTERVAL '1 hour'
-     ORDER BY start_at ASC LIMIT 20`, [userId]
-  )).rows;
-  if (upcoming.length > 0) {
-    const lines = upcoming.map((a) => {
-      const when = a.start_at ? new Date(a.start_at).toLocaleString('es-VE') : '';
-      return `- ${a.title}${a.customer_name ? ` (${a.customer_name})` : ''} | ${when} | estado: ${a.status || 'pendiente'}`;
-    });
-    blocks.push(`AGENDA Y CITAS PRÓXIMAS\n${lines.join('\n')}`);
-  }
-
-  return blocks.join('\n\n');
+  return blocks.length > 0 ? blocks.join('\n\n') : null;
 }
 
 async function generateChatbotReply(instance, senderJid, senderName, content) {
@@ -7288,15 +7119,15 @@ async function generateChatbotReply(instance, senderJid, senderName, content) {
     } catch (e) {
       console.warn('[RAG] recuperación de contexto falló:', e.message);
     }
-    // Datos dinámicos del negocio (catálogo, precios, documentos y agenda)
-    // leídos de la base en el momento de responder.
+    // Datos en vivo de la cuenta de Google de la instancia (catálogo, precios,
+    // documentos y agenda), leídos desde Google en el momento de responder.
     try {
-      const live = await buildLiveBusinessContext(tenantId, content);
+      const live = await buildGoogleBusinessContext(instance.id);
       if (live) {
-        systemPrompt += `\n\nDATOS ACTUALES DEL NEGOCIO (leídos de la base de datos al responder)\nUsa estos datos como fuente de verdad para responder al cliente; si la pregunta no guarda relación, ignóralos:\n${live}`;
+        systemPrompt += `\n\nDATOS ACTUALES DE LA CUENTA DE GOOGLE DE LA INSTANCIA (leídos en vivo al responder)\nUsa estos datos como fuente de verdad para responder al cliente; si la pregunta no guarda relación, ignóralos:\n${live}`;
       }
     } catch (e) {
-      console.warn('[live-context] falló al leer datos del negocio:', e.message);
+      console.warn('[google-context] falló al leer datos de Google:', e.message);
     }
     const result = await settings.provider.generate(
       {

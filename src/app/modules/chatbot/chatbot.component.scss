@@ -417,8 +417,36 @@
   flex-direction: column;
   gap: 12px;
 
-  .google-type {
-    width: 240px;
+  .google-sources-loading {
+    padding: 24px 0;
+  }
+
+  .google-source-block {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    h3 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+
+      mat-icon {
+        color: var(--primary);
+      }
+    }
+
+    .google-source-hint {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
   }
 
   .google-file-row {
@@ -430,6 +458,15 @@
     .google-file-select {
       flex: 1;
       min-width: 220px;
+    }
+
+    .google-sheet-name {
+      flex: 1;
+      min-width: 180px;
+    }
+
+    .google-sheet-range {
+      width: 160px;
     }
 
     .google-days {

@@ -80,7 +80,7 @@ El frontend consume la API del backend, que se comunica con la **Evolution API**
 
 | Componente | URL | Puerto | Credenciales |
 |------------|-----|--------|--------------|
-| Aplicación (producción) | http://localhost:3000 | 3000 | admin@whatsapp-ads.com / admin123 |
+| Aplicación (producción, contenedor `app`) | http://localhost:3000 | 3000 | admin@whatsapp-ads.com / admin123 |
 | Aplicación (desarrollo) | http://localhost:4200 | 4200 | — |
 | Evolution API | http://localhost:3100 | 3100 | API Key: evolution_api_7465829274 |
 | n8n | http://localhost:5678 | 5678 | admin@whatsapp-ads.com / Admin123 |
@@ -90,7 +90,7 @@ El frontend consume la API del backend, que se comunica con la **Evolution API**
 
 ## 4. Contenedores Docker
 
-Definidos en `docker-compose.yml`:
+Definidos en `docker-compose.yml`. El servicio `app` (la aplicación completa) se construye localmente con el `Dockerfile` multi-stage; el resto son imágenes públicas:
 
 | Contenedor | Imagen | Puerto host → contenedor | Propósito |
 |------------|--------|--------------------------|-----------|
@@ -99,12 +99,34 @@ Definidos en `docker-compose.yml`:
 | `evolution_redis` | redis:latest | interno | Cache y cola de Evolution API |
 | `evolution_api` | evoapicloud/evolution-api | 3100 → 8080 | API de mensajería WhatsApp |
 | `n8n` | n8nio/n8n | 5678 → 5678 | Automatización de flujos |
+| `whatsapp_ads_app` | whatsapp-ads:latest (build `./Dockerfile`) | 3000 → 3000 | Aplicación: frontend Angular compilado + backend Node.js |
+
+### Dockerfile multi-stage (`./Dockerfile`)
+
+- **Stage `build`** (`node:20-alpine`): instala dependencias (`npm ci --legacy-peer-deps`) y compila el frontend con `npm run build -- --configuration production`.
+- **Stage `runtime`** (`node:20-alpine`): instala solo dependencias de producción (`npm ci --omit=dev`), copia el backend (`server.js`, `google.js`, `providers/`, `security/`) y el frontend compilado (`dist/`), instala `tzdata` para la zona horaria correcta y expone el puerto 3000.
+- **Healthcheck**: verifica `GET /api/setup/status` cada 30s (marca la instalación como sana cuando el backend responde).
+- La marca de instalación se guarda en `/app/data/setup.json`, montado como volumen `app_data`.
+
+### Levantar todo el stack
+
+```bash
+# Compila la imagen de la app y levanta todo (PostgreSQL, Evolution, n8n y la app)
+docker compose up -d --build
+```
+
+La aplicación queda en `http://localhost:3000`. En el primer arranque sin `data/setup.json`, el **instalador** (`/setup`) guía la configuración (la BD ya apunta al contenedor `postgres`, así que basta completar el wizard con el host `postgres`). Las variables del entorno de la app (`APP_URL`, `SESSION_SECRET`, `AI_ENC_KEY`, `EVOLUTION_API_KEY`, `N8N_API_KEY`, `GOOGLE_CLIENT_ID/SECRET`, `CAMPAIGN_CRON`, etc.) se inyectan desde el `.env` del proyecto (ver `docker-compose.yml`, servicio `app`).
+
+**Volúmenes de persistencia**: `postgres_data`, `evolution_postgres_data`, `evolution_redis_data`, `evolution_api_instances`, `n8n_data` y `app_data` (marca de instalación). Al eliminar con `docker compose down -v` se pierden los datos.
 
 ### Comandos útiles
 
 ```bash
-# Levantar toda la infraestructura
+# Levantar toda la infraestructura (sin reconstruir la imagen de la app)
 docker compose up -d
+
+# Reconstruir y levantar solo la aplicación
+docker compose up -d --build app
 
 # Levantar solo la base de datos de la aplicación
 docker compose up -d postgres
@@ -114,6 +136,7 @@ docker compose down
 
 # Ver los registros de un contenedor
 docker compose logs -f evolution_api
+docker compose logs -f app
 
 # Eliminar contenedores y volúmenes (pierde los datos)
 docker compose down -v
@@ -133,7 +156,7 @@ Las variables principales del contenedor:
 | `AUTHENTICATION_TYPE` | apikey |
 | `AUTHENTICATION_API_KEY` | evolution_api_7465829274 |
 | `SERVER_PORT` | 8080 |
-| `WEBHOOK_GLOBAL_URL` | http://host.docker.internal:3000/api/webhooks |
+| `WEBHOOK_GLOBAL_URL` | `http://app:3000/api/webhooks` (contenedor `app`); en modo "app en el host", sobreescribir con `EVO_WEBHOOK_URL=http://host.docker.internal:3000/api/webhooks` |
 
 Los eventos configurados para el webhook global son:
 `CONNECTION_UPDATE`, `MESSAGES_UPSERT`, `MESSAGES_UPDATE` y `MESSAGES_DELETE`.
@@ -157,7 +180,7 @@ Definidas en `.env` (ver `.env.example` para la referencia):
 | `N8N_EVOLUTION_URL` | URL de Evolution visible desde el contenedor n8n | http://evolution_api:8080 |
 | `AI_ENC_KEY` | Clave maestra de cifrado de API keys de IA | cambiar-en-produccion-clave-maestra-ia |
 | `GEMINI_API_KEY` | Clave para el chatbot (legacy) | — |
-| `GOOGLE_CLIENT_ID` | Client ID de OAuth de Google (importar hojas/documentos/agenda al chatbot) | — |
+| `GOOGLE_CLIENT_ID` | Client ID de OAuth de Google (conectar la cuenta de Google de cada instancia para leer hojas/documentos/agenda en vivo) | — |
 | `GOOGLE_CLIENT_SECRET` | Client Secret de OAuth de Google | — |
 | `GOOGLE_REDIRECT_URI` | URL de retorno del OAuth (opcional; por defecto `{APP_URL}/api/chatbot/google/callback`) | — |
 | `PORT` | Puerto del backend | 3000 |
@@ -175,7 +198,7 @@ El esquema se crea automáticamente al iniciar el backend (`server.js`). Tablas:
 | Tabla | Descripción |
 |-------|-------------|
 | `users` | Usuarios del sistema (rol, organización, `onboarding_completed` y permisos por módulo) |
-| `instances` | Instancias de WhatsApp (URL de Evolution, API Key, estado, teléfono, rol de verificación) |
+| `instances` | Instancias de WhatsApp (URL de Evolution, API Key, estado, teléfono, rol de verificación, tipo de integración `integration`: Cloud API vs Baileys) |
 | `groups_` | Grupos sincronizados por instancia |
 | `templates` | Plantillas de mensajes (contenido, variables) |
 | `campaigns` | Campañas de envío (programación, recurrencia, métricas) |
@@ -184,9 +207,11 @@ El esquema se crea automáticamente al iniciar el backend (`server.js`). Tablas:
 | `auto_replies` | Reglas de respuesta automática |
 | `chatbot_configs` | Configuración del chatbot por instancia (prompt, activo, conocimiento: empresa, precios, calendario) |
 | `chatbot_paused` | Conversaciones pausadas del chatbot |
+| `conversations` | Conversaciones entrantes por instancia (último mensaje, no leídos, archivado) |
 | `bot_documents` | Documentos del bot (RAG): texto que alimenta al chatbot por instancia; `source` indica su origen (`manual`/`sheet`/`docs`/`calendar`) |
 | `bot_document_chunks` | Fragmentos de cada documento con sus embeddings (búsqueda semántica) |
-| `google_connections` | Conexión OAuth de la cuenta de Google por usuario (tokens cifrados) |
+| `google_connections` | Conexión OAuth de la cuenta de Google **por instancia** (tokens cifrados) |
+| `instance_google_sources` | Fuentes de Google de cada instancia que alimentan al bot en vivo: hoja de cálculo (`sheet_id`, `sheet_name`, `sheet_range`), documentos (`doc_ids`) y calendario (`calendar_id`, `calendar_days`) |
 | `ai_configs` | Configuración de IA por usuario (modo SaaS/BYOK, proveedor, modelo) |
 | `ai_saas_keys` | Claves de sistema (modo SaaS) administradas por el admin |
 | `ai_usage_logs` | Registro de consumo de IA (tokens, costo, estado) |
@@ -215,7 +240,7 @@ Campos principales: `phone` (sin `+`), `code`, `purpose`, `token` (solo login/re
 ### Relaciones principales
 
 - Un **usuario** tiene muchas **instancias**.
-- Una **instancia** tiene muchos **grupos**, **campañas**, **mensajes**, **auto-respuestas** y una **configuración de chatbot**.
+- Una **instancia** tiene muchos **grupos**, **campañas**, **mensajes**, **auto-respuestas**, una **configuración de chatbot**, una **conexión de Google** (`google_connections`) y sus **fuentes de Google** (`instance_google_sources`).
 - Una **plantilla** se utiliza en muchas **campañas**.
 - Una **campaña** pertenece a una **instancia** y puede usar una **plantilla**.
 - Los **logs de envío** y los **mensajes** pertenecen a una campaña o instancia.
@@ -246,9 +271,16 @@ erDiagram
     instances ||--o{ auto_replies : "instance_id"
     instances ||--o| chatbot_configs : "instance_id (1:1)"
     instances ||--o{ chatbot_paused : "instance_id"
+    instances ||--o{ conversations : "instance_id"
+    instances ||--o{ bot_documents : "instance_id"
+    instances ||--o| google_connections : "instance_id (1:1)"
+    instances ||--o| instance_google_sources : "instance_id (1:1)"
+    users ||--o{ google_connections : "user_id"
     templates ||--o{ campaigns : "template_id"
     campaigns ||--o{ send_logs : "campaign_id"
     campaigns ||--o{ message_logs : "campaign_id"
+    bot_documents ||--o{ bot_document_chunks : "document_id"
+    auto_replies ||--o| bot_documents : "document_id (opcional)"
 
     users {
         text id PK
@@ -313,8 +345,10 @@ erDiagram
         text phone
         text status
         text user_id FK
+        text evolution_instance_id
         text verification_role
         boolean security_sender
+        text integration
     }
     groups_ {
         text id PK
@@ -329,17 +363,27 @@ erDiagram
         text name
         text user_id FK
         text category
+        jsonb content
+        text[] variables
+        text preview
     }
     campaigns {
         text id PK
         text name
         text status
+        boolean active
         text template_id FK
         text instance_id FK
         datetime scheduled_at
         text recurrence
         time start_time
         time end_time
+        int interval_value
+        text interval_unit
+        int concurrence
+        text[] group_ids
+        text[] tags
+        text[] exclude_tags
         int total_sent
         int total_failed
     }
@@ -353,9 +397,13 @@ erDiagram
         text id PK
         text instance_id FK
         text campaign_id FK
+        text group_jid
+        text group_name
         text sender_jid
         text content
+        text message_type
         text status
+        text direction
     }
     auto_replies {
         text id PK
@@ -364,12 +412,20 @@ erDiagram
         text trigger
         text response
         boolean is_active
+        boolean use_ai
+        text ai_instructions
+        text document_id FK
     }
     chatbot_configs {
         text id PK
         text instance_id FK
         boolean is_active
         text system_prompt
+        int max_tokens
+        numeric temperature
+        text company_info
+        jsonb price_list
+        text calendar
     }
     chatbot_paused {
         text id PK
@@ -446,9 +502,68 @@ erDiagram
         text action
         text detail
     }
+    conversations {
+        text id PK
+        text instance_id FK
+        text jid
+        text name
+        text last_message
+        datetime last_message_at
+        int unread
+        boolean archived
+    }
+    bot_documents {
+        text id PK
+        text instance_id FK
+        text title
+        text content
+        text status
+        text error
+        text source
+        text source_ref
+        text source_url
+    }
+    bot_document_chunks {
+        text id PK
+        text document_id FK
+        text instance_id FK
+        int chunk_index
+        text content
+        jsonb embedding
+    }
+    google_connections {
+        text id PK
+        text user_id FK
+        text instance_id FK UK
+        text google_email
+        text access_token_enc
+        text refresh_token_enc
+        text scopes
+        datetime expires_at
+    }
+    instance_google_sources {
+        text id PK
+        text instance_id FK UK
+        text sheet_id
+        text sheet_name
+        text sheet_range
+        text[] doc_ids
+        text calendar_id
+        int calendar_days
+    }
+    user_block_audit {
+        bigint id PK
+        text actor_id
+        text actor_name
+        text target_id
+        text target_name
+        text action
+        text reason
+        datetime created_at
+    }
 ```
 
-> Las tablas `otp_codes`, `payment_destinations`, `plans`, `plan_addons`, `testimonials` y `ai_saas_keys` no tienen claves foráneas; se relacionan lógicamente por columnas (p. ej. `reported_payments.destination_id` → `payment_destinations.id`).
+> Las tablas `otp_codes`, `payment_destinations`, `plans`, `plan_addons`, `testimonials`, `ai_saas_keys` y `user_block_audit` no tienen claves foráneas; se relacionan lógicamente por columnas (p. ej. `reported_payments.destination_id` → `payment_destinations.id`, o `user_block_audit.actor_id`/`target_id` → `users.id`). Las tablas `products`, `documents` y `appointments` del antiguo módulo Negocio fueron eliminadas: esa información ahora se lee en vivo desde la cuenta de Google de cada instancia (`google_connections` + `instance_google_sources`).
 
 ### Permisos por módulo (`users.permissions`)
 
@@ -565,6 +680,10 @@ Tras registrarse, el usuario **no puede usar el panel** hasta completar el onboa
 
 > **Envío automático**: al crear/editar una campaña con fecha programada el backend la marca como `scheduled`; un **cron interno del contenedor** (`node-cron`, expresión `CAMPAIGN_CRON`, cada minuto por defecto) revisa las campañas vencidas (`scheduled_at <= NOW()`, activas, sin enviar, instancia conectada) y ejecuta el envío **sin depender de n8n ni de conexiones externas**. Las campañas recurrentes se reprograman automáticamente (`computeNextScheduled`) según `recurrence`/`interval_value`/`interval_unit`, respetando la ventana diaria `start_time`/`end_time` (`campaignInWindow`). El endpoint manual `POST /api/campaigns/:id/send` comparte la misma lógica (`executeCampaign`), que usa un `UPDATE` condicional para evitar envíos duplicados entre el cron y el envío manual.
 
+> **Botones interactivos y tipo de integración** (`instances.integration`): las plantillas pueden incluir hasta **3 botones** (respuesta o URL). Con la **Cloud API oficial de Meta** (integración `*CLOUD*`/`*OFFICIAL*`/`*BUSINESS*`) se envían como mensaje interactivo real (`/message/sendButtons`); en cuentas **QR (Baileys)** Meta los bloquea, así que se degradan a una **caja de texto con formato código** que semeja un botón (con el enlace debajo, tappable). El tipo de integración se detecta automáticamente al sincronizar la instancia (`syncInstancePhone`) y se puede ver en la columna Seguridad/estado de la lista de instancias.
+
+> **Registro por grupo**: cada envío individual (programado o inmediato) se registra en `message_logs` (dirección `outgoing`, estado `sent`/`failed`) para que las métricas del dashboard, reportes y la analítica de campaña lo contabilicen por grupo.
+
 ### Plantillas
 
 | Método | Ruta | Descripción |
@@ -599,13 +718,14 @@ Tras registrarse, el usuario **no puede usar el panel** hasta completar el onboa
 | POST | `/api/chatbot/documents` | Crea un documento (lo divide en fragmentos y calcula embeddings con el proveedor de IA) |
 | POST | `/api/chatbot/documents/query` | Prueba la recuperación: devuelve los fragmentos relevantes a una consulta |
 | DELETE | `/api/chatbot/documents/:id` | Elimina un documento (y sus fragmentos) |
-| GET | `/api/chatbot/google/auth-url` | URL de autorización de Google (inicia el OAuth) |
-| GET | `/api/chatbot/google/callback?code=&state=` | Callback de OAuth (redirect de Google; asocia la cuenta al usuario vía `state`) |
-| GET | `/api/chatbot/google/status` | Estado de la conexión de Google del usuario (`{ connected, email }`) |
-| DELETE | `/api/chatbot/google` | Desconecta la cuenta de Google del usuario |
-| GET | `/api/chatbot/google/files?kind=sheets\|docs` | Lista las hojas de cálculo / documentos del Drive del usuario |
-| GET | `/api/chatbot/google/calendars` | Lista los calendarios del usuario |
-| POST | `/api/chatbot/google/import` | Importa una fuente (`type: sheet\|docs\|calendar`) y la convierte en documento del bot |
+| GET | `/api/chatbot/google/auth-url?instanceId=` | URL de autorización de Google de la instancia (inicia el OAuth) |
+| GET | `/api/chatbot/google/callback?code=&state=` | Callback de OAuth (redirect de Google; asocia la cuenta a la instancia vía `state`) |
+| GET | `/api/chatbot/google/status?instanceId=` | Estado de la conexión de Google de la instancia (`{ connected, email }`) |
+| DELETE | `/api/chatbot/google?instanceId=` | Desconecta la cuenta de Google de la instancia |
+| GET | `/api/chatbot/google/files?instanceId=&kind=sheets\|docs` | Lista las hojas de cálculo / documentos del Drive de la instancia |
+| GET | `/api/chatbot/google/calendars?instanceId=` | Lista los calendarios de la instancia |
+| GET | `/api/chatbot/google/sources?instanceId=` | Lee las fuentes configuradas de la instancia (`{ sheetId, sheetName, sheetRange, docIds, calendarId, calendarDays }`) |
+| POST | `/api/chatbot/google/sources` | Guarda las fuentes de la instancia (body: `instanceId`, `sheetId`, `sheetName`, `sheetRange`, `docIds[]`, `calendarId`, `calendarDays`) |
 
 ### Respuestas automáticas
 
@@ -791,24 +911,24 @@ Las sesiones se almacenan en memoria (objeto `sessions` en `server.js`). En un d
 - **Auto-respuestas con documento**: una regla de auto-respuesta en modo IA puede vincular un documento de su instancia (`auto_replies.document_id`); al dispararse recupera solo los fragmentos de ese documento y los usa como referencia, permitiendo alimentar una parte específica del conocimiento.
 - El bot funciona **sin auto-respuestas configuradas**: el chatbot IA (con o sin n8n) usa directamente el conocimiento de la instancia.
 
-### Importar desde Google (hojas de cálculo, documentos y agenda)
+### Datos del negocio desde Google (hojas de cálculo, documentos y agenda)
 
-El bot se alimenta no solo con texto pegado a mano (`source = manual`) sino también desde la **cuenta de Google** del usuario: hojas de cálculo (`sheet`), documentos de Google (`docs`) y agenda (`calendar`). La importación es una **instantánea**: se copia el contenido, se divide en fragmentos con embeddings y se guarda en `bot_documents` (igual que un documento manual). Si el archivo cambia, se vuelve a importar y se elimina la versión anterior.
+El bot se alimenta no solo con texto pegado a mano (`source = manual`) sino también desde la **cuenta de Google de cada instancia**: hojas de cálculo (`sheet`), documentos de Google (`docs`) y agenda (`calendar`). A diferencia del modelo anterior (que copiaba el contenido a `bot_documents` como "instantánea"), ahora las fuentes se **leen en vivo** en cada respuesta (`buildGoogleBusinessContext`): el bot consulta los datos actuales de la hoja, los documentos y el calendario seleccionados y los inyecta como "DATOS ACTUALES DE LA CUENTA DE GOOGLE DE LA INSTANCIA". Si un archivo cambia, el bot responde con lo nuevo automáticamente, sin reimportar nada.
 
-- **Tabla nueva** `google_connections`: una fila por usuario con los tokens de OAuth **cifrados** (`access_token_enc`, `refresh_token_enc`, `scopes`, `expires_at`). El access token se renueva automáticamente con el refresh token antes de cada llamada.
-- **Columnas nuevas** en `bot_documents`: `source` (`manual`/`sheet`/`docs`/`calendar`), `source_ref` (id del archivo o calendario) y `source_url` (enlace a la fuente original).
-- **Endpoints**: ver la tabla de la API en la sección 9. El flujo de conexión: `GET /api/chatbot/google/auth-url` devuelve la URL de autorización, el navegador pasa por Google, y `GET /api/chatbot/google/callback` intercambia el código, asocia la cuenta al usuario mediante el parámetro `state` y redirige de vuelta a la SPA (`/app/chatbot`). El estado de la conexión se consulta con `GET /api/chatbot/google/status` y se desconecta con `DELETE /api/chatbot/google`.
-- **Listados**: `GET /api/chatbot/google/files?kind=sheets|docs` lista el Drive del usuario (Drive API) y `GET /api/chatbot/google/calendars` sus calendarios.
-- **Importación**: `POST /api/chatbot/google/import` con `{ instanceId, type, fileId?, calendarId?, days? }`. La conversión a texto:
-  - **Hoja de cálculo** (`Sheets API`): lee las pestañas (máx. 20, 5000 filas/pestaña), usa la primera fila como nombres de columna y genera `Columna: valor | ...` por fila.
-  - **Documento** (`Docs API`): extrae párrafos y tablas del JSON estructural (`body.content`) a texto plano.
-  - **Agenda** (`Calendar API`): eventos de los próximos N días (por defecto 30, máx. 365) formateados como `Evento | Fecha | Lugar | Descripción`, incluyendo el nombre del calendario y el período.
-- **Límites**: los embeddings se calculan en **lotes de 24 fragmentos** (`embedBotTexts`) para no saturar la API del proveedor con importaciones grandes.
+- **`google_connections` por instancia**: una fila por instancia con los tokens de OAuth **cifrados** (`access_token_enc`, `refresh_token_enc`, `scopes`, `expires_at`); `instance_id` es único. El access token se renueva automáticamente con el refresh token antes de cada llamada.
+- **`instance_google_sources`**: qué fuentes alimentan a cada instancia — `sheet_id` + `sheet_name` + `sheet_range` (catálogo/precios), `doc_ids[]` (documentos) y `calendar_id` + `calendar_days` (agenda). Se guardan con `POST /api/chatbot/google/sources` y se leen con `GET /api/chatbot/google/sources?instanceId=`.
+- **Conexión**: `GET /api/chatbot/google/auth-url?instanceId=` devuelve la URL de autorización; el navegador pasa por Google y `GET /api/chatbot/google/callback` intercambia el código, asocia la cuenta a la instancia mediante el parámetro `state` y redirige de vuelta a la SPA (`/app/chatbot`). El estado se consulta con `GET /api/chatbot/google/status?instanceId=` y se desconecta con `DELETE /api/chatbot/google?instanceId=`.
+- **Listados**: `GET /api/chatbot/google/files?instanceId=&kind=sheets|docs` lista el Drive de la cuenta conectada (Drive API) y `GET /api/chatbot/google/calendars?instanceId=` sus calendarios.
+- **Lectura en vivo** (`buildGoogleBusinessContext`): solo lee las fuentes configuradas de la instancia:
+  - **Hoja de cálculo** (`Sheets API`): lee las pestañas (máx. 20, 5000 filas/pestaña), usa la primera fila como nombres de columna y genera `Columna: valor | ...` por fila; respeta `sheet_name` y `sheet_range` si se configuran.
+  - **Documentos** (`Docs API`): extrae párrafos y tablas del JSON estructural (`body.content`) a texto plano (máx. 2000 caracteres cada uno).
+  - **Agenda** (`Calendar API`): eventos de los próximos N días (`calendar_days`, por defecto 30, máx. 365) formateados como `Evento | Fecha | Lugar | Descripción`.
+- **Contexto en vivo**: se combina con el prompt del chatbot (el de la instancia) y también con las **auto-respuestas en modo IA** (`processAutoReply` usa `buildChatbotSystemPrompt` de su instancia + las reglas de la respuesta + los datos en vivo de Google como fuente de verdad).
 - **Scopes solicitados** (solo lectura): `userinfo.email`, `drive.readonly`, `spreadsheets.readonly`, `documents.readonly`, `calendar.readonly`.
 
 #### Guía: crear las credenciales de Google OAuth
 
-Para activar la importación desde Google necesitas un proyecto en **Google Cloud Console** con credenciales OAuth. Los pasos (unos 10-15 minutos):
+Para activar la conexión con Google necesitas un proyecto en **Google Cloud Console** con credenciales OAuth. Los pasos (unos 10-15 minutos):
 
 1. **Crear el proyecto**: entra en https://console.cloud.google.com/ → crea un proyecto (p. ej. "WhatsApp Ads").
 2. **Habilitar las APIs** (APIs y servicios → Biblioteca): `Google Drive API`, `Google Sheets API`, `Google Docs API` y `Google Calendar API`.
@@ -828,7 +948,7 @@ Para activar la importación desde Google necesitas un proyecto en **Google Clou
    # GOOGLE_REDIRECT_URI=http://localhost:3000/api/chatbot/google/callback  (opcional)
    ```
    En Docker, agrégalas al `.env` del proyecto (el compose las inyecta) y reinicia el contenedor: `docker compose up -d app`.
-6. **Usar la app**: en el módulo **Chatbot** aparece la tarjeta "Importar desde Google". Conecta tu cuenta, elige el tipo de fuente (hoja de cálculo, documento o agenda), selecciona el archivo/calendario y pulsa "Importar al conocimiento del bot". El documento aparece en la lista con su origen y un enlace a la fuente.
+6. **Usar la app**: en el módulo **Chatbot** aparece la tarjeta *"Datos del negocio desde Google"*. Conecta la cuenta de Google de la instancia y elige qué hoja de cálculo, documentos y calendario alimentan al bot (todo opcional); pulsa *"Guardar fuentes del bot"*. Desde ese momento el bot lee esos datos **en vivo** en cada respuesta.
 
 ### Pausa por conversación
 

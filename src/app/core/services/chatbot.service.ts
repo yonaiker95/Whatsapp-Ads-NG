@@ -3,7 +3,7 @@ import { ApiService } from './api.service';
 import {
   ChatbotConfig, ChatbotConfigFormData, ChatbotPaused, ConversationSummary, ConversationMessage,
   BotDocument, BotDocumentQueryResult, GoogleConnectionStatus, GoogleAuthUrl, GoogleFileItem,
-  GoogleCalendarItem, GoogleSourceType,
+  GoogleCalendarItem, GoogleSourceType, GoogleSources,
 } from '../models/chatbot.model';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -48,24 +48,32 @@ export class ChatbotService {
     return this.api.post<BotDocumentQueryResult[]>('/chatbot/documents/query', { instanceId, query }).pipe(map((res) => res.data));
   }
 
-  getGoogleAuthUrl(): Observable<GoogleAuthUrl> {
-    return this.api.get<GoogleAuthUrl>('/chatbot/google/auth-url').pipe(map((res) => res.data));
+  getGoogleAuthUrl(instanceId: string): Observable<GoogleAuthUrl> {
+    return this.api.get<GoogleAuthUrl>(`/chatbot/google/auth-url?instanceId=${instanceId}`).pipe(map((res) => res.data));
   }
 
-  getGoogleStatus(): Observable<GoogleConnectionStatus> {
-    return this.api.get<GoogleConnectionStatus>('/chatbot/google/status').pipe(map((res) => res.data));
+  getGoogleStatus(instanceId: string): Observable<GoogleConnectionStatus> {
+    return this.api.get<GoogleConnectionStatus>(`/chatbot/google/status?instanceId=${instanceId}`).pipe(map((res) => res.data));
   }
 
-  disconnectGoogle(): Observable<void> {
-    return this.api.delete<void>('/chatbot/google').pipe(map((res) => res.data));
+  disconnectGoogle(instanceId: string): Observable<void> {
+    return this.api.delete<void>(`/chatbot/google?instanceId=${instanceId}`).pipe(map((res) => res.data));
   }
 
-  listGoogleFiles(kind: 'sheets' | 'docs'): Observable<GoogleFileItem[]> {
-    return this.api.get<GoogleFileItem[]>(`/chatbot/google/files?kind=${kind}`).pipe(map((res) => res.data));
+  listGoogleFiles(instanceId: string, kind: 'sheets' | 'docs'): Observable<GoogleFileItem[]> {
+    return this.api.get<GoogleFileItem[]>(`/chatbot/google/files?instanceId=${instanceId}&kind=${kind}`).pipe(map((res) => res.data));
   }
 
-  listGoogleCalendars(): Observable<GoogleCalendarItem[]> {
-    return this.api.get<GoogleCalendarItem[]>('/chatbot/google/calendars').pipe(map((res) => res.data));
+  listGoogleCalendars(instanceId: string): Observable<GoogleCalendarItem[]> {
+    return this.api.get<GoogleCalendarItem[]>(`/chatbot/google/calendars?instanceId=${instanceId}`).pipe(map((res) => res.data));
+  }
+
+  getGoogleSources(instanceId: string): Observable<GoogleSources | null> {
+    return this.api.get<GoogleSources | null>(`/chatbot/google/sources?instanceId=${instanceId}`).pipe(map((res) => res.data));
+  }
+
+  saveGoogleSources(data: { instanceId: string } & GoogleSources): Observable<void> {
+    return this.api.post<void>('/chatbot/google/sources', data).pipe(map((res) => res.data));
   }
 
   importGoogleSource(

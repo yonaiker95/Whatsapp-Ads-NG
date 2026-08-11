@@ -104,6 +104,7 @@ export class TemplateListComponent implements OnInit, OnDestroy {
       categories: this.categories.length,
       withVariables: this.templates.filter((t) => t.variables.length > 0).length,
       withMedia: this.templates.filter((t) => !!t.content.mediaType || !!t.content.mediaUrl).length,
+      withButtons: this.templates.filter((t) => this.hasButtons(t)).length,
     };
   }
 
@@ -119,7 +120,7 @@ export class TemplateListComponent implements OnInit, OnDestroy {
     const defaultData: TemplateFormData = {
       name: '',
       category: '',
-      content: { text: '', mediaUrl: '', mediaType: undefined },
+      content: { text: '', mediaUrl: '', mediaType: undefined, buttons: [] },
       variables: [],
     };
     this.openFormDialog(defaultData);
@@ -133,6 +134,7 @@ export class TemplateListComponent implements OnInit, OnDestroy {
         text: template.content.text,
         mediaUrl: template.content.mediaUrl || '',
         mediaType: template.content.mediaType,
+        buttons: template.content.buttons || [],
       },
       variables: template.variables,
     }, template.id);
@@ -201,6 +203,10 @@ export class TemplateListComponent implements OnInit, OnDestroy {
 
   hasMedia(template: Template): boolean {
     return !!template.content.mediaType || !!template.content.mediaUrl;
+  }
+
+  hasButtons(template: Template): boolean {
+    return (template.content.buttons || []).some((b) => !!b && !!b.text);
   }
 
   mediaIcon(template: Template): string {

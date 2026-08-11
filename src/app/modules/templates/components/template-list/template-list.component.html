@@ -41,6 +41,13 @@
         <span class="stat-label">Con medios</span>
       </div>
     </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-buttons"><mat-icon>smart_button</mat-icon></div>
+      <div class="stat-text">
+        <span class="stat-value">{{ stats.withButtons }}</span>
+        <span class="stat-label">Con botones</span>
+      </div>
+    </div>
   </div>
 
   <div class="section-card">
@@ -134,9 +141,11 @@
         <ng-container matColumnDef="preview">
           <th mat-header-cell *matHeaderCellDef> Vista previa </th>
           <td mat-cell *matCellDef="let template">
-            <div class="preview-bubble" [class.has-media]="hasMedia(template)">
+            <div class="preview-bubble" [class.has-media]="hasMedia(template)" [class.has-buttons]="hasButtons(template)">
               <mat-icon class="preview-media-icon" *ngIf="hasMedia(template)">{{ mediaIcon(template) }}</mat-icon>
               <span class="preview-text">{{ previewText(template) || 'Sin texto' }}</span>
+              <mat-icon class="preview-buttons-icon" *ngIf="hasButtons(template)">smart_button</mat-icon>
+              <span class="preview-buttons-count" *ngIf="hasButtons(template)">{{ template.content.buttons?.length }}</span>
             </div>
           </td>
         </ng-container>

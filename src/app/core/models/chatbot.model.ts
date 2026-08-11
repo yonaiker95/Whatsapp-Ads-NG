@@ -76,6 +76,15 @@ export interface GoogleCalendarItem {
   primary?: boolean;
 }
 
+export interface GoogleSources {
+  sheetId: string;
+  sheetName: string;
+  sheetRange: string;
+  docIds: string[];
+  calendarId: string;
+  calendarDays: number;
+}
+
 export interface BotDocumentQueryResult {
   title?: string | null;
   content: string;

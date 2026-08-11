@@ -1,7 +1,7 @@
-﻿// Integración con la cuenta de Google del usuario (OAuth 2.0) para alimentar el
-// conocimiento del chatbot: hojas de cálculo (Sheets), documentos (Docs) y
-// agenda (Calendar). El contenido se importa como "instantánea": se copia el
-// texto, se divide en fragmentos y se guarda en bot_documents con embeddings.
+﻿// Integración con la cuenta de Google de CADA instancia (OAuth 2.0) para
+// alimentar el conocimiento del chatbot: hojas de cálculo (Sheets), documentos
+// (Docs) y agenda (Calendar). Las fuentes configuradas en instance_google_sources
+// se leen EN VIVO al responder (buildGoogleBusinessContext), nunca se copian.
 //
 // Configuración (variables de entorno):
 //   GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET  -> credenciales OAuth (Web client)
@@ -10,8 +10,9 @@
 //                                                {APP_URL}/api/chatbot/google/callback)
 //
 // Los tokens se guardan cifrados en la tabla google_connections (una por
-// usuario) con encryptSecret/decryptSecret (AES-256-GCM). Los access tokens se
-// renuevan automáticamente con el refresh token antes de cada llamada.
+// instancia, instance_id único) con encryptSecret/decryptSecret (AES-256-GCM).
+// Los access tokens se renuevan automáticamente con el refresh token antes de
+// cada llamada.
 const crypto = require('crypto');
 
 const GOOGLE_SCOPES = [
@@ -109,11 +110,13 @@ function createGoogleClient(deps) {
   }
 
   // -------------------------------------------------------------------------
-  // Conexión del usuario (tabla google_connections)
+  // Conexión de la cuenta de Google asociada a UNA INSTANCIA. La tabla
+  // google_connections ahora se indexa por instance_id: cada WhatsApp puede
+  // conectar su propia cuenta de Google y el bot lee de ahí en tiempo real.
   // -------------------------------------------------------------------------
-  async function getConnection(userId) {
+  async function getConnection(instanceId) {
     const pool = getPool();
-    const row = (await pool.query('SELECT * FROM google_connections WHERE user_id = $1', [userId])).rows[0];
+    const row = (await pool.query('SELECT * FROM google_connections WHERE instance_id = $1', [instanceId])).rows[0];
     if (!row) return null;
     const refreshToken = decryptSecret(row.refresh_token_enc);
     let accessToken = decryptSecret(row.access_token_enc);
@@ -132,16 +135,16 @@ function createGoogleClient(deps) {
       await pool.query(
         `UPDATE google_connections
          SET access_token_enc = $1, expires_at = $2, updated_at = NOW()
-         WHERE user_id = $3`,
+         WHERE instance_id = $3`,
         [
           encryptSecret(accessToken),
           new Date(Date.now() + parseInt(fresh.expires_in || '3600', 10) * 1000),
-          userId,
+          instanceId,
         ]
       ).catch(() => {});
     }
     return {
-      userId,
+      instanceId,
       email: row.google_email,
       accessToken,
       refreshToken,
@@ -151,10 +154,10 @@ function createGoogleClient(deps) {
 
   // Exige una conexión activa: si no hay tokens, lanza un error con status 401
   // para que los endpoints devuelvan un mensaje claro ("conecta tu cuenta").
-  async function requireConnection(userId) {
-    const conn = await getConnection(userId);
+  async function requireConnection(instanceId) {
+    const conn = await getConnection(instanceId);
     if (!conn || !conn.accessToken) {
-      const err = new Error('Conecta tu cuenta de Google antes de importar contenido');
+      const err = new Error('Conecta la cuenta de Google de esta instancia');
       err.status = 401;
       err.code = 'NO_CONNECTION';
       throw err;
@@ -163,14 +166,14 @@ function createGoogleClient(deps) {
   }
 
   // -------------------------------------------------------------------------
-  // OAuth 2.0 (flow authorization code con state para asociar al usuario)
+  // OAuth 2.0 (flow authorization code con state para asociar instancia)
   // -------------------------------------------------------------------------
-  const oauthStates = new Map(); // state -> { userId, expiresAt }
+  const oauthStates = new Map(); // state -> { userId, instanceId, expiresAt }
 
-  function buildAuthUrl(userId) {
+  function buildAuthUrl(userId, instanceId) {
     const { clientId, redirectUri } = clientConfig();
     const state = crypto.randomBytes(16).toString('hex');
-    oauthStates.set(state, { userId, expiresAt: Date.now() + 10 * 60 * 1000 });
+    oauthStates.set(state, { userId, instanceId, expiresAt: Date.now() + 10 * 60 * 1000 });
     const params = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
@@ -205,11 +208,16 @@ function createGoogleClient(deps) {
     }
     const info = await googleFetch(data.access_token, 'https://www.googleapis.com/oauth2/v2/userinfo');
     const pool = getPool();
+    // Elimina las conexiones legacy a nivel de usuario (la misma cuenta solía
+    // ser compartida entre todas las instancias) y luego inserta/actualiza la
+    // conexión de esta instancia.
+    await pool.query('DELETE FROM google_connections WHERE user_id = $1 AND instance_id IS NULL', [entry.userId]).catch(() => {});
     await pool.query(
       `INSERT INTO google_connections
-         (user_id, google_email, access_token_enc, refresh_token_enc, scopes, expires_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-       ON CONFLICT (user_id) DO UPDATE SET
+         (user_id, instance_id, google_email, access_token_enc, refresh_token_enc, scopes, expires_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+       ON CONFLICT (instance_id) WHERE instance_id IS NOT NULL DO UPDATE SET
+         user_id = EXCLUDED.user_id,
          google_email = EXCLUDED.google_email,
          access_token_enc = EXCLUDED.access_token_enc,
          refresh_token_enc = EXCLUDED.refresh_token_enc,
@@ -218,6 +226,7 @@ function createGoogleClient(deps) {
          updated_at = NOW()`,
       [
         entry.userId,
+        entry.instanceId,
         info.email || 'cuenta de Google',
         encryptSecret(data.access_token),
         encryptSecret(data.refresh_token),
@@ -228,8 +237,8 @@ function createGoogleClient(deps) {
     return { email: info.email };
   }
 
-  async function disconnect(userId) {
-    const conn = await getConnection(userId).catch(() => null);
+  async function disconnect(instanceId) {
+    const conn = await getConnection(instanceId).catch(() => null);
     if (conn && conn.accessToken) {
       try {
         await fetch(`${REVOKE_URL}?token=${encodeURIComponent(conn.accessToken)}`, { method: 'POST' }).catch(() => {});
@@ -238,14 +247,14 @@ function createGoogleClient(deps) {
       }
     }
     const pool = getPool();
-    await pool.query('DELETE FROM google_connections WHERE user_id = $1', [userId]);
+    await pool.query('DELETE FROM google_connections WHERE instance_id = $1', [instanceId]);
   }
 
   // -------------------------------------------------------------------------
   // Listados (Drive para hojas/documentos, Calendar para la agenda)
   // -------------------------------------------------------------------------
-  async function listFiles(userId, kind) {
-    const conn = await requireConnection(userId);
+  async function listFiles(instanceId, kind) {
+    const conn = await requireConnection(instanceId);
     const mime = kind === 'docs'
       ? 'application/vnd.google-apps.document'
       : 'application/vnd.google-apps.spreadsheet';
@@ -257,8 +266,8 @@ function createGoogleClient(deps) {
       .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   }
 
-  async function listCalendars(userId) {
-    const conn = await requireConnection(userId);
+  async function listCalendars(instanceId) {
+    const conn = await requireConnection(instanceId);
     const data = await googleFetch(conn.accessToken, 'https://www.googleapis.com/calendar/v3/users/me/calendarList');
     return (data.items || [])
       .map((c) => ({ id: c.id, summary: c.summary, primary: Boolean(c.primary) }))
@@ -362,22 +371,28 @@ function createGoogleClient(deps) {
   }
 
   // -------------------------------------------------------------------------
-  // Importaciones: convierten cada fuente a { title, content, url }
+  // Lectura de fuentes a texto { title, content, url }: usadas para construir
+  // el contexto en vivo de cada mensaje (buildGoogleBusinessContext).
   // -------------------------------------------------------------------------
-  async function importSheet(userId, fileId) {
-    const conn = await requireConnection(userId);
+  async function importSheet(instanceId, fileId, opts = {}) {
+    const conn = await requireConnection(instanceId);
     const meta = await googleFetch(
       conn.accessToken,
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(fileId)}?fields=properties(title),sheets.properties(title,gridProperties)`
     );
-    const sheets = (meta.sheets || []).slice(0, MAX_SHEETS_PER_SPREADSHEET);
+    const sheetName = opts.sheetName || '';
+    const range = opts.range || 'A1:Z200';
+    const sheets = (meta.sheets || [])
+      .filter((s) => !sheetName || (s.properties && s.properties.title === sheetName))
+      .slice(0, MAX_SHEETS_PER_SPREADSHEET);
     const blocks = [];
     for (const s of sheets) {
-      const sheetTitle = s.properties && s.properties.title;
-      if (!sheetTitle) continue;
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(fileId)}/values/${encodeURIComponent(sheetTitle)}?majorDimension=ROWS`;
+      const st = s.properties && s.properties.title;
+      if (!st) continue;
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(fileId)}/values/${encodeURIComponent(st)}!${encodeURIComponent(range)}?majorDimension=ROWS`;
       const res = await googleFetch(conn.accessToken, url);
-      blocks.push(sheetToText({ properties: { title: `${(meta.properties && meta.properties.title) || 'Hoja de cálculo'} / ${sheetTitle}` } }, (res.values || []).slice(0, MAX_SHEET_ROWS)));
+      const rows = (res.values || []).slice(0, MAX_SHEET_ROWS);
+      blocks.push(sheetToText({ properties: { title: `${(meta.properties && meta.properties.title) || 'Hoja de cálculo'} / ${st}` } }, rows));
     }
     const content = blocks.filter(Boolean).join('\n\n').trim();
     const title = (meta.properties && meta.properties.title) || 'Hoja de cálculo';
@@ -388,8 +403,8 @@ function createGoogleClient(deps) {
     };
   }
 
-  async function importDocs(userId, fileId) {
-    const conn = await requireConnection(userId);
+  async function importDocs(instanceId, fileId) {
+    const conn = await requireConnection(instanceId);
     const data = await googleFetch(
       conn.accessToken,
       `https://docs.googleapis.com/v1/documents/${encodeURIComponent(fileId)}`
@@ -402,8 +417,8 @@ function createGoogleClient(deps) {
     };
   }
 
-  async function importCalendar(userId, calendarId, days = 30) {
-    const conn = await requireConnection(userId);
+  async function importCalendar(instanceId, calendarId, days = 30) {
+    const conn = await requireConnection(instanceId);
     const safeDays = Math.min(Math.max(parseInt(days, 10) || 30, 1), 365);
     const calList = await googleFetch(conn.accessToken, 'https://www.googleapis.com/calendar/v3/users/me/calendarList');
     const cal = (calList.items || []).find((c) => c.id === calendarId) || { id: calendarId, summary: 'Agenda' };

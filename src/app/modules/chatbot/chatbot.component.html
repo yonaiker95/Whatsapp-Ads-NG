@@ -100,9 +100,9 @@
           <mat-card-header>
             <mat-card-title>
               <mat-icon>cloud</mat-icon>
-              Importar desde Google
+              Datos del negocio desde Google
             </mat-card-title>
-            <mat-card-subtitle>Conecta tu cuenta de Google para alimentar al bot con tus hojas de cálculo, documentos y agenda. El contenido se copia y queda disponible para las consultas de tus clientes</mat-card-subtitle>
+            <mat-card-subtitle>Conecta la cuenta de Google de esta instancia y elige qué hoja de cálculo, documentos y calendario alimentan al bot. El contenido se lee en vivo en cada respuesta, nunca se copia</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content>
             <div class="google-config-error" *ngIf="googleConfigError">
@@ -123,13 +123,13 @@
             </div>
 
             <div class="google-connect-cta" *ngIf="!googleConnected && !googleStatusLoading">
-              <p>El bot puede aprender de tu cuenta de Google:</p>
+              <p>Conecta la cuenta de Google de esta instancia para que el bot responda con tus datos reales:</p>
               <ul>
-                <li><mat-icon>grid_on</mat-icon> Hojas de cálculo (catálogos, precios, inventario, listas)</li>
-                <li><mat-icon>article</mat-icon> Documentos (políticas, menús, FAQ, contratos)</li>
-                <li><mat-icon>event</mat-icon> Agenda (citas, eventos, disponibilidad)</li>
+                <li><mat-icon>grid_on</mat-icon> Hoja de cálculo con catálogo y precios</li>
+                <li><mat-icon>article</mat-icon> Documentos (políticas, menús, FAQ)</li>
+                <li><mat-icon>event</mat-icon> Agenda y disponibilidad</li>
               </ul>
-              <button mat-raised-button color="primary" (click)="connectGoogle()" [disabled]="googleConnecting">
+              <button mat-raised-button color="primary" (click)="connectGoogle()" [disabled]="googleConnecting || !selectedInstanceId">
                 <mat-spinner diameter="18" *ngIf="googleConnecting"></mat-spinner>
                 <mat-icon *ngIf="!googleConnecting">login</mat-icon>
                 {{ googleConnecting ? 'Esperando autorización...' : 'Conectar cuenta de Google' }}
@@ -137,63 +137,81 @@
             </div>
 
             <div class="google-import" *ngIf="googleConnected">
-              <mat-form-field appearance="outline" class="google-type">
-                <mat-label>Tipo de fuente</mat-label>
-                <mat-select [(ngModel)]="googleImportType" (selectionChange)="onGoogleImportTypeChange()">
-                  <mat-option value="sheet">Hoja de cálculo</mat-option>
-                  <mat-option value="docs">Documento de Google</mat-option>
-                  <mat-option value="calendar">Agenda</mat-option>
-                </mat-select>
-              </mat-form-field>
+              <div class="loading-state google-sources-loading" *ngIf="googleSourcesLoading || googleFilesLoading">
+                <mat-spinner diameter="32"></mat-spinner>
+                <p>Cargando fuentes...</p>
+              </div>
 
-              <ng-container *ngIf="googleImportType !== 'calendar'">
-                <div class="google-file-row">
-                  <mat-form-field appearance="outline" class="google-file-select">
-                    <mat-label>{{ googleImportType === 'docs' ? 'Documento' : 'Hoja de cálculo' }}</mat-label>
-                    <mat-select [(ngModel)]="googleSelectedFileId">
+              <ng-container *ngIf="!googleSourcesLoading && !googleFilesLoading">
+                <div class="google-source-block">
+                  <h3><mat-icon>grid_on</mat-icon> Hoja de cálculo (catálogo y precios)</h3>
+                  <p class="google-source-hint">Opcional. El bot leerá la hoja en vivo para responder sobre productos y precios.</p>
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Hoja de cálculo</mat-label>
+                    <mat-select [(ngModel)]="googleSelectedFileId" (selectionChange)="onGoogleSelectedFileChange()">
+                      <mat-option value="">Sin hoja de cálculo</mat-option>
                       <mat-option *ngFor="let f of googleFiles" [value]="f.id">{{ f.name }}</mat-option>
                     </mat-select>
                   </mat-form-field>
-                  <button mat-stroked-button (click)="loadGoogleFiles()" [disabled]="googleFilesLoading" aria-label="Recargar archivos">
-                    <mat-spinner diameter="18" *ngIf="googleFilesLoading"></mat-spinner>
-                    <mat-icon *ngIf="!googleFilesLoading">refresh</mat-icon>
-                  </button>
+                  <div class="google-file-row" *ngIf="googleSelectedFileId">
+                    <mat-form-field appearance="outline" class="google-sheet-name">
+                      <mat-label>Nombre de la hoja (opcional)</mat-label>
+                      <input matInput [(ngModel)]="googleSources.sheetName" placeholder="Ej: Catálogo">
+                    </mat-form-field>
+                    <mat-form-field appearance="outline" class="google-sheet-range">
+                      <mat-label>Rango (opcional)</mat-label>
+                      <input matInput [(ngModel)]="googleSources.sheetRange" placeholder="Ej: A1:Z200">
+                    </mat-form-field>
+                  </div>
+                  <div class="google-empty" *ngIf="googleFiles.length === 0">
+                    No se encontraron hojas de cálculo en tu Drive.
+                  </div>
                 </div>
-                <div class="google-empty" *ngIf="!googleFilesLoading && googleFiles.length === 0">
-                  No se encontraron {{ googleImportType === 'docs' ? 'documentos' : 'hojas de cálculo' }} en tu Drive.
-                </div>
-              </ng-container>
 
-              <ng-container *ngIf="googleImportType === 'calendar'">
-                <div class="google-file-row">
-                  <mat-form-field appearance="outline" class="google-file-select">
-                    <mat-label>Calendario</mat-label>
-                    <mat-select [(ngModel)]="googleSelectedCalendarId">
-                      <mat-option *ngFor="let c of googleCalendars" [value]="c.id">{{ c.summary }}</mat-option>
+                <div class="google-source-block">
+                  <h3><mat-icon>article</mat-icon> Documentos de Google</h3>
+                  <p class="google-source-hint">Opcional. Elige los documentos que el bot debe conocer (políticas, menús, FAQ...).</p>
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Documentos</mat-label>
+                    <mat-select multiple [(ngModel)]="googleSources.docIds">
+                      <mat-option *ngFor="let d of googleDocs" [value]="d.id">{{ d.name }}</mat-option>
                     </mat-select>
                   </mat-form-field>
-                  <mat-form-field appearance="outline" class="google-days">
-                    <mat-label>Días hacia adelante</mat-label>
-                    <input matInput type="number" min="1" max="365" [(ngModel)]="googleCalendarDays">
-                  </mat-form-field>
-                  <button mat-stroked-button (click)="loadGoogleFiles()" [disabled]="googleFilesLoading" aria-label="Recargar calendarios">
-                    <mat-spinner diameter="18" *ngIf="googleFilesLoading"></mat-spinner>
-                    <mat-icon *ngIf="!googleFilesLoading">refresh</mat-icon>
-                  </button>
+                  <div class="google-empty" *ngIf="googleDocs.length === 0">
+                    No se encontraron documentos en tu Drive.
+                  </div>
                 </div>
-                <div class="google-empty" *ngIf="!googleFilesLoading && googleCalendars.length === 0">
-                  No se encontraron calendarios en tu cuenta.
-                </div>
-              </ng-container>
 
-              <button mat-raised-button color="primary" class="google-import-btn"
-                      (click)="importGoogle()"
-                      [disabled]="googleImporting || (googleImportType !== 'calendar' ? !googleSelectedFileId : !googleSelectedCalendarId)">
-                <mat-spinner diameter="18" *ngIf="googleImporting"></mat-spinner>
-                <mat-icon *ngIf="!googleImporting">download</mat-icon>
-                {{ googleImporting ? 'Importando...' : 'Importar al conocimiento del bot' }}
-              </button>
-              <p class="google-hint">Cada importación crea un documento nuevo. Si el archivo cambia, importa de nuevo y elimina la versión anterior.</p>
+                <div class="google-source-block">
+                  <h3><mat-icon>event</mat-icon> Agenda y disponibilidad</h3>
+                  <p class="google-source-hint">Opcional. El bot consultará las próximas citas y eventos del calendario.</p>
+                  <div class="google-file-row">
+                    <mat-form-field appearance="outline" class="google-file-select">
+                      <mat-label>Calendario</mat-label>
+                      <mat-select [(ngModel)]="googleSelectedCalendarId" (selectionChange)="onGoogleSelectedCalendarChange()">
+                        <mat-option value="">Sin calendario</mat-option>
+                        <mat-option *ngFor="let c of googleCalendars" [value]="c.id">{{ c.summary }}</mat-option>
+                      </mat-select>
+                    </mat-form-field>
+                    <mat-form-field appearance="outline" class="google-days">
+                      <mat-label>Días hacia adelante</mat-label>
+                      <input matInput type="number" min="1" max="365" [(ngModel)]="googleCalendarDays">
+                    </mat-form-field>
+                  </div>
+                  <div class="google-empty" *ngIf="googleCalendars.length === 0">
+                    No se encontraron calendarios en tu cuenta.
+                  </div>
+                </div>
+
+                <button mat-raised-button color="primary" class="google-import-btn"
+                        (click)="saveGoogleSources()"
+                        [disabled]="googleSourcesSaving">
+                  <mat-spinner diameter="18" *ngIf="googleSourcesSaving"></mat-spinner>
+                  <mat-icon *ngIf="!googleSourcesSaving">save</mat-icon>
+                  {{ googleSourcesSaving ? 'Guardando...' : 'Guardar fuentes del bot' }}
+                </button>
+                <p class="google-hint">Los cambios se aplican al instante: cada vez que el bot responda, leerá los datos actuales de tu cuenta de Google.</p>
+              </ng-container>
             </div>
           </mat-card-content>
         </mat-card>

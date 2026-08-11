@@ -15,8 +15,10 @@ Sistema de gestión de campañas de marketing para WhatsApp. Permite administrar
 - **Teléfono automático**: el número real de cada instancia se obtiene de Evolution API al conectar la sesión (campo `ownerJid`), sin entrada manual.
 - **Centro de IA**: configuración de proveedores de IA (Gemini, OpenAI, Claude, DeepSeek, Mistral, OpenRouter, Azure) en modo SaaS o BYOK, con validación, cuota mensual, auditoría y log de uso.
 - **Chatbot con IA**: prompt de sistema configurable por instancia, pausa por conversación, y respuestas generadas por el AI Center y entregadas por n8n.
+- **Datos del negocio desde Google**: cada instancia conecta **su propia cuenta de Google** (OAuth) y el bot lee **en vivo** su hoja de cálculo (catálogo y precios), documentos de Google y agenda (Google Calendar) al responder — sin copiar nada.
 - **Orquestación n8n**: cada instancia recibe automáticamente su propio workflow/webhook dinámico (`dm-chatbot-<id>`) sobre un único entorno n8n administrado por el sistema.
 - **Campañas**: creación y edición con programación mediante calendario y reloj (fecha/hora de envío), recurrencia con ventana diaria (hora de inicio/fin con validación), envío masivo a grupos con control de concurrencia y log de resultados. Las campañas programadas se envían automáticamente mediante un **cron interno del contenedor** (`CAMPAIGN_CRON`, cada minuto), sin depender de n8n ni de conexiones externas.
+- **Botones interactivos en campañas**: las plantillas admiten hasta 3 botones (respuesta/URL). Con la **Cloud API oficial de Meta** se envían como mensaje interactivo; en cuentas **QR (Baileys)** se degradan a una caja de texto con formato código (Meta los bloquea por esa vía). Cada envío se registra en `message_logs` para las métricas del panel.
 - **Plantillas de mensajes**: texto, multimedia y variables.
 - **Grupos**: sincronización automática desde las instancias conectadas.
 - **Respuestas automáticas**: reglas de respuesta ante palabras clave.
@@ -55,8 +57,10 @@ npm install
 # 3. Crear el archivo de variables de entorno
 cp .env.example .env
 
-# 4. Levantar la infraestructura (PostgreSQL, Evolution API, Redis, n8n)
-docker compose up -d
+# 4. Levantar la infraestructura (PostgreSQL, Evolution API, Redis y n8n).
+#    NOTA: se levantan solo estos servicios; la app corre en el host (paso 5).
+#    Para ejecutar todo dentro de Docker, ver "Despliegue con Docker".
+docker compose up -d postgres evolution_postgres evolution_redis evolution_api n8n
 
 # 5. Compilar e iniciar el servidor de producción
 npm run build
@@ -78,7 +82,7 @@ Al iniciar el servidor por primera vez (sin marca de instalación en `data/setup
 
 ## Despliegue con Docker
 
-El proyecto incluye un `Dockerfile` (multi-stage: compila Angular y ejecuta el backend) y el servicio `app` en `docker-compose.yml`. Todo el stack (PostgreSQL, Evolution API, Redis, n8n y la app) se levanta con:
+El proyecto incluye un `Dockerfile` **multi-stage** (compila Angular y ejecuta el backend) y el servicio `app` en `docker-compose.yml`. Todo el stack (PostgreSQL, Evolution API, Redis, n8n y la app) se levanta con:
 
 ```bash
 docker compose up -d --build
@@ -86,7 +90,15 @@ docker compose up -d --build
 
 La aplicación queda en `http://localhost:3000`. En el primer arranque sin `data/setup.json` el **instalador** (`/setup`) guía la configuración (la BD ya queda apuntando al contenedor `postgres`, así que basta completar el wizard con el host `postgres`).
 
-Configuración mediante `.env` (misma sintaxis que `.env.example`):
+| Contenedor | Imagen | Puerto | Propósito |
+|------------|--------|--------|-----------|
+| `whatsapp_ads_app` | whatsapp-ads:latest (build `./Dockerfile`) | 3000 | Aplicación completa (frontend compilado + backend Node.js, healthcheck en `/api/setup/status`) |
+| `whatsapp_ads_postgres` | postgres:16 | 5432 | Base de datos de la aplicación |
+| `evolution_api` | evoapicloud/evolution-api | 3100 | API de mensajería WhatsApp |
+| `n8n` | n8nio/n8n | 5678 | Automatización de flujos (entorno único) |
+| `evolution_postgres` / `evolution_redis` | postgres:16 / redis | interno | BD y cache internas de Evolution API |
+
+Configuración mediante `.env` (misma sintaxis que `.env.example`; el compose la inyecta al contenedor `app`):
 
 | Variable | Descripción |
 |----------|-------------|
@@ -95,6 +107,8 @@ Configuración mediante `.env` (misma sintaxis que `.env.example`):
 | `AI_ENC_KEY` | Clave maestra de cifrado de API keys de IA |
 | `EVOLUTION_API_KEY` | API Key de Evolution API |
 | `N8N_API_KEY` | API Key de n8n (X-N8N-API-KEY) para aprovisionar workflows |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciales OAuth de Google (datos del negocio en vivo por instancia) |
+| `CAMPAIGN_CRON` | Expresión cron del envío automático de campañas (por defecto `* * * * *`) |
 | `EVO_WEBHOOK_URL` | URL del webhook de Evolution hacia la app (solo si la app corre en el host) |
 | `N8N_WEBHOOK_URL` | URL pública de n8n (solo si la app corre en el host) |
 
@@ -107,7 +121,7 @@ Configuración mediante `.env` (misma sintaxis que `.env.example`):
   N8N_WEBHOOK_URL=http://host.docker.internal:3000
   ```
 
-**Persistencia**: los datos quedan en volúmenes de Docker (`postgres_data`, `n8n_data`, `app_data` para la marca de instalación `data/setup.json`, etc.). La app usa sesiones en memoria; no la escales a varias réplicas sin un almacén de sesiones compartido.
+**Persistencia**: los datos quedan en volúmenes de Docker (`postgres_data`, `n8n_data`, `evolution_postgres_data`, `evolution_redis_data`, `evolution_api_instances` y `app_data` para la marca de instalación `data/setup.json`). Al eliminar con `docker compose down -v` se pierden los datos. La app usa sesiones en memoria; no la escales a varias réplicas sin un almacén de sesiones compartido.
 
 ## Ejecución en desarrollo
 
@@ -134,6 +148,7 @@ Copia `.env.example` a `.env` y ajusta los valores (o usa el **instalador** de `
 | `N8N_APP_URL` | URL con la que n8n llama a la app (`http://host.docker.internal:3000`) |
 | `N8N_EVOLUTION_URL` | URL de Evolution visible desde el contenedor n8n (`http://evolution_api:8080`) |
 | `AI_ENC_KEY` | Clave maestra de cifrado de API keys de IA |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciales OAuth de Google (datos del negocio en vivo por instancia). Ver `DOCUMENTACION.md` |
 | `PORT` | Puerto del backend (3000) |
 | `CAMPAIGN_CRON` | Expresión cron del envío automático de campañas programadas (por defecto cada minuto, `* * * * *`) |
 
@@ -173,8 +188,10 @@ whatsapp-ads-angular/
 ├── providers/             # Proveedores de IA (interfaz IAProvider)
 ├── security/              # Cifrado de API keys y validación de formatos
 ├── server.js              # Backend Node.js (API + estáticos + webhooks)
+├── google.js              # Integración OAuth con Google (fuentes en vivo por instancia)
 ├── proxy.conf.js          # Proxy de desarrollo
-├── docker-compose.yml     # Infraestructura en Docker
+├── Dockerfile             # Imagen multi-stage (compila Angular + backend Node.js)
+├── docker-compose.yml     # Infraestructura en Docker + servicio app
 ├── n8n-workflows/         # Flujos de n8n exportados (referencia)
 ├── data/                  # Runtime: marca de instalación (data/setup.json)
 └── .env.example           # Variables de entorno de referencia

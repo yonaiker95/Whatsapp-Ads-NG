@@ -1,6 +1,6 @@
 import { Component, Inject, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormArray, FormBuilder, FormGroup, ReactiveFormsModule, Validators, ValidatorFn } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -11,7 +11,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, takeUntil } from 'rxjs';
 import { TemplateService } from '../../../../core/services/template.service';
-import { TemplateFormData } from '../../../../core/models/template.model';
+import { TemplateButton, TemplateFormData } from '../../../../core/models/template.model';
 
 export interface TemplateDialogData {
   formData: TemplateFormData;
@@ -96,6 +96,54 @@ export class TemplateFormDialogComponent implements OnDestroy {
     return [...names];
   }
 
+  get buttons(): FormArray {
+    return this.form.get('content')?.get('buttons') as FormArray;
+  }
+
+  get previewButtons(): { type: string; text: string; value: string }[] {
+    return this.buttons.controls
+      .map((ctrl) => ctrl.value)
+      .filter((b) => b && b.text.trim());
+  }
+
+  get canAddButton(): boolean {
+    return this.buttons.length < 3;
+  }
+
+  addButton(): void {
+    if (!this.canAddButton) return;
+    this.buttons.push(this.fb.group(
+      { type: 'reply', text: '', value: '' },
+      { validators: this.urlButtonValidator() }
+    ));
+  }
+
+  // Los botones de tipo URL exigen un enlace http(s) válido; en caso contrario
+  // la plantilla no se guarda y se muestra el error en el campo.
+  private urlButtonValidator(): ValidatorFn {
+    return (g) => {
+      if (g.get('type')?.value !== 'url') return null;
+      const value = String(g.get('value')?.value || '').trim();
+      return /^https?:\/\/\S+$/i.test(value) ? null : { invalidUrl: true };
+    };
+  }
+
+  removeButton(index: number): void {
+    this.buttons.removeAt(index);
+  }
+
+  buttonTypeLabel(type: string): string {
+    return type === 'url' ? 'URL' : 'Respuesta';
+  }
+
+  buttonValueLabel(type: string): string {
+    return type === 'url' ? 'Enlace (URL)' : 'ID de respuesta';
+  }
+
+  buttonValuePlaceholder(type: string): string {
+    return type === 'url' ? 'https://ejemplo.com/oferta' : 'ej: si, no';
+  }
+
   get saveLabel(): string {
     return this.saving ? 'Guardando...' : this.id ? 'Actualizar' : 'Crear';
   }
@@ -158,8 +206,17 @@ export class TemplateFormDialogComponent implements OnDestroy {
         text: [formData.content?.text || '', Validators.required],
         mediaUrl: [formData.content?.mediaUrl || ''],
         mediaType: [formData.content?.mediaType || ''],
+        buttons: this.fb.array(this.toButtonGroups(formData.content?.buttons || [])),
       }),
     });
+  }
+
+  private toButtonGroups(buttons: TemplateButton[]): FormGroup[] {
+    return buttons.map((b) => this.fb.group({
+      type: [b.type === 'url' ? 'url' : 'reply'],
+      text: [b.text || ''],
+      value: [b.value || ''],
+    }, { validators: this.urlButtonValidator() }));
   }
 
   save(): void {
@@ -178,6 +235,14 @@ export class TemplateFormDialogComponent implements OnDestroy {
         text: value.content.text,
         mediaUrl: value.content.mediaUrl || undefined,
         mediaType: value.content.mediaType || undefined,
+        buttons: this.buttons.controls
+          .map((ctrl) => ctrl.value)
+          .filter((b) => b && b.text.trim())
+          .map((b) => ({
+            type: b.type === 'url' ? 'url' as const : 'reply' as const,
+            text: b.text.trim(),
+            value: b.value.trim() || b.text.trim(),
+          })),
       },
       variables: this.previewVariables,
     };
