@@ -18,7 +18,7 @@ import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, takeUntil, Observable } from 'rxjs';
 import { ChatbotService } from '../../core/services/chatbot.service';
 import { InstanceService } from '../../core/services/instance.service';
-import { ChatbotConfig, ChatbotPaused, PriceItem, BotDocument, BotDocumentQueryResult, GoogleFileItem, GoogleCalendarItem, GoogleSources } from '../../core/models/chatbot.model';
+import { ChatbotConfig, ChatbotPaused, PriceItem, BotDocument, BotDocumentQueryResult, GoogleFileItem, GoogleCalendarItem, GoogleSources, ConversationSummary, ConversationMessage } from '../../core/models/chatbot.model';
 import { Instance } from '../../core/models/instance.model';
 
 const GOOGLE_SOURCE_LABELS: Record<string, string> = {
@@ -72,6 +72,13 @@ Reglas:
   pausedChats: ChatbotPaused[] = [];
   pausedLoading = false;
 
+  historyConversations: ConversationSummary[] = [];
+  historyLoading = false;
+  historySearch = '';
+  selectedHistoryConversation: ConversationSummary | null = null;
+  historyMessages: ConversationMessage[] = [];
+  historyMessagesLoading = false;
+
   documents: BotDocument[] = [];
   documentsLoading = false;
   documentSaving = false;
@@ -116,6 +123,8 @@ Reglas:
         this.selectedInstanceId = instances[0].id;
         this.loadConfig();
         this.loadGoogleStatus();
+        this.loadPausedChats();
+        this.loadHistory();
       }
     });
   }
@@ -131,6 +140,9 @@ Reglas:
     this.loadPausedChats();
     this.loadDocuments();
     this.loadGoogleStatus();
+    this.selectedHistoryConversation = null;
+    this.historyMessages = [];
+    this.loadHistory();
   }
 
   loadConfig(): void {
@@ -230,6 +242,86 @@ Reglas:
         this.snackBar.open(err?.error?.error || 'Error al eliminar la conversación', 'Cerrar', { duration: 5000 });
       },
     });
+  }
+
+  loadHistory(): void {
+    if (!this.selectedInstanceId) return;
+    this.historyLoading = true;
+    this.chatbotService.getConversations(this.selectedInstanceId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (convs) => {
+          this.historyConversations = convs;
+          this.historyLoading = false;
+          if (this.selectedHistoryConversation) {
+            const updated = convs.find((c) => c.senderJid === this.selectedHistoryConversation!.senderJid);
+            if (updated) this.selectedHistoryConversation = updated;
+          }
+        },
+        error: () => {
+          this.historyLoading = false;
+        },
+      });
+  }
+
+  selectHistoryConversation(conv: ConversationSummary): void {
+    this.selectedHistoryConversation = conv;
+    this.loadHistoryMessages(conv.senderJid);
+  }
+
+  backToHistoryList(): void {
+    this.selectedHistoryConversation = null;
+    this.historyMessages = [];
+  }
+
+  loadHistoryMessages(jid: string): void {
+    if (!this.selectedInstanceId) return;
+    this.historyMessagesLoading = true;
+    this.chatbotService.getConversationHistory(this.selectedInstanceId, jid)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (msgs) => {
+          this.historyMessages = msgs;
+          this.historyMessagesLoading = false;
+        },
+        error: () => {
+          this.historyMessages = [];
+          this.historyMessagesLoading = false;
+        },
+      });
+  }
+
+  get filteredHistoryConversations(): ConversationSummary[] {
+    if (!this.historySearch.trim()) return this.historyConversations;
+    const q = this.historySearch.toLowerCase();
+    return this.historyConversations.filter((c) =>
+      (c.senderName || '').toLowerCase().includes(q) || (c.senderJid || '').includes(q));
+  }
+
+  get orderedHistoryMessages(): ConversationMessage[] {
+    return [...this.historyMessages].reverse();
+  }
+
+  trackHistoryConv(index: number, item: ConversationSummary): string {
+    return item.senderJid;
+  }
+
+  trackHistoryMessage(index: number, item: ConversationMessage): string {
+    return item.id || index + '';
+  }
+
+  formatHistoryTime(date: string | Date): string {
+    return new Date(date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  formatHistoryDate(date: string): string {
+    const d = new Date(date);
+    const now = new Date();
+    const days = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+    if (days === 0) return this.formatHistoryTime(date);
+    if (days === 1) return 'Ayer';
+    if (days < 7) return d.toLocaleDateString('es-ES', { weekday: 'short' });
+    return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
   }
 
   addPriceItem(): void {

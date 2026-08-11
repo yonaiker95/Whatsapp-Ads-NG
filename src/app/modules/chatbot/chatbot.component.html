@@ -390,10 +390,83 @@
     </mat-tab>
 
     <mat-tab label="Historial">
-      <div class="empty-state">
-        <div class="empty-icon"><mat-icon>history</mat-icon></div>
-        <h3>Historial de interacciones</h3>
-        <p>Logs de conversaciones manejadas por la IA con métricas de satisfacción</p>
+      <div class="paused-content">
+        <div class="section-header">
+          <h2>Historial de interacciones <span class="count-badge">{{ historyConversations.length }}</span></h2>
+          <button mat-stroked-button (click)="loadHistory()" *ngIf="selectedInstanceId">
+            <mat-icon>refresh</mat-icon>
+            Actualizar
+          </button>
+        </div>
+
+        <div class="history-layout" *ngIf="!selectedHistoryConversation">
+          <mat-form-field appearance="outline" class="history-search">
+            <mat-label>Buscar contacto</mat-label>
+            <input matInput [(ngModel)]="historySearch" placeholder="Nombre o número...">
+            <mat-icon matPrefix>search</mat-icon>
+          </mat-form-field>
+
+          <div class="loading-state" *ngIf="historyLoading">
+            <mat-spinner diameter="32"></mat-spinner>
+          </div>
+
+          <div class="history-list" *ngIf="!historyLoading && filteredHistoryConversations.length > 0">
+            <div class="history-item" *ngFor="let conv of filteredHistoryConversations; trackBy: trackHistoryConv" (click)="selectHistoryConversation(conv)">
+              <div class="history-avatar">{{ (conv.senderName || '?').charAt(0).toUpperCase() }}</div>
+              <div class="history-info">
+                <div class="history-header">
+                  <span class="history-name">{{ conv.senderName || conv.senderJid }}</span>
+                  <span class="history-time">{{ formatHistoryDate(conv.lastMessageAt) }}</span>
+                </div>
+                <div class="history-preview">
+                  <span class="history-message">{{ conv.lastMessage }}</span>
+                  <span class="count-badge" *ngIf="conv.messageCount > 0">{{ conv.messageCount }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="empty-state" *ngIf="!historyLoading && filteredHistoryConversations.length === 0">
+            <div class="empty-icon"><mat-icon>history</mat-icon></div>
+            <h3>Sin interacciones</h3>
+            <p>Las conversaciones manejadas por el chatbot de esta instancia aparecerán aquí</p>
+          </div>
+        </div>
+
+        <div class="history-thread" *ngIf="selectedHistoryConversation">
+          <div class="history-thread-header">
+            <button mat-icon-button (click)="backToHistoryList()" matTooltip="Volver a la lista">
+              <mat-icon>arrow_back</mat-icon>
+            </button>
+            <div class="history-thread-info">
+              <h3>{{ selectedHistoryConversation.senderName || selectedHistoryConversation.senderJid }}</h3>
+              <span class="history-thread-jid">{{ selectedHistoryConversation.senderJid }}</span>
+            </div>
+          </div>
+
+          <div class="loading-state" *ngIf="historyMessagesLoading">
+            <mat-spinner diameter="32"></mat-spinner>
+          </div>
+
+          <div class="history-messages" *ngIf="!historyMessagesLoading">
+            <div class="history-message" *ngFor="let msg of orderedHistoryMessages; trackBy: trackHistoryMessage">
+              <div class="history-bubble" [class.outgoing]="msg.direction === 'outgoing'">
+                <span class="history-bubble-text">{{ msg.content }}</span>
+                <span class="history-bubble-time">
+                  {{ formatHistoryTime(msg.createdAt) }}
+                  <mat-icon class="history-status" [class.read]="msg.status === 'read'">
+                    {{ msg.direction === 'outgoing' ? (msg.status === 'read' || msg.status === 'delivered' ? 'done_all' : 'schedule') : '' }}
+                  </mat-icon>
+                </span>
+              </div>
+            </div>
+            <div class="empty-state" *ngIf="historyMessages.length === 0">
+              <div class="empty-icon"><mat-icon>history</mat-icon></div>
+              <h3>Sin mensajes</h3>
+              <p>No hay mensajes registrados para esta conversación</p>
+            </div>
+          </div>
+        </div>
       </div>
     </mat-tab>
   </mat-tab-group>
