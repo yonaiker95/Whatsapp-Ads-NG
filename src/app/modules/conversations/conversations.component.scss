@@ -31,6 +31,19 @@
   .search-field {
     width: 100%;
   }
+
+  .sync-btn {
+    width: 100%;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+
+    mat-spinner {
+      margin: 0;
+    }
+  }
 }
 
 .conversations-list {

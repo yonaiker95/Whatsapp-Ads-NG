@@ -16,7 +16,7 @@ Sistema de gestión de campañas de marketing para WhatsApp. Permite administrar
 - **Centro de IA**: configuración de proveedores de IA (Gemini, OpenAI, Claude, DeepSeek, Mistral, OpenRouter, Azure) en modo SaaS o BYOK, con validación, cuota mensual, auditoría y log de uso.
 - **Chatbot con IA**: prompt de sistema configurable por instancia, pausa por conversación, y respuestas generadas por el AI Center y entregadas por n8n.
 - **Orquestación n8n**: cada instancia recibe automáticamente su propio workflow/webhook dinámico (`dm-chatbot-<id>`) sobre un único entorno n8n administrado por el sistema.
-- **Campañas**: creación y edición con programación mediante calendario y reloj (fecha/hora de envío), recurrencia con ventana diaria (hora de inicio/fin con validación), envío masivo a grupos con control de concurrencia y log de resultados.
+- **Campañas**: creación y edición con programación mediante calendario y reloj (fecha/hora de envío), recurrencia con ventana diaria (hora de inicio/fin con validación), envío masivo a grupos con control de concurrencia y log de resultados. Las campañas programadas se envían automáticamente mediante un **cron interno del contenedor** (`CAMPAIGN_CRON`, cada minuto), sin depender de n8n ni de conexiones externas.
 - **Plantillas de mensajes**: texto, multimedia y variables.
 - **Grupos**: sincronización automática desde las instancias conectadas.
 - **Respuestas automáticas**: reglas de respuesta ante palabras clave.
@@ -135,6 +135,7 @@ Copia `.env.example` a `.env` y ajusta los valores (o usa el **instalador** de `
 | `N8N_EVOLUTION_URL` | URL de Evolution visible desde el contenedor n8n (`http://evolution_api:8080`) |
 | `AI_ENC_KEY` | Clave maestra de cifrado de API keys de IA |
 | `PORT` | Puerto del backend (3000) |
+| `CAMPAIGN_CRON` | Expresión cron del envío automático de campañas programadas (por defecto cada minuto, `* * * * *`) |
 
 ## Credenciales
 

@@ -1,0 +1,212 @@
+<div class="user-manager">
+  <div class="manager-header">
+    <span class="avatar" [class.avatar-blocked]="user.blocked" [style.background]="avatarColor(user)">
+      {{ user.name.charAt(0).toUpperCase() }}
+    </span>
+    <div class="manager-header-meta">
+      <h2 mat-dialog-title>{{ user.name }}</h2>
+      <span class="manager-header-email">{{ user.email }}</span>
+      <span class="manager-header-org" *ngIf="user.organizationName">
+        <mat-icon>domain</mat-icon>{{ user.organizationName }}
+      </span>
+    </div>
+    <div class="manager-header-badges">
+      <span class="status-pill" [class.blocked]="user.blocked" [class.active]="!user.blocked">
+        <mat-icon>{{ user.blocked ? 'block' : 'check_circle' }}</mat-icon>
+        {{ user.blocked ? 'Bloqueado' : 'Activo' }}
+      </span>
+      <span class="billing-pill" [class.bad]="user.billingStatus !== 'active'">{{ billingLabel(user.billingStatus) }}</span>
+    </div>
+  </div>
+
+  <mat-dialog-content class="manager-content">
+    <div *ngIf="loading" class="loading">
+      <mat-spinner diameter="36"></mat-spinner>
+    </div>
+
+    <ng-container *ngIf="!loading && detail">
+      <section class="section">
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-label">Teléfono</span>
+            <span class="info-value">{{ user.phone || '—' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Teléfono verificado</span>
+            <span class="info-value">{{ user.phoneVerified ? 'Sí' : 'No' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Verificación en 2 pasos</span>
+            <span class="info-value">{{ user.twoFactorEnabled ? 'Activada' : 'Desactivada' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Notificaciones</span>
+            <span class="info-value">{{ user.notificationsEnabled ? 'Activadas' : 'Desactivadas' }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Instancias</span>
+            <span class="info-value">{{ user.instanceCount }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Sesiones activas</span>
+            <span class="info-value">{{ user.sessionCount }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Registrado</span>
+            <span class="info-value">{{ formatDate(user.createdAt) }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Plan actual</span>
+            <span class="info-value">{{ planLabel(user.plan) }} · {{ user.billingStatus === 'active' ? 'al día' : billingLabel(user.billingStatus) }}</span>
+          </div>
+        </div>
+      </section>
+
+      <mat-divider></mat-divider>
+
+      <section class="section">
+        <h3 class="section-title">Plan de suscripción</h3>
+        <div class="plans">
+          <button
+            type="button"
+            class="plan-card"
+            *ngFor="let plan of plans"
+            [class.selected]="plan.slug === selectedPlan"
+            (click)="selectedPlan = plan.slug"
+          >
+            <div class="plan-card-top">
+              <span class="plan-name">{{ plan.name }}</span>
+              <mat-icon *ngIf="plan.slug === selectedPlan" class="check">check_circle</mat-icon>
+            </div>
+            <div class="plan-price">
+              <span class="amount">{{ plan.priceMonthly | number:'1.2-2' }}</span>
+              <span class="currency">USD/mes</span>
+            </div>
+            <div class="plan-limits">{{ limitLabel(plan) }}</div>
+          </button>
+        </div>
+      </section>
+
+      <section class="section" *ngIf="addonCatalog.length">
+        <h3 class="section-title">Extras mensuales</h3>
+        <div class="addons">
+          <div class="addon" *ngFor="let addon of addonCatalog">
+            <div class="addon-info">
+              <span class="addon-label">{{ addon.label }}</span>
+              <span class="addon-unit">{{ addon.unitAmount | number:'1.2-2' }} USD / {{ addon.unitLabel }}</span>
+            </div>
+            <div class="stepper">
+              <button type="button" mat-mini-fab class="step-btn" [disabled]="qtyOf(addon.key) <= 0" (click)="dec(addon.key)">
+                <mat-icon>remove</mat-icon>
+              </button>
+              <span class="qty">{{ qtyOf(addon.key) }}</span>
+              <button type="button" mat-mini-fab class="step-btn" (click)="inc(addon.key)">
+                <mat-icon>add</mat-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section summary">
+        <h3 class="section-title">Resumen mensual</h3>
+        <div class="summary-row">
+          <span>Plan base</span>
+          <span>{{ basePrice | number:'1.2-2' }} USD</span>
+        </div>
+        <div class="summary-row">
+          <span>Extras</span>
+          <span>{{ addonsTotal | number:'1.2-2' }} USD</span>
+        </div>
+        <mat-divider></mat-divider>
+        <div class="summary-row total">
+          <span>Total mensual</span>
+          <span>{{ total | number:'1.2-2' }} USD</span>
+        </div>
+        <div class="summary-note" *ngIf="hasChanges && diff > 0">
+          Al guardar se generará una factura pendiente por {{ diff | number:'1.2-2' }} USD.
+        </div>
+        <div class="summary-note ok" *ngIf="hasChanges && diff < 0">
+          El nuevo total es menor. La diferencia se reflejará en el próximo cobro.
+        </div>
+      </section>
+
+      <mat-divider></mat-divider>
+
+      <section class="section">
+        <h3 class="section-title">Cambiar contraseña</h3>
+        <p class="section-desc">Genera un enlace de recuperación y envíalo por WhatsApp al propietario. Incluye el código de 6 dígitos.</p>
+
+        <div *ngIf="!resetResult" class="reset-actions">
+          <button mat-raised-button color="primary" (click)="sendReset()" [disabled]="sendingReset">
+            <mat-spinner diameter="18" *ngIf="sendingReset"></mat-spinner>
+            <mat-icon *ngIf="!sendingReset">send</mat-icon>
+            {{ sendingReset ? 'Enviando...' : 'Enviar enlace por WhatsApp' }}
+          </button>
+        </div>
+
+        <div *ngIf="resetResult" class="reset-result" [class.ok]="resetResult.delivered" [class.warn]="!resetResult.delivered">
+          <mat-icon>{{ resetResult.delivered ? 'check_circle' : 'warning' }}</mat-icon>
+          <div class="reset-result-text">
+            <strong>
+              {{ resetResult.delivered
+                ? 'Enlace enviado por WhatsApp a ' + (resetResult.maskedPhone || user.phone || '')
+                : resetResult.noInstance
+                  ? 'No hay una instancia de WhatsApp conectada. Usa el enlace manualmente.'
+                  : 'El envío por WhatsApp falló. Usa el enlace manualmente.' }}
+            </strong>
+            <span class="reset-url">{{ resetResult.url }}</span>
+          </div>
+          <button mat-stroked-button (click)="copyUrl()">
+            <mat-icon>content_copy</mat-icon>
+            Copiar
+          </button>
+        </div>
+      </section>
+
+      <mat-divider></mat-divider>
+
+      <section class="section block-section" [class.highlight]="focusBlock && !user.blocked">
+        <h3 class="section-title">{{ user.blocked ? 'Acceso a la cuenta' : 'Bloqueo del sistema' }}</h3>
+        <p class="section-desc">
+          {{
+            user.blocked
+              ? 'El propietario y su organización están bloqueados. Al desbloquearlo se restaura el acceso.'
+              : 'Bloquear al propietario revoca sus sesiones y las de todos los miembros de su organización.'
+          }}
+        </p>
+
+        <div *ngIf="!user.blocked" class="block-form">
+          <mat-form-field appearance="outline" class="reason-field">
+            <mat-label>Motivo del bloqueo (opcional)</mat-label>
+            <input matInput [(ngModel)]="blockReason" maxlength="200" placeholder="Ej: incumplimiento de los términos" />
+          </mat-form-field>
+          <button mat-raised-button color="warn" (click)="confirmBlock()" [disabled]="blocking || isCurrentUser">
+            <mat-spinner diameter="18" *ngIf="blocking"></mat-spinner>
+            {{ blocking ? 'Bloqueando...' : 'Bloquear del sistema' }}
+          </button>
+        </div>
+
+        <div *ngIf="user.blocked" class="block-form">
+          <button mat-raised-button color="primary" (click)="unblock()" [disabled]="blocking">
+            <mat-spinner diameter="18" *ngIf="blocking"></mat-spinner>
+            {{ blocking ? 'Desbloqueando...' : 'Desbloquear' }}
+          </button>
+          <span class="block-reason" *ngIf="user.blockedReason">Motivo: {{ user.blockedReason }}</span>
+        </div>
+      </section>
+    </ng-container>
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button mat-button (click)="cancel()" [disabled]="saving">Cancelar</button>
+    <button
+      mat-flat-button
+      color="primary"
+      [disabled]="saving || loading || !hasChanges"
+      (click)="save()"
+    >
+      {{ saving ? 'Guardando...' : 'Guardar cambios' }}
+    </button>
+  </mat-dialog-actions>
+</div>

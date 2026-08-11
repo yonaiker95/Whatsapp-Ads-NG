@@ -66,13 +66,26 @@ class GeminiProvider extends IAProvider {
       contents.push({ role, parts: [{ text: msg.content }] });
     }
     if (contents.length === 0) contents.push({ role: 'user', parts: [{ text: '' }] });
+    // Gemini 2.5 es un modelo "thinking": consume tokens del presupuesto de
+    // salida para razonar (thoughtsTokenCount). Se separa un presupuesto de
+    // razonamiento para que la respuesta visible conserve su límite real.
+    let maxOut = maxTokens != null ? maxTokens : 200;
+    const isThinkingModel = /^gemini-2\.5-/.test(m);
+    let thinkingBudget;
+    if (isThinkingModel) {
+      thinkingBudget = Math.min(512, Math.max(0, Math.round(maxOut * 2)));
+      maxOut = maxOut + thinkingBudget;
+    }
     const body = {
       contents,
       generationConfig: {
         temperature: temperature != null ? temperature : 0.7,
-        maxOutputTokens: maxTokens != null ? maxTokens : 200,
+        maxOutputTokens: maxOut,
       },
     };
+    if (isThinkingModel) {
+      body.generationConfig.thinkingConfig = { thinkingBudget };
+    }
     if (system) body.systemInstruction = { parts: [{ text: system }] };
     const data = await requestJson('POST', `${base}/models/${m}:generateContent`, this._headers(apiKey), body);
     const candidate = data.candidates && data.candidates[0];

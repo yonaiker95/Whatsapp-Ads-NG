@@ -10,6 +10,14 @@
           }
         </mat-select>
       </mat-form-field>
+      <button mat-stroked-button class="sync-btn" (click)="syncConversations()" [disabled]="syncingConversations || !selectedInstanceId">
+        @if (syncingConversations) {
+          <mat-spinner diameter="18"></mat-spinner>
+        } @else {
+          <mat-icon>sync</mat-icon>
+        }
+        Extraer conversaciones
+      </button>
       <mat-form-field appearance="outline" class="search-field">
         <mat-label>Buscar</mat-label>
         <input matInput [(ngModel)]="searchQuery" placeholder="Nombre o número...">

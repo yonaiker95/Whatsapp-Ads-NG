@@ -9,8 +9,8 @@ interface NavItem {
   label: string;
   icon: string;
   route: string;
-  badge?: number;
   adminOnly?: boolean;
+  globalAdminOnly?: boolean;
   ownerOnly?: boolean;
   permission?: string;
 }
@@ -44,13 +44,22 @@ export class SidebarComponent {
     {
       label: 'Operación',
       items: [
-        { label: 'Campañas', icon: 'campaign', route: '/app/campaigns', badge: 3, permission: 'campaigns' },
+        { label: 'Campañas', icon: 'campaign', route: '/app/campaigns', permission: 'campaigns' },
         { label: 'Plantillas', icon: 'description', route: '/app/templates', permission: 'templates' },
         { label: 'Instancias', icon: 'phone_android', route: '/app/instances', permission: 'instances' },
         { label: 'Grupos', icon: 'groups', route: '/app/groups', permission: 'groups' },
         { label: 'Auto-respuestas', icon: 'auto_awesome', route: '/app/auto-replies', permission: 'auto_replies' },
         { label: 'Chatbot', icon: 'smart_toy', route: '/app/chatbot', permission: 'chatbot' },
         { label: 'Conversaciones', icon: 'chat', route: '/app/conversations', permission: 'reports' },
+      ],
+    },
+    {
+      label: 'Negocio',
+      items: [
+        { label: 'Catálogo y precios', icon: 'storefront', route: '/app/catalogo' },
+        { label: 'Inventario', icon: 'inventory_2', route: '/app/catalogo?tab=inventario' },
+        { label: 'Documentos', icon: 'folder_open', route: '/app/documentos' },
+        { label: 'Agenda y citas', icon: 'calendar_month', route: '/app/agenda' },
       ],
     },
     {
@@ -65,7 +74,7 @@ export class SidebarComponent {
       items: [
         { label: 'Facturación', icon: 'receipt_long', route: '/app/billing', permission: 'billing' },
         { label: 'Organización y equipo', icon: 'diversity_3', route: '/app/organization', permission: 'organization' },
-        { label: 'Usuarios', icon: 'group', route: '/app/users' },
+        { label: 'Usuarios', icon: 'group', route: '/app/users', globalAdminOnly: true },
         { label: 'Planes', icon: 'workspace_premium', route: '/app/plans', adminOnly: true },
         { label: 'Testimonios', icon: 'rate_review', route: '/app/testimonials', adminOnly: true },
         { label: 'Mi perfil', icon: 'person', route: '/app/profile' },
@@ -88,6 +97,7 @@ export class SidebarComponent {
         .map((section) => ({
           ...section,
           items: section.items.filter((item) => {
+            if (item.globalAdminOnly) return user?.role === 'admin';
             if (item.ownerOnly) return user?.role === 'owner';
             if (item.adminOnly) return isFull;
             if (isFull) return true;

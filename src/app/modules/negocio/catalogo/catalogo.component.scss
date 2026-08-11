@@ -1,0 +1,158 @@
+.page {
+  padding: 24px 0;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+
+  h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  .subtitle {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+
+  &.warn mat-icon {
+    color: var(--warn, #f44336);
+  }
+
+  mat-icon {
+    color: var(--primary);
+    font-size: 32px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .stat-label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .stat-value {
+    display: block;
+    font-size: 20px;
+    font-weight: 700;
+  }
+}
+
+.filters-card {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  margin-bottom: 16px;
+
+  mat-form-field {
+    flex: 1;
+    min-width: 220px;
+    margin-bottom: -1.25em;
+  }
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.products-table {
+  width: 100%;
+}
+
+.cell-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  .name {
+    font-weight: 600;
+  }
+
+  .sku {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .chip {
+    align-self: flex-start;
+    font-size: 11px;
+    background: var(--primary-soft, rgba(63, 81, 181, 0.12));
+    color: var(--primary);
+    border-radius: 999px;
+    padding: 1px 8px;
+    margin-top: 2px;
+  }
+}
+
+.stock-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(76, 175, 80, 0.12);
+  color: #2e7d32;
+  font-weight: 600;
+
+  &.low {
+    background: rgba(244, 67, 54, 0.12);
+    color: #c62828;
+  }
+}
+
+.status {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+
+  &.active {
+    color: #2e7d32;
+  }
+}
+
+.col-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.loading-box {
+  display: flex;
+  justify-content: center;
+  padding: 48px;
+}
+
+.empty {
+  text-align: center;
+  padding: 48px;
+  color: var(--text-muted);
+
+  mat-icon {
+    font-size: 48px;
+    width: 48px;
+    height: 48px;
+    margin-bottom: 8px;
+  }
+}

@@ -19,13 +19,13 @@
   <div class="hint-card">
     <mat-icon>info</mat-icon>
     <p>
-      Los cambios se reflejan automáticamente en la sección de precios del landing page. El toggle mensual/anual usa
-      el <strong>precio mensual</strong> y el <strong>precio anual</strong> de cada plan.
+      Los cambios se reflejan automáticamente en la sección de precios del landing page. Usa el toggle de cada
+      tarjeta para activar o desactivar un plan al instante.
     </p>
   </div>
 
   <div class="plans-stats" *ngIf="!loading">
-    <mat-card class="stat-mini" appearance="outlined">
+    <mat-card class="stat-mini stat-total" appearance="outlined">
       <mat-card-content>
         <div class="stat-mini-icon"><mat-icon>sell</mat-icon></div>
         <div>
@@ -34,7 +34,7 @@
         </div>
       </mat-card-content>
     </mat-card>
-    <mat-card class="stat-mini" appearance="outlined">
+    <mat-card class="stat-mini stat-active" appearance="outlined">
       <mat-card-content>
         <div class="stat-mini-icon"><mat-icon>visibility</mat-icon></div>
         <div>
@@ -43,16 +43,16 @@
         </div>
       </mat-card-content>
     </mat-card>
-    <mat-card class="stat-mini" appearance="outlined">
+    <mat-card class="stat-mini stat-inactive" appearance="outlined">
       <mat-card-content>
         <div class="stat-mini-icon"><mat-icon>visibility_off</mat-icon></div>
         <div>
           <span class="stat-mini-label">Inactivos</span>
-          <span class="stat-mini-value">{{ plans.length - activeCount }}</span>
+          <span class="stat-mini-value">{{ inactiveCount }}</span>
         </div>
       </mat-card-content>
     </mat-card>
-    <mat-card class="stat-mini" appearance="outlined">
+    <mat-card class="stat-mini stat-price" appearance="outlined">
       <mat-card-content>
         <div class="stat-mini-icon"><mat-icon>trending_up</mat-icon></div>
         <div>
@@ -64,17 +64,52 @@
   </div>
 
   <div class="plans-toolbar" *ngIf="!loading && plans.length > 0">
-    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="plans-search">
-      <mat-label>Buscar plan</mat-label>
-      <input matInput [(ngModel)]="searchQuery" placeholder="Nombre o descripción...">
-      <mat-icon matPrefix>search</mat-icon>
-    </mat-form-field>
-    <span class="plans-count">{{ filteredPlans.length }} de {{ plans.length }} planes</span>
+    <div class="filter-chips" role="group" aria-label="Filtrar planes">
+      <button type="button" class="filter-chip" [class.active]="statusFilter === 'all'" (click)="setStatusFilter('all')">
+        Todos<span class="chip-count">{{ plans.length }}</span>
+      </button>
+      <button type="button" class="filter-chip" [class.active]="statusFilter === 'active'" (click)="setStatusFilter('active')">
+        Activos<span class="chip-count">{{ activeCount }}</span>
+      </button>
+      <button type="button" class="filter-chip" [class.active]="statusFilter === 'inactive'" (click)="setStatusFilter('inactive')">
+        Inactivos<span class="chip-count">{{ inactiveCount }}</span>
+      </button>
+      <button type="button" class="filter-chip" [class.active]="statusFilter === 'popular'" (click)="setStatusFilter('popular')">
+        Más populares<span class="chip-count">{{ popularCount }}</span>
+      </button>
+    </div>
+    <div class="toolbar-right">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="plans-search">
+        <mat-label>Buscar plan</mat-label>
+        <input matInput [(ngModel)]="searchQuery" placeholder="Nombre o descripción..." />
+        <mat-icon matPrefix>search</mat-icon>
+        <button
+          *ngIf="searchQuery"
+          matSuffix
+          mat-icon-button
+          aria-label="Limpiar búsqueda"
+          (click)="searchQuery = ''"
+        >
+          <mat-icon>close</mat-icon>
+        </button>
+      </mat-form-field>
+      <span class="plans-count">{{ filteredPlans.length }} de {{ plans.length }} planes</span>
+    </div>
   </div>
 
-  <div class="loading-state" *ngIf="loading">
-    <mat-spinner diameter="32"></mat-spinner>
-    <p>Cargando planes...</p>
+  <div class="skeleton-grid" *ngIf="loading" aria-label="Cargando planes">
+    <div class="skeleton-card plan-skeleton" *ngFor="let _ of [0, 1, 2]">
+      <div class="skeleton-row">
+        <div class="skeleton-avatar"></div>
+        <div class="skeleton-lines">
+          <div class="skeleton-line w-50"></div>
+          <div class="skeleton-line w-75"></div>
+        </div>
+      </div>
+      <div class="skeleton-line w-100 h-48"></div>
+      <div class="skeleton-line w-100"></div>
+      <div class="skeleton-line w-75"></div>
+    </div>
   </div>
 
   <div class="plans-grid" *ngIf="!loading && filteredPlans.length > 0">
@@ -86,28 +121,34 @@
           <div class="plan-name-row">
             <h3>{{ plan.name }}</h3>
             <mat-chip class="popular-chip" *ngIf="plan.popular">Más popular</mat-chip>
-            <mat-chip class="inactive-chip" *ngIf="!plan.isActive">Inactivo</mat-chip>
           </div>
           <p class="plan-description">{{ plan.description }}</p>
         </div>
-        <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Acciones del plan">
-          <mat-icon>more_vert</mat-icon>
-        </button>
-        <mat-menu #menu="matMenu">
-          <button mat-menu-item (click)="edit(plan)">
-            <mat-icon>edit</mat-icon>
-            <span>Editar</span>
+        <div class="plan-actions">
+          <div class="status-toggle" [class.off]="!plan.isActive">
+            <span class="status-label">{{ plan.isActive ? 'Activo' : 'Inactivo' }}</span>
+            <mat-slide-toggle
+              [checked]="plan.isActive"
+              [disabled]="savingId === plan.id"
+              (change)="toggleActive(plan)"
+              aria-label="Cambiar estado del plan"
+            ></mat-slide-toggle>
+          </div>
+          <button mat-icon-button [matMenuTriggerFor]="menu" aria-label="Acciones del plan">
+            <mat-icon>more_vert</mat-icon>
           </button>
-          <button mat-menu-item (click)="toggleActive(plan)">
-            <mat-icon>{{ plan.isActive ? 'visibility_off' : 'visibility' }}</mat-icon>
-            <span>{{ plan.isActive ? 'Desactivar' : 'Activar' }}</span>
-          </button>
-          <mat-divider></mat-divider>
-          <button mat-menu-item (click)="delete(plan)">
-            <mat-icon color="warn">delete</mat-icon>
-            <span>Eliminar</span>
-          </button>
-        </mat-menu>
+          <mat-menu #menu="matMenu">
+            <button mat-menu-item (click)="edit(plan)">
+              <mat-icon>edit</mat-icon>
+              <span>Editar</span>
+            </button>
+            <mat-divider></mat-divider>
+            <button mat-menu-item (click)="delete(plan)">
+              <mat-icon color="warn">delete</mat-icon>
+              <span>Eliminar</span>
+            </button>
+          </mat-menu>
+        </div>
       </div>
 
       <div class="plan-prices">
@@ -124,14 +165,19 @@
             <ng-container *ngIf="isFree(plan); else pricedY">Gratis</ng-container>
             <ng-template #pricedY><span class="currency">$</span>{{ plan.priceYearly }}<span class="per">/mes</span></ng-template>
           </span>
+          <span class="save-badge" *ngIf="annualSavings(plan) !== null">{{ annualSavings(plan) }}% de ahorro</span>
         </div>
         <mat-chip class="cta-chip" [style.--chip-color]="plan.color">{{ plan.cta }}</mat-chip>
       </div>
 
       <div class="plan-features">
-        <span class="feature-item" *ngFor="let feature of plan.features">
+        <span class="feature-item" *ngFor="let feature of visibleFeatures(plan)">
           <mat-icon>check</mat-icon>
           {{ feature }}
+        </span>
+        <span class="feature-item feature-more" *ngIf="extraFeaturesCount(plan) > 0">
+          <mat-icon>add</mat-icon>
+          {{ extraFeaturesCount(plan) }} características más
         </span>
       </div>
 
@@ -189,6 +235,10 @@
   <div class="empty-state" *ngIf="!loading && plans.length > 0 && filteredPlans.length === 0">
     <div class="empty-icon"><mat-icon>search_off</mat-icon></div>
     <h3>Sin resultados</h3>
-    <p>No hay planes que coincidan con "{{ searchQuery }}".</p>
+    <p>No hay planes que coincidan con tu búsqueda o filtro.</p>
+    <button mat-stroked-button (click)="statusFilter = 'all'; searchQuery = ''">
+      <mat-icon>filter_alt_off</mat-icon>
+      Limpiar filtros
+    </button>
   </div>
 </div>

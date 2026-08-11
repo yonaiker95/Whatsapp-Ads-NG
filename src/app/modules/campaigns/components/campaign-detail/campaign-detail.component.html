@@ -1,61 +1,67 @@
 <div class="campaign-detail" *ngIf="!loading; else loadingTemplate">
+  <div class="detail-breadcrumb">
+    <a (click)="goBack()" class="crumb-back">
+      <mat-icon>chevron_left</mat-icon>
+      Campañas
+    </a>
+    <mat-icon class="crumb-sep">chevron_right</mat-icon>
+    <span class="crumb-current">{{ campaign?.name }}</span>
+  </div>
+
   <div class="detail-header">
-    <button mat-icon-button (click)="goBack()" aria-label="Volver">
-      <mat-icon>arrow_back</mat-icon>
-    </button>
     <div class="header-content">
-      <h1>{{ campaign?.name }}</h1>
-      <mat-chip [class]="getStatusClass(campaign?.status || '')" class="status-chip">
-        {{ getStatusLabel(campaign?.status || '') }}
-      </mat-chip>
+      <div class="title-row">
+        <h1>{{ campaign?.name }}</h1>
+        <span class="status-chip" [class]="getStatusClass(campaign?.status || '')">
+          <span class="status-dot"></span>
+          {{ getStatusLabel(campaign?.status || '') }}
+        </span>
+      </div>
+      <p class="header-subtitle" *ngIf="campaign?.description">{{ campaign?.description }}</p>
+      <p class="header-subtitle muted" *ngIf="!campaign?.description">Campaña de WhatsApp</p>
     </div>
     <div class="header-actions">
       <button mat-stroked-button (click)="editCampaign()">
         <mat-icon>edit</mat-icon>
         Editar
       </button>
-      <button mat-raised-button color="primary" (click)="sendCampaign()" *ngIf="campaign?.status !== 'sending'" [disabled]="sending">
-        <mat-spinner diameter="20" *ngIf="sending"></mat-spinner>
-        <mat-icon *ngIf="!sending">send</mat-icon>
-        {{ sending ? 'Enviando...' : 'Enviar ahora' }}
-      </button>
-      <button mat-raised-button color="primary" disabled *ngIf="campaign?.status === 'sending'">
-        <mat-spinner diameter="20"></mat-spinner>
-        Enviando...
+      <button mat-raised-button color="primary" (click)="sendCampaign()" [disabled]="sending || campaign?.status === 'sending'">
+        <mat-spinner diameter="18" *ngIf="sending || campaign?.status === 'sending'"></mat-spinner>
+        <mat-icon *ngIf="!sending && campaign?.status !== 'sending'">send</mat-icon>
+        {{ sending || campaign?.status === 'sending' ? 'Enviando...' : 'Enviar ahora' }}
       </button>
     </div>
   </div>
-
-  <mat-divider></mat-divider>
 
   <div class="detail-content">
     <div class="metrics-grid">
       <mat-card class="metric-card" appearance="outlined">
         <mat-card-content>
-          <div class="metric-value">{{ campaign?.totalSent || 0 }}</div>
+          <div class="metric-icon ok"><mat-icon>send</mat-icon></div>
+          <div class="metric-value ok">{{ campaign?.totalSent || 0 }}</div>
           <div class="metric-label">Enviados</div>
         </mat-card-content>
       </mat-card>
       <mat-card class="metric-card" appearance="outlined">
         <mat-card-content>
+          <div class="metric-icon warn"><mat-icon>error_outline</mat-icon></div>
           <div class="metric-value warn">{{ campaign?.totalFailed || 0 }}</div>
           <div class="metric-label">Fallidos</div>
         </mat-card-content>
       </mat-card>
       <mat-card class="metric-card" appearance="outlined">
         <mat-card-content>
-          <div class="metric-value">
-            {{ campaign?.groupIds?.length || 0 }}
-          </div>
+          <div class="metric-icon"><mat-icon>groups</mat-icon></div>
+          <div class="metric-value">{{ groupDetails.length }}</div>
           <div class="metric-label">Grupos</div>
         </mat-card-content>
       </mat-card>
       <mat-card class="metric-card" appearance="outlined">
         <mat-card-content>
-          <div class="metric-value">
-            {{ campaign?.concurrence || 1 }}
-          </div>
-          <div class="metric-label">Concurrencia</div>
+          <div class="metric-icon accent"><mat-icon>trending_up</mat-icon></div>
+          <div class="metric-value accent" *ngIf="successRate !== null">{{ successRate }}%</div>
+          <div class="metric-value accent" *ngIf="successRate === null">—</div>
+          <div class="metric-label">Tasa de éxito</div>
         </mat-card-content>
       </mat-card>
     </div>
@@ -64,10 +70,18 @@
       <mat-tab label="Configuración">
         <div class="tab-content">
           <div class="info-section">
-            <h3>Información general</h3>
+            <h3>
+              <mat-icon>info_outline</mat-icon>
+              Información general
+            </h3>
             <dl class="info-list">
               <dt>ID</dt>
-              <dd>{{ campaign?.id }}</dd>
+              <dd class="id-cell">
+                <code>{{ campaign?.id }}</code>
+                <button mat-icon-button class="copy-btn" (click)="copyId()" [attr.aria-label]="'Copiar ID de la campaña'">
+                  <mat-icon>content_copy</mat-icon>
+                </button>
+              </dd>
               <dt>Descripción</dt>
               <dd>{{ campaign?.description || 'Sin descripción' }}</dd>
               <dt>Instancia</dt>
@@ -82,32 +96,45 @@
           </div>
 
           <div class="info-section">
-            <h3>Programación</h3>
+            <h3>
+              <mat-icon>event</mat-icon>
+              Programación
+            </h3>
             <dl class="info-list">
               <dt>Recurrencia</dt>
-              <dd>{{ campaign?.recurrence || 'none' }}</dd>
+              <dd>{{ recurrenceLabel(campaign?.recurrence) }}</dd>
               <dt *ngIf="campaign?.scheduledAt">Programada para</dt>
               <dd *ngIf="campaign?.scheduledAt">{{ campaign?.scheduledAt | date:'medium' }}</dd>
-              <dt *ngIf="campaign?.startTime">Hora inicio</dt>
-              <dd *ngIf="campaign?.startTime">{{ campaign?.startTime }}</dd>
-              <dt *ngIf="campaign?.endTime">Hora fin</dt>
-              <dd *ngIf="campaign?.endTime">{{ campaign?.endTime }}</dd>
+              <dt *ngIf="campaign?.startTime">Ventana de envío</dt>
+              <dd *ngIf="campaign?.startTime">{{ campaign?.startTime }} – {{ campaign?.endTime || '—' }}</dd>
               <dt *ngIf="campaign?.intervalValue">Intervalo</dt>
               <dd *ngIf="campaign?.intervalValue">
-                {{ campaign?.intervalValue }} {{ campaign?.intervalUnit || 'minutes' }}
+                {{ campaign?.intervalValue }} {{ campaign?.intervalUnit || 'min' }}
               </dd>
+              <dt>Concurrencia</dt>
+              <dd>{{ campaign?.concurrence || 1 }} envíos simultáneos</dd>
             </dl>
           </div>
 
           <div class="info-section">
-            <h3>Grupos destinatarios</h3>
-            <div class="chips-container">
-              <mat-chip *ngFor="let groupId of campaign?.groupIds || []">{{ groupId }}</mat-chip>
+            <h3>
+              <mat-icon>groups</mat-icon>
+              Grupos destinatarios
+            </h3>
+            <div class="chips-container" *ngIf="groupDetails.length">
+              <mat-chip *ngFor="let group of groupDetails" [class.unnamed]="group.name === group.id">
+                {{ group.name }}
+                <span class="chip-meta" *ngIf="group.participants !== undefined">{{ group.participants }} contactos</span>
+              </mat-chip>
             </div>
+            <p class="section-empty" *ngIf="!groupDetails.length">No hay grupos seleccionados.</p>
           </div>
 
           <div class="info-section" *ngIf="(campaign?.tags?.length || 0) > 0 || (campaign?.excludeTags?.length || 0) > 0">
-            <h3>Etiquetas</h3>
+            <h3>
+              <mat-icon>label</mat-icon>
+              Etiquetas
+            </h3>
             <dl class="info-list">
               <dt *ngIf="(campaign?.tags?.length || 0) > 0">Incluir</dt>
               <dd *ngIf="(campaign?.tags?.length || 0) > 0">
@@ -126,46 +153,87 @@
         </div>
       </mat-tab>
 
+      <mat-tab label="Mensaje">
+        <div class="tab-content">
+          <div class="logs-loading" *ngIf="templateLoading">
+            <mat-spinner diameter="28"></mat-spinner>
+          </div>
+
+          <ng-container *ngIf="!templateLoading">
+            <div class="message-preview" *ngIf="template && (templateText || templateMediaType)">
+              <div class="message-preview-head">
+                <div class="sender-avatar">W</div>
+                <div class="sender-meta">
+                  <span class="sender-name">{{ campaign?.template?.name || 'Mensaje' }}</span>
+                  <span class="sender-status">Plantilla aprobada</span>
+                </div>
+              </div>
+
+              <div class="message-bubble">
+                <div class="bubble-media" *ngIf="templateMediaType">
+                  <mat-icon>{{ templateMediaType === 'image' ? 'image' : templateMediaType === 'video' ? 'videocam' : templateMediaType === 'audio' ? 'headphones' : 'description' }}</mat-icon>
+                  <span>Contenido {{ templateMediaType }}</span>
+                </div>
+                <p class="bubble-text">{{ templateText || 'Mensaje sin texto.' }}</p>
+                <span class="bubble-time">{{ campaign?.updatedAt | date:'HH:mm' }}</span>
+              </div>
+
+              <div class="message-buttons" *ngIf="templateButtons.length">
+                <div class="bubble-button" *ngFor="let btn of templateButtons">
+                  <mat-icon>{{ btn.type === 'reply' ? 'reply' : btn.type === 'url' ? 'open_in_new' : btn.type === 'call' ? 'call' : 'content_copy' }}</mat-icon>
+                  {{ btn.text }}
+                </div>
+              </div>
+            </div>
+
+            <div class="empty-state" *ngIf="!template || (!templateText && !templateMediaType)">
+              <mat-icon>message</mat-icon>
+              <p>Esta campaña no tiene una plantilla asociada.</p>
+              <span class="empty-hint">Asocia una plantilla desde "Editar" para previsualizar el mensaje.</span>
+            </div>
+          </ng-container>
+        </div>
+      </mat-tab>
+
       <mat-tab label="Logs de envío">
         <div class="tab-content">
           <div class="logs-loading" *ngIf="logsLoading">
             <mat-spinner diameter="28"></mat-spinner>
           </div>
-          <table mat-table [dataSource]="sendLogs" class="logs-table" *ngIf="!logsLoading">
-            <ng-container matColumnDef="date">
-              <th mat-header-cell *matHeaderCellDef>Fecha</th>
-              <td mat-cell *matCellDef="let log">{{ log.createdAt | date:'medium' }}</td>
-            </ng-container>
-            <ng-container matColumnDef="sent">
-              <th mat-header-cell *matHeaderCellDef>Enviados</th>
-              <td mat-cell *matCellDef="let log">{{ log.sent }}</td>
-            </ng-container>
-            <ng-container matColumnDef="failed">
-              <th mat-header-cell *matHeaderCellDef>Fallidos</th>
-              <td mat-cell *matCellDef="let log">{{ log.failed }}</td>
-            </ng-container>
-            <ng-container matColumnDef="result">
-              <th mat-header-cell *matHeaderCellDef>Resultado</th>
-              <td mat-cell *matCellDef="let log">
-                <mat-chip class="status-sent" *ngIf="log.failed === 0">Éxito</mat-chip>
-                <mat-chip class="status-failed" *ngIf="log.failed > 0">Parcial</mat-chip>
-              </td>
-            </ng-container>
-            <tr mat-header-row *matHeaderRowDef="sendLogsColumns"></tr>
-            <tr mat-row *matRowDef="let row; columns: sendLogsColumns"></tr>
-          </table>
+          <div class="table-wrap" *ngIf="!logsLoading && sendLogs.length">
+            <table mat-table [dataSource]="sendLogs" class="logs-table">
+              <ng-container matColumnDef="date">
+                <th mat-header-cell *matHeaderCellDef>Fecha</th>
+                <td mat-cell *matCellDef="let log">{{ log.createdAt | date:'medium' }}</td>
+              </ng-container>
+              <ng-container matColumnDef="sent">
+                <th mat-header-cell *matHeaderCellDef>Enviados</th>
+                <td mat-cell *matCellDef="let log">
+                  <span class="count ok">{{ log.sent }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="failed">
+                <th mat-header-cell *matHeaderCellDef>Fallidos</th>
+                <td mat-cell *matCellDef="let log">
+                  <span class="count warn">{{ log.failed }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="result">
+                <th mat-header-cell *matHeaderCellDef>Resultado</th>
+                <td mat-cell *matCellDef="let log">
+                  <span class="log-result" [class.ok]="log.failed === 0">
+                    <mat-icon>{{ log.failed === 0 ? 'check_circle' : 'warning' }}</mat-icon>
+                    {{ log.failed === 0 ? 'Éxito' : 'Parcial' }}
+                  </span>
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="sendLogsColumns"></tr>
+              <tr mat-row *matRowDef="let row; columns: sendLogsColumns"></tr>
+            </table>
+          </div>
           <div class="empty-state" *ngIf="!logsLoading && !sendLogs.length">
             <mat-icon>history</mat-icon>
             <p>No hay logs de envío todavía</p>
-          </div>
-        </div>
-      </mat-tab>
-
-      <mat-tab label="Mensajes">
-        <div class="tab-content">
-          <div class="empty-state">
-            <mat-icon>message</mat-icon>
-            <p>Detalle de mensajes por grupo</p>
           </div>
         </div>
       </mat-tab>

@@ -1,0 +1,88 @@
+<div class="login-page">
+  <div class="login-bg-shapes">
+    <div class="shape shape-1"></div>
+    <div class="shape shape-2"></div>
+    <div class="shape shape-3"></div>
+  </div>
+
+  <div class="login-container">
+    <div class="login-brand">
+      <div class="brand-icon">
+        <mat-icon>chat_bubble</mat-icon>
+      </div>
+      <h1>WhatsApp Ads</h1>
+      <p class="brand-subtitle">Restablece la contraseña de tu cuenta</p>
+    </div>
+
+    <mat-card class="login-card">
+      @if (invalidLink) {
+        <div class="sent-confirmation">
+          <mat-icon class="sent-icon error">link_off</mat-icon>
+          <h2>Enlace inválido</h2>
+          <p>Este enlace es incorrecto o ya venció. Solicita uno nuevo al administrador o usa la recuperación de contraseña.</p>
+        </div>
+        <div class="login-footer">
+          <button mat-raised-button color="primary" class="full-width login-btn" (click)="goLogin()">
+            Iniciar sesión
+          </button>
+        </div>
+      } @else if (done) {
+        <div class="sent-confirmation">
+          <mat-icon class="sent-icon">check_circle</mat-icon>
+          <h2>Contraseña actualizada</h2>
+          <p>Tu contraseña se restableció correctamente. Ya puedes iniciar sesión.</p>
+        </div>
+        <div class="login-footer">
+          <button mat-raised-button color="primary" class="full-width login-btn" (click)="goLogin()">
+            Iniciar sesión
+          </button>
+        </div>
+      } @else {
+        <div class="login-header">
+          <h2>Nueva contraseña</h2>
+          <p>Ingresa el código que recibiste por WhatsApp y define tu nueva contraseña</p>
+        </div>
+
+        <form [formGroup]="resetForm" (ngSubmit)="resetPassword()" class="login-form">
+          <div class="otp-wrap">
+            <app-otp-input
+              [code]="resetForm.get('code')?.value"
+              [state]="codeError ? 'error' : 'normal'"
+              (codeChange)="onCodeChange($event)"
+            ></app-otp-input>
+          </div>
+          <p class="otp-hint">El enlace y el código vencen en 10 minutos.</p>
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Nueva contraseña</mat-label>
+            <input matInput [type]="hidePassword ? 'password' : 'text'" formControlName="password" autocomplete="new-password" placeholder="••••••••">
+            <mat-icon matPrefix>lock</mat-icon>
+            <button mat-icon-button matSuffix type="button" (click)="hidePassword = !hidePassword" tabindex="-1">
+              <mat-icon>{{ hidePassword ? 'visibility_off' : 'visibility' }}</mat-icon>
+            </button>
+            <mat-error *ngIf="resetForm.get('password')?.hasError('required')">La contraseña es requerida</mat-error>
+            <mat-error *ngIf="resetForm.get('password')?.hasError('minlength')">Mínimo 6 caracteres</mat-error>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Confirmar contraseña</mat-label>
+            <input matInput [type]="hideConfirm ? 'password' : 'text'" formControlName="confirmPassword" autocomplete="new-password" placeholder="••••••••">
+            <mat-icon matPrefix>lock</mat-icon>
+            <button mat-icon-button matSuffix type="button" (click)="hideConfirm = !hideConfirm" tabindex="-1">
+              <mat-icon>{{ hideConfirm ? 'visibility_off' : 'visibility' }}</mat-icon>
+            </button>
+            <mat-error *ngIf="resetForm.hasError('mismatch') && resetForm.get('confirmPassword')?.touched">Las contraseñas no coinciden</mat-error>
+          </mat-form-field>
+
+          <button mat-raised-button color="primary" type="submit" class="full-width login-btn" [disabled]="loading">
+            @if (loading) {
+              <mat-spinner diameter="20"></mat-spinner>
+            } @else {
+              <span>Restablecer contraseña</span>
+            }
+          </button>
+        </form>
+      }
+    </mat-card>
+  </div>
+</div>

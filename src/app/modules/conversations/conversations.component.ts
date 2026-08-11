@@ -41,6 +41,7 @@ export class ConversationsComponent implements OnInit, OnDestroy, AfterViewCheck
 
   conversations: ConversationSummary[] = [];
   suggesting = false;
+  syncingConversations = false;
   private destroy$ = new Subject<void>();
   private conversationsPoll$: Subscription | null = null;
   private messagesPoll$: Subscription | null = null;
@@ -89,6 +90,28 @@ export class ConversationsComponent implements OnInit, OnDestroy, AfterViewCheck
     this.selectedConversation = null;
     this.messages = [];
     this.loadConversations();
+  }
+
+  syncConversations(): void {
+    if (!this.selectedInstanceId || this.syncingConversations) return;
+    this.syncingConversations = true;
+    this.reportsService.syncConversations(this.selectedInstanceId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.syncingConversations = false;
+          this.snackBar.open(
+            `Conversaciones extraídas: ${res.synced} chats (${res.created} nuevos).`,
+            'Cerrar', { duration: 4000 }
+          );
+          this.loadConversations();
+        },
+        error: (err) => {
+          this.syncingConversations = false;
+          const detail = err?.error?.error || 'Error al extraer las conversaciones';
+          this.snackBar.open(detail, 'Cerrar', { duration: 6000 });
+        },
+      });
   }
 
   loadConversations(): void {

@@ -19,6 +19,10 @@ FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV TZ=America/Caracas
+
+# Base de datos de zonas horarias para fecha/hora local correcta (busybox + Node)
+RUN apk add --no-cache tzdata
 
 # Solo dependencias de producción (dotenv, pg, ws)
 COPY package*.json ./

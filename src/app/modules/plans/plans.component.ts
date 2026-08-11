@@ -13,6 +13,7 @@ import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { Plan } from '../../core/models/plan.model';
 import { PlanService } from '../../core/services/plan.service';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
@@ -37,6 +38,7 @@ import { AddonPricesDialogComponent } from './components/addon-prices-dialog/add
     MatFormFieldModule,
     MatInputModule,
     MatSelectModule,
+    MatSlideToggleModule,
   ],
   templateUrl: './plans.component.html',
   styleUrls: ['./plans.component.scss'],
@@ -46,6 +48,7 @@ export class PlansComponent implements OnInit {
   loading = true;
   savingId: string | null = null;
   searchQuery = '';
+  statusFilter: 'all' | 'active' | 'inactive' | 'popular' = 'all';
 
   private planService = inject(PlanService);
   private dialog = inject(MatDialog);
@@ -70,7 +73,7 @@ export class PlansComponent implements OnInit {
   }
 
   create(): void {
-    const dialogRef = this.dialog.open(PlanFormDialogComponent, { data: { mode: 'create' }, width: '620px', maxWidth: '94vw' });
+    const dialogRef = this.dialog.open(PlanFormDialogComponent, { data: { mode: 'create' }, width: '1080px', maxWidth: '96vw' });
     dialogRef.afterClosed().subscribe((saved) => {
       if (saved) {
         this.snackBar.open('Plan creado correctamente', 'Cerrar', { duration: 4000 });
@@ -80,7 +83,7 @@ export class PlansComponent implements OnInit {
   }
 
   edit(plan: Plan): void {
-    const dialogRef = this.dialog.open(PlanFormDialogComponent, { data: { mode: 'edit', plan }, width: '620px', maxWidth: '94vw' });
+    const dialogRef = this.dialog.open(PlanFormDialogComponent, { data: { mode: 'edit', plan }, width: '1080px', maxWidth: '96vw' });
     dialogRef.afterClosed().subscribe((saved) => {
       if (saved) {
         this.snackBar.open('Plan actualizado correctamente', 'Cerrar', { duration: 4000 });
@@ -141,19 +144,54 @@ export class PlansComponent implements OnInit {
     return this.plans.filter((p) => p.isActive).length;
   }
 
+  get inactiveCount(): number {
+    return this.plans.filter((p) => !p.isActive).length;
+  }
+
+  get popularCount(): number {
+    return this.plans.filter((p) => p.popular).length;
+  }
+
   get maxMonthlyPrice(): number {
-    return this.plans.reduce((max, p) => Math.max(max, p.priceMonthly || 0), 0);
+    return this.plans.filter((p) => p.isActive).reduce((max, p) => Math.max(max, p.priceMonthly || 0), 0);
   }
 
   get filteredPlans(): Plan[] {
     const q = this.searchQuery.trim().toLowerCase();
-    if (!q) return this.plans;
-    return this.plans.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        (p.description || '').toLowerCase().includes(q) ||
-        (p.slug || '').toLowerCase().includes(q)
+    let list = [...this.plans].sort(
+      (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.name.localeCompare(b.name)
     );
+    if (this.statusFilter === 'active') list = list.filter((p) => p.isActive);
+    if (this.statusFilter === 'inactive') list = list.filter((p) => !p.isActive);
+    if (this.statusFilter === 'popular') list = list.filter((p) => p.popular);
+    if (q) {
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          (p.description || '').toLowerCase().includes(q) ||
+          (p.slug || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }
+
+  setStatusFilter(filter: 'all' | 'active' | 'inactive' | 'popular'): void {
+    this.statusFilter = filter;
+  }
+
+  visibleFeatures(plan: Plan): string[] {
+    return (plan.features || []).slice(0, 4);
+  }
+
+  extraFeaturesCount(plan: Plan): number {
+    return Math.max(0, (plan.features || []).length - 4);
+  }
+
+  annualSavings(plan: Plan): number | null {
+    const m = plan.priceMonthly;
+    const y = plan.priceYearly;
+    if (m > 0 && y > 0 && y < m) return Math.round((1 - y / m) * 100);
+    return null;
   }
 
   isUnlimited(value: number | undefined): boolean {

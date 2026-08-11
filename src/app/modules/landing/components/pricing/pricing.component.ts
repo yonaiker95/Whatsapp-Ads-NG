@@ -24,7 +24,7 @@ const FALLBACK_PLANS: Plan[] = [
       'Analytics básico',
       'Soporte por email'
     ],
-    cta: 'Empezar gratis',
+    cta: 'Comenzar ahora',
     color: '#6b7280',
     isActive: true,
     sortOrder: 1
@@ -114,6 +114,12 @@ export class PricingComponent implements OnInit {
 
   getPrice(plan: Plan): number {
     return this.billingCycle() === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+  }
+
+  getSavingsPercent(plan: Plan): number {
+    if (!plan.priceMonthly || plan.priceMonthly <= 0 || !plan.priceYearly) return 0;
+    if (plan.priceYearly >= plan.priceMonthly) return 0;
+    return Math.round(((plan.priceMonthly - plan.priceYearly) / plan.priceMonthly) * 100);
   }
 
   textColor(color: string): string {

@@ -19,6 +19,52 @@ export interface RegisteredUser {
   updatedAt?: string;
   instanceCount: number;
   sessionCount: number;
+  addons?: UserAddon[];
+}
+
+export interface UserAddon {
+  key: string;
+  label: string;
+  unitLabel: string;
+  quantity: number;
+  unitAmount: number;
+  total: number;
+}
+
+export interface UserPlanOption {
+  id: string;
+  name: string;
+  slug: string;
+  priceMonthly: number;
+  maxInstances: number;
+  maxMessages: number;
+  maxCampaigns: number;
+  maxAutoReplies: number;
+  chatbotEnabled: boolean;
+  isActive: boolean;
+}
+
+export interface UserAddonCatalogOption {
+  key: string;
+  label: string;
+  unitLabel: string;
+  unitAmount: number;
+  isActive: boolean;
+}
+
+export interface AdminUserDetail {
+  user: RegisteredUser;
+  plans: UserPlanOption[];
+  addonCatalog: UserAddonCatalogOption[];
+  monthly: number;
+}
+
+export interface PasswordResetResult {
+  sent: boolean;
+  delivered: boolean;
+  noInstance?: boolean;
+  url: string;
+  maskedPhone?: string;
 }
 
 export interface BlockAuditEntry {

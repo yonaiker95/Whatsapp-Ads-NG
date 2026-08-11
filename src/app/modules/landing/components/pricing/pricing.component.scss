@@ -49,17 +49,6 @@
           color: var(--text-primary);
           font-weight: 600;
         }
-
-        .save-badge {
-          display: inline-block;
-          margin-left: 8px;
-          padding: 2px 8px;
-          background: var(--secondary);
-          color: var(--text-on-secondary);
-          font-size: 11px;
-          font-weight: 700;
-          border-radius: 10px;
-        }
       }
 
       .toggle-switch {
@@ -190,6 +179,25 @@
             font-size: 16px;
             color: var(--text-secondary);
             margin-left: 4px;
+          }
+        }
+
+        .annual-savings {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin: -2px 0 12px;
+          padding: 4px 12px;
+          border-radius: 20px;
+          background: rgba(37, 211, 102, 0.12);
+          color: var(--success);
+          font-size: 13px;
+          font-weight: 700;
+
+          mat-icon {
+            font-size: 18px;
+            width: 18px;
+            height: 18px;
           }
         }
 

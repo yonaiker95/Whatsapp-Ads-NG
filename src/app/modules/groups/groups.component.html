@@ -8,6 +8,14 @@
       <button
         mat-raised-button
         color="primary"
+        (click)="openCreateGroupDialog()"
+        [disabled]="!instances.length"
+        matTooltip="Crea un grupo nuevo en WhatsApp con los contactos que agregues">
+        <mat-icon>group_add</mat-icon>
+        Crear grupo
+      </button>
+      <button
+        mat-stroked-button
         (click)="syncAll()"
         [disabled]="syncing || !instances.length"
         matTooltip="Sincroniza los grupos de todas tus instancias">

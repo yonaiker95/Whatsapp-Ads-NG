@@ -122,7 +122,8 @@
         </div>
       </div>
       <div class="form-body">
-        <mat-button-toggle-group formControlName="scheduleMode" class="schedule-toggle" aria-label="Modo de envío">
+        <mat-button-toggle-group formControlName="scheduleMode" class="schedule-toggle" aria-label="Modo de envío"
+                                 (change)="onScheduleModeChange()">
           <mat-button-toggle value="now">
             <mat-icon>flash_on</mat-icon>
             Enviar ahora
@@ -136,27 +137,25 @@
         <div class="form-row" *ngIf="scheduleMode === 'scheduled'">
           <mat-form-field appearance="outline">
             <mat-label>Fecha de envío *</mat-label>
-            <input matInput [matDatepicker]="picker" formControlName="scheduledDate" readonly
-                   (click)="picker.open()" placeholder="DD/MM/AAAA" [min]="today">
-            <mat-datepicker-toggle matIconSuffix [for]="picker"></mat-datepicker-toggle>
+            <input matInput formControlName="scheduledDate" placeholder="DD/MM/AAAA" maxlength="10"
+                   (input)="onScheduledDateInput()">
+            <mat-icon matIconSuffix>event</mat-icon>
             <button mat-icon-button matIconSuffix type="button" *ngIf="form.get('scheduledDate')?.value"
                     (click)="clearScheduleDate()" aria-label="Quitar fecha">
               <mat-icon>close</mat-icon>
             </button>
-            <mat-datepicker #picker></mat-datepicker>
+            <mat-error *ngIf="form.get('scheduledDate')?.hasError('pattern')">Usa el formato DD/MM/AAAA</mat-error>
           </mat-form-field>
 
           <mat-form-field appearance="outline">
-            <mat-label>Hora de envío</mat-label>
-            <input matInput formControlName="scheduledTime" readonly (click)="openClock('scheduledTime', 'Hora de envío')"
-                   placeholder="HH:MM">
-            <button mat-icon-button matIconSuffix type="button" (click)="openClock('scheduledTime', 'Hora de envío')">
-              <mat-icon>schedule</mat-icon>
-            </button>
+            <mat-label>Hora de envío *</mat-label>
+            <input matInput formControlName="scheduledTime" placeholder="HH:MM" maxlength="5">
+            <mat-icon matIconSuffix>schedule</mat-icon>
             <button mat-icon-button matIconSuffix type="button" *ngIf="form.get('scheduledTime')?.value"
                     (click)="clearScheduleTime()" aria-label="Quitar hora">
               <mat-icon>close</mat-icon>
             </button>
+            <mat-error *ngIf="form.get('scheduledTime')?.hasError('pattern')">Usa el formato HH:MM</mat-error>
           </mat-form-field>
         </div>
 
@@ -171,21 +170,17 @@
         <div class="form-row" *ngIf="scheduleMode === 'scheduled' && recurrenceValue !== 'none'">
           <mat-form-field appearance="outline">
             <mat-label>Hora de inicio</mat-label>
-            <input matInput formControlName="startTime" readonly (click)="openClock('startTime', 'Hora de inicio')"
-                   placeholder="HH:MM">
-            <button mat-icon-button matIconSuffix type="button" (click)="openClock('startTime', 'Hora de inicio')">
-              <mat-icon>schedule</mat-icon>
-            </button>
+            <input matInput formControlName="startTime" placeholder="HH:MM" maxlength="5">
+            <mat-icon matIconSuffix>schedule</mat-icon>
+            <mat-error *ngIf="form.get('startTime')?.hasError('pattern')">Usa el formato HH:MM</mat-error>
           </mat-form-field>
 
           <mat-form-field appearance="outline">
             <mat-label>Hora de fin</mat-label>
-            <input matInput formControlName="endTime" readonly (click)="openClock('endTime', 'Hora de fin')"
-                   placeholder="HH:MM">
-            <button mat-icon-button matIconSuffix type="button" (click)="openClock('endTime', 'Hora de fin')">
-              <mat-icon>schedule</mat-icon>
-            </button>
+            <input matInput formControlName="endTime" placeholder="HH:MM" maxlength="5">
+            <mat-icon matIconSuffix>schedule</mat-icon>
             <mat-error *ngIf="form.hasError('endBeforeStart')">Debe ser posterior a la hora de inicio</mat-error>
+            <mat-error *ngIf="form.get('endTime')?.hasError('pattern')">Usa el formato HH:MM</mat-error>
           </mat-form-field>
         </div>
 
@@ -225,12 +220,13 @@
                 </button>
               </mat-chip-row>
               <input
+                #tagChipInput
                 placeholder="Agregar etiqueta..."
                 [matChipInputFor]="tagGrid"
                 [matAutocomplete]="tagAuto"
                 (matChipInputTokenEnd)="addTag($event, 'tags')" />
             </mat-chip-grid>
-            <mat-autocomplete #tagAuto>
+            <mat-autocomplete #tagAuto (optionSelected)="onTagOptionSelected($event, 'tags')">
               <mat-option *ngFor="let tag of suggestedTags" [value]="tag">{{ tag }}</mat-option>
             </mat-autocomplete>
             <mat-hint>Solo reciben los contactos con estas etiquetas</mat-hint>
@@ -246,12 +242,13 @@
                 </button>
               </mat-chip-row>
               <input
+                #excludeTagChipInput
                 placeholder="Agregar etiqueta..."
                 [matChipInputFor]="excludeTagGrid"
                 [matAutocomplete]="excludeTagAuto"
                 (matChipInputTokenEnd)="addTag($event, 'excludeTags')" />
             </mat-chip-grid>
-            <mat-autocomplete #excludeTagAuto>
+            <mat-autocomplete #excludeTagAuto (optionSelected)="onTagOptionSelected($event, 'excludeTags')">
               <mat-option *ngFor="let tag of suggestedExcludeTags" [value]="tag">{{ tag }}</mat-option>
             </mat-autocomplete>
             <mat-hint>Los contactos con estas etiquetas no reciben el mensaje</mat-hint>

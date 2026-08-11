@@ -13,10 +13,15 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSnackBarModule, MatSnackBar } from '@angular/material/snack-bar';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatDialogModule, MatDialog } from '@angular/material/dialog';
 import { Subject, takeUntil } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
 import { UsersService } from '../../core/services/users.service';
 import { RegisteredUser, BlockAuditEntry } from '../../core/models/user-admin.model';
+import {
+  UserManagerDialogComponent,
+  UserManagerDialogData,
+} from './components/user-manager-dialog/user-manager-dialog.component';
 
 @Component({
   selector: 'app-users',
@@ -24,7 +29,7 @@ import { RegisteredUser, BlockAuditEntry } from '../../core/models/user-admin.mo
   imports: [
     CommonModule, FormsModule, MatCardModule, MatIconModule, MatButtonModule, MatChipsModule,
     MatTableModule, MatFormFieldModule, MatInputModule, MatProgressSpinnerModule,
-    MatTooltipModule, MatSnackBarModule, MatDividerModule, MatPaginatorModule,
+    MatTooltipModule, MatSnackBarModule, MatDividerModule, MatPaginatorModule, MatDialogModule,
   ],
   templateUrl: './users.component.html',
   styleUrls: ['./users.component.scss'],
@@ -32,11 +37,9 @@ import { RegisteredUser, BlockAuditEntry } from '../../core/models/user-admin.mo
 export class UsersComponent implements OnInit, OnDestroy {
   users: RegisteredUser[] = [];
   loading = true;
+  loadError = false;
   search = '';
   filter: 'all' | 'active' | 'blocked' = 'all';
-  expandedId: string | null = null;
-  blockTargetId: string | null = null;
-  blockReason = '';
   actioningId: string | null = null;
 
   pageIndex = 0;
@@ -44,8 +47,9 @@ export class UsersComponent implements OnInit, OnDestroy {
 
   auditEntries: BlockAuditEntry[] = [];
   loadingAudit = false;
+  loadAuditError = false;
 
-  displayedColumns = ['usuario', 'rol', 'organizacion', 'plan', 'estado', 'registrado', 'acciones', 'expand'];
+  displayedColumns = ['usuario', 'organizacion', 'plan', 'estado', 'registrado', 'acciones'];
 
   private destroy$ = new Subject<void>();
 
@@ -53,11 +57,8 @@ export class UsersComponent implements OnInit, OnDestroy {
     private usersService: UsersService,
     private authService: AuthService,
     private snackBar: MatSnackBar,
+    private dialog: MatDialog,
   ) {}
-
-  get isOwner(): boolean {
-    return this.authService.currentUser()?.role === 'owner';
-  }
 
   get isAdmin(): boolean {
     return this.authService.currentUser()?.role === 'admin';
@@ -68,15 +69,15 @@ export class UsersComponent implements OnInit, OnDestroy {
   }
 
   get viewTitle(): string {
-    return this.isAdmin ? 'Propietarios de organizaciones' : 'Usuarios de mi organización';
+    return 'Dueños de cada organización registrada en la plataforma';
   }
 
-  get stats(): { total: number; active: number; blocked: number; admins: number } {
+  get stats(): { total: number; active: number; blocked: number; organizations: number } {
     return {
       total: this.users.length,
       active: this.users.filter((u) => !u.blocked).length,
       blocked: this.users.filter((u) => u.blocked).length,
-      admins: this.users.filter((u) => u.role === 'owner' || u.role === 'admin').length,
+      organizations: new Set(this.users.map((u) => u.organizationId).filter(Boolean)).size,
     };
   }
 
@@ -99,6 +100,14 @@ export class UsersComponent implements OnInit, OnDestroy {
     return this.filteredUsers.slice(start, start + this.pageSize);
   }
 
+  get resultsRange(): string {
+    const total = this.filteredUsers.length;
+    if (total === 0) return 'Sin resultados';
+    const start = this.pageIndex * this.pageSize + 1;
+    const end = Math.min((this.pageIndex + 1) * this.pageSize, total);
+    return `Mostrando ${start}–${end} de ${total} propietarios`;
+  }
+
   onPage(event: PageEvent): void {
     this.pageIndex = event.pageIndex;
     this.pageSize = event.pageSize;
@@ -106,7 +115,7 @@ export class UsersComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.load();
-    if (this.isOwner || this.isAdmin) {
+    if (this.isAdmin) {
       this.loadAudit();
     }
   }
@@ -118,6 +127,7 @@ export class UsersComponent implements OnInit, OnDestroy {
 
   load(): void {
     this.loading = true;
+    this.loadError = false;
     this.usersService.list().pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         this.users = res.data || [];
@@ -125,12 +135,14 @@ export class UsersComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.loading = false;
+        this.loadError = true;
       },
     });
   }
 
   loadAudit(): void {
     this.loadingAudit = true;
+    this.loadAuditError = false;
     this.usersService.audit().pipe(takeUntil(this.destroy$)).subscribe({
       next: (res) => {
         this.auditEntries = res.data || [];
@@ -138,39 +150,37 @@ export class UsersComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.loadingAudit = false;
+        this.loadAuditError = true;
       },
     });
   }
 
-  toggleExpand(u: RegisteredUser): void {
-    this.expandedId = this.expandedId === u.id ? null : u.id;
-    this.blockTargetId = null;
+  refresh(): void {
+    this.load();
+    if (this.isAdmin) {
+      this.loadAudit();
+    }
   }
 
-  startBlock(u: RegisteredUser): void {
-    this.blockTargetId = u.id;
-    this.blockReason = u.blockedReason || '';
+  avatarColor(u: RegisteredUser): string {
+    const palette = ['#075E54', '#0B6E63', '#06B6D4', '#6c63ff', '#7c3aed', '#059669', '#2563eb', '#db2777'];
+    let h = 0;
+    for (const c of u.name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    return palette[h % palette.length];
   }
 
-  cancelBlock(): void {
-    this.blockTargetId = null;
-  }
-
-  confirmBlock(): void {
-    if (!this.blockTargetId) return;
-    this.actioningId = this.blockTargetId;
-    this.usersService.block(this.blockTargetId, this.blockReason).pipe(takeUntil(this.destroy$)).subscribe({
-      next: () => {
-        this.actioningId = null;
-        this.blockTargetId = null;
+  openDetails(u: RegisteredUser, focusBlock = false): void {
+    if (this.actioningId === u.id) return;
+    const data: UserManagerDialogData = { user: u, focusBlock };
+    const ref = this.dialog.open<UserManagerDialogComponent, UserManagerDialogData, boolean>(
+      UserManagerDialogComponent,
+      { data, width: '720px', maxWidth: '95vw' }
+    );
+    ref.afterClosed().pipe(takeUntil(this.destroy$)).subscribe((changed) => {
+      if (changed) {
         this.load();
         this.loadAudit();
-        this.snackBar.open('Usuario bloqueado', 'Cerrar', { duration: 3000 });
-      },
-      error: (err) => {
-        this.actioningId = null;
-        this.snackBar.open(err?.error?.error || 'Error al bloquear al usuario', 'Cerrar', { duration: 5000 });
-      },
+      }
     });
   }
 
@@ -204,20 +214,25 @@ export class UsersComponent implements OnInit, OnDestroy {
     this.pageIndex = 0;
   }
 
-  roleLabel(role: string): string {
-    switch (role) {
-      case 'owner':
-        return 'Propietario';
-      case 'admin':
-        return 'Administrador';
-      default:
-        return 'Usuario';
-    }
+  setFilterFromStat(type: 'total' | 'active' | 'blocked'): void {
+    const map = { total: 'all', active: 'active', blocked: 'blocked' } as const;
+    this.setFilter(map[type]);
   }
 
   planLabel(plan: string): string {
-    const map: Record<string, string> = { mensual: 'Mensual', trimestral: 'Trimestral', anual: 'Anual', free: 'Gratis' };
-    return map[plan] || plan || '—';
+    const map: Record<string, string> = {
+      mensual: 'Mensual',
+      trimestral: 'Trimestral',
+      anual: 'Anual',
+      free: 'Gratis',
+      starter: 'Starter',
+      profesional: 'Profesional',
+      empresarial: 'Empresarial',
+    };
+    const label = map[plan];
+    if (label) return label;
+    if (!plan) return '—';
+    return plan.charAt(0).toUpperCase() + plan.slice(1);
   }
 
   billingLabel(status: string): string {
@@ -227,16 +242,12 @@ export class UsersComponent implements OnInit, OnDestroy {
 
   canBlock(u: RegisteredUser): boolean {
     if (u.blocked || u.role === 'admin' || u.id === this.currentUserId) return false;
-    if (this.isAdmin) return true;
-    if (this.isOwner) return u.role === 'user';
-    return false;
+    return this.isAdmin;
   }
 
   canUnblock(u: RegisteredUser): boolean {
     if (!u.blocked || u.role === 'admin') return false;
-    if (this.isAdmin) return true;
-    if (this.isOwner) return u.role === 'user';
-    return false;
+    return this.isAdmin;
   }
 
   isProtected(u: RegisteredUser): boolean {

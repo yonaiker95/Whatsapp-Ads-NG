@@ -1,0 +1,85 @@
+<div class="page">
+  <div class="page-header">
+    <div>
+      <h1>Agenda y citas</h1>
+      <p class="subtitle">Agenda, edita o elimina citas, eventos y disponibilidad. El bot consulta esta agenda en tiempo real.</p>
+    </div>
+    <button mat-raised-button color="primary" (click)="openCreate()">
+      <mat-icon>event_available</mat-icon> Agendar cita
+    </button>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <mat-icon>event</mat-icon>
+      <div>
+        <span class="stat-label">Citas totales</span>
+        <span class="stat-value">{{ appointments.length }}</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <mat-icon>upcoming</mat-icon>
+      <div>
+        <span class="stat-label">Próximas</span>
+        <span class="stat-value">{{ upcomingCount }}</span>
+      </div>
+    </div>
+  </div>
+
+  <mat-card class="filters-card">
+    <mat-form-field appearance="outline">
+      <mat-label>Estado</mat-label>
+      <mat-select [(ngModel)]="selectedStatus" (ngModelChange)="load()">
+        @for (s of statuses; track s.value) {
+          <mat-option [value]="s.value">{{ s.label }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+  </mat-card>
+
+  @if (loading) {
+    <mat-card class="loading-box"><mat-spinner diameter="32"></mat-spinner></mat-card>
+  } @else if (appointments.length === 0) {
+    <mat-card class="empty">
+      <mat-icon>calendar_month</mat-icon>
+      <p>No hay citas. Agenda la primera con el botón "Agendar cita".</p>
+    </mat-card>
+  } @else {
+    @for (day of groups; track day.label) {
+      <div class="day-group">
+        <h3 class="day-label">{{ day.label }}</h3>
+        @for (a of day.items; track a.id) {
+          <mat-card class="appointment-card">
+            <div class="appt-time">
+              <span class="time">{{ timeRange(a) }}</span>
+            </div>
+            <div class="appt-body">
+              <div class="appt-title">
+                <mat-icon [matTooltip]="statusLabel(a.status)">{{ statusIcon(a.status) }}</mat-icon>
+                <span class="title">{{ a.title }}</span>
+                <span class="status-chip" [class]="a.status">{{ statusLabel(a.status) }}</span>
+              </div>
+              @if (a.customerName || a.location) {
+                <div class="appt-meta">
+                  @if (a.customerName) {
+                    <span><mat-icon>person</mat-icon> {{ a.customerName }}</span>
+                  }
+                  @if (a.location) {
+                    <span><mat-icon>place</mat-icon> {{ a.location }}</span>
+                  }
+                </div>
+              }
+              @if (a.description) {
+                <p class="appt-desc">{{ a.description }}</p>
+              }
+            </div>
+            <div class="appt-actions">
+              <button mat-icon-button matTooltip="Editar" (click)="openEdit(a)"><mat-icon>edit</mat-icon></button>
+              <button mat-icon-button matTooltip="Eliminar" color="warn" (click)="confirmDelete(a)"><mat-icon>delete</mat-icon></button>
+            </div>
+          </mat-card>
+        }
+      </div>
+    }
+  }
+</div>

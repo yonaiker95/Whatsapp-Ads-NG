@@ -12,6 +12,19 @@ export interface GroupSyncResult {
   total: number;
 }
 
+export interface RemoteContact {
+  name: string;
+  phone: string;
+}
+
+export interface CreateRemoteGroupData {
+  instanceId: string;
+  name: string;
+  description?: string;
+  tags?: string[];
+  contacts: RemoteContact[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class GroupService {
   constructor(private api: ApiService) {}
@@ -26,6 +39,10 @@ export class GroupService {
 
   create(data: GroupFormData): Observable<Group> {
     return this.api.post<Group>('/groups', data).pipe(map((res) => res.data));
+  }
+
+  createRemote(data: CreateRemoteGroupData): Observable<Group> {
+    return this.api.post<Group>('/groups/create-remote', data).pipe(map((res) => res.data));
   }
 
   update(id: string, data: GroupFormData): Observable<Group> {

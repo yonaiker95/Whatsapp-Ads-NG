@@ -137,6 +137,9 @@ form {
   ::ng-deep .mat-button-toggle {
     flex: 1;
     border: none;
+    background: var(--surface);
+    color: var(--text-secondary);
+    transition: background var(--transition-fast), color var(--transition-fast);
 
     .mat-button-toggle-label-content {
       display: flex;
@@ -145,12 +148,23 @@ form {
       gap: 6px;
       font-weight: 600;
       line-height: 20px;
+      color: inherit;
     }
 
     mat-icon {
       font-size: 18px;
       width: 18px;
       height: 18px;
+    }
+
+    &:hover:not(.mat-button-toggle-checked) {
+      background: var(--surface-hover);
+      color: var(--text-primary);
+    }
+
+    &.mat-button-toggle-checked {
+      background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+      color: var(--primary);
     }
   }
 
@@ -264,9 +278,55 @@ form {
 .dialog-footer {
   padding: 14px 24px;
   border-top: 1px solid var(--border);
+  gap: 8px;
 
   button + button {
-    margin-left: 8px;
+    margin-left: 0;
+  }
+
+  .mat-mdc-stroked-button,
+  .mat-mdc-raised-button.mat-primary {
+    height: 42px;
+    padding: 0 20px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    transition: box-shadow var(--transition-fast), transform var(--transition-fast);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    &:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+  }
+
+  .mat-mdc-raised-button.mat-primary {
+    min-width: 132px;
+    box-shadow: var(--shadow-sm);
+
+    &:hover:not(:disabled) {
+      box-shadow: var(--shadow-md);
+      transform: translateY(-1px);
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(0);
+      box-shadow: var(--shadow-sm);
+    }
+
+    mat-spinner {
+      margin-right: 8px;
+    }
+  }
+
+  .mat-mdc-stroked-button:hover:not(:disabled) {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(37, 211, 102, 0.06);
   }
 }
 

@@ -125,6 +125,33 @@
           outline-offset: 2px;
         }
       }
+
+      .btn-dashboard {
+        background: var(--secondary);
+        color: var(--text-on-secondary);
+        font-weight: 600;
+        padding: 0 24px;
+        height: 44px;
+        border-radius: 24px;
+        box-shadow: 0 4px 14px rgba(37, 211, 102, 0.4);
+        transition: all 0.2s;
+
+        mat-icon {
+          margin-right: 8px;
+          font-size: 20px;
+        }
+
+        &:hover {
+          background: var(--success);
+          box-shadow: 0 6px 20px rgba(37, 211, 102, 0.5);
+          transform: translateY(-1px);
+        }
+
+        &:focus-visible {
+          outline: 2px solid var(--secondary);
+          outline-offset: 2px;
+        }
+      }
     }
 
     .theme-btn,
@@ -229,6 +256,14 @@
       }
 
       .btn-register {
+        background: var(--secondary);
+        color: var(--text-on-secondary);
+        font-weight: 600;
+        height: 48px;
+        border-radius: 24px;
+      }
+
+      .btn-dashboard {
         background: var(--secondary);
         color: var(--text-on-secondary);
         font-weight: 600;

@@ -1,38 +1,77 @@
 <div class="users-container">
-  <div class="header">
-    <div class="header-content">
-      <h1>Usuarios registrados</h1>
-      <p class="subtitle">{{ viewTitle }}</p>
+  <div class="page-header">
+    <div>
+      <h1>Propietarios de organizaciones</h1>
+      <p class="page-subtitle">{{ viewTitle }}</p>
+    </div>
+    <div class="header-actions">
+      <button mat-icon-button (click)="refresh()" matTooltip="Actualizar datos" aria-label="Actualizar">
+        <mat-icon>refresh</mat-icon>
+      </button>
     </div>
   </div>
 
   <div class="stats-row">
-    <mat-card class="stat-card">
-      <mat-icon>people</mat-icon>
-      <div>
+    <mat-card
+      class="stat-card stat-total"
+      appearance="outlined"
+      [class.clickable]="true"
+      [class.active]="filter === 'all'"
+      (click)="setFilterFromStat('total')"
+      (keydown.enter)="setFilterFromStat('total')"
+      tabindex="0"
+      role="button"
+      aria-label="Filtrar: todos los propietarios">
+      <div class="stat-icon"><mat-icon>people</mat-icon></div>
+      <div class="stat-meta">
         <span class="stat-value">{{ stats.total }}</span>
-        <span class="stat-label">Total</span>
+        <span class="stat-label">Total de dueños</span>
       </div>
     </mat-card>
-    <mat-card class="stat-card stat-active">
-      <mat-icon>check_circle</mat-icon>
-      <div>
+    <mat-card
+      class="stat-card stat-org"
+      appearance="outlined"
+      (click)="setFilter('all')"
+      (keydown.enter)="setFilter('all')"
+      tabindex="0"
+      role="button"
+      aria-label="Ver organizaciones">
+      <div class="stat-icon"><mat-icon>domain</mat-icon></div>
+      <div class="stat-meta">
+        <span class="stat-value">{{ stats.organizations }}</span>
+        <span class="stat-label">Organizaciones</span>
+      </div>
+    </mat-card>
+    <mat-card
+      class="stat-card stat-active"
+      appearance="outlined"
+      [class.clickable]="true"
+      [class.active]="filter === 'active'"
+      (click)="setFilterFromStat('active')"
+      (keydown.enter)="setFilterFromStat('active')"
+      tabindex="0"
+      role="button"
+      aria-label="Filtrar: propietarios activos">
+      <div class="stat-icon"><mat-icon>check_circle</mat-icon></div>
+      <div class="stat-meta">
         <span class="stat-value">{{ stats.active }}</span>
         <span class="stat-label">Activos</span>
       </div>
     </mat-card>
-    <mat-card class="stat-card stat-blocked">
-      <mat-icon>block</mat-icon>
-      <div>
+    <mat-card
+      class="stat-card stat-blocked"
+      appearance="outlined"
+      [class.clickable]="true"
+      [class.active]="filter === 'blocked'"
+      (click)="setFilterFromStat('blocked')"
+      (keydown.enter)="setFilterFromStat('blocked')"
+      tabindex="0"
+      role="button"
+      aria-label="Filtrar: propietarios bloqueados">
+      <div class="stat-icon"><mat-icon>block</mat-icon></div>
+      <div class="stat-meta">
         <span class="stat-value">{{ stats.blocked }}</span>
         <span class="stat-label">Bloqueados</span>
-      </div>
-    </mat-card>
-    <mat-card class="stat-card stat-admin">
-      <mat-icon>admin_panel_settings</mat-icon>
-      <div>
-        <span class="stat-value">{{ stats.admins }}</span>
-        <span class="stat-label">Administradores</span>
       </div>
     </mat-card>
   </div>
@@ -40,46 +79,81 @@
   <mat-card class="table-card">
     <mat-card-content>
       @if (loading) {
-        <div class="loading-container">
-          <mat-spinner diameter="40"></mat-spinner>
-          <p>Cargando usuarios...</p>
+        <div class="skeleton-list" aria-label="Cargando propietarios">
+          @for (row of [0, 1, 2, 3, 4]; track row) {
+            <div class="skeleton-row">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-col">
+                <div class="skeleton-line w-40"></div>
+                <div class="skeleton-line w-60"></div>
+              </div>
+              <div class="skeleton-line w-25 grow"></div>
+              <div class="skeleton-line w-15"></div>
+              <div class="skeleton-pill"></div>
+              <div class="skeleton-icon"></div>
+            </div>
+          }
         </div>
-      } @else if (filteredUsers.length === 0 && users.length === 0) {
+      } @else if (loadError) {
+        <div class="empty-state error-state">
+          <div class="empty-icon"><mat-icon>error_outline</mat-icon></div>
+          <h3>No se pudieron cargar los propietarios</h3>
+          <p>Ocurrió un error al consultar la información. Intenta nuevamente.</p>
+          <button mat-raised-button color="primary" (click)="refresh()">
+            <mat-icon>refresh</mat-icon>
+            Reintentar
+          </button>
+        </div>
+      } @else if (users.length === 0) {
         <div class="empty-state">
-          <mat-icon>person_off</mat-icon>
-          <h3>No hay usuarios registrados</h3>
-          <p>Los usuarios aparecerán aquí cuando se registren en la plataforma.</p>
+          <div class="empty-icon"><mat-icon>person_off</mat-icon></div>
+          <h3>No hay propietarios de organizaciones</h3>
+          <p>Los dueños de organizaciones aparecerán aquí cuando se registren en la plataforma.</p>
+          <button mat-stroked-button (click)="refresh()">
+            <mat-icon>refresh</mat-icon>
+            Actualizar
+          </button>
         </div>
       } @else {
         <div class="table-toolbar">
-          <mat-form-field appearance="outline" class="search-field">
-            <mat-label>Buscar usuario</mat-label>
+          <div class="filter-chips" role="group" aria-label="Filtrar propietarios">
+            <button type="button" class="filter-chip" [class.active]="filter === 'all'" (click)="setFilter('all')">
+              Todos<span class="chip-count">{{ stats.total }}</span>
+            </button>
+            <button type="button" class="filter-chip" [class.active]="filter === 'active'" (click)="setFilter('active')">
+              Activos<span class="chip-count">{{ stats.active }}</span>
+            </button>
+            <button type="button" class="filter-chip" [class.active]="filter === 'blocked'" (click)="setFilter('blocked')">
+              Bloqueados<span class="chip-count">{{ stats.blocked }}</span>
+            </button>
+          </div>
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="search-field">
+            <mat-label>Buscar propietario</mat-label>
             <mat-icon matPrefix>search</mat-icon>
-            <input matInput [(ngModel)]="search" (ngModelChange)="onSearch()" placeholder="Nombre, correo u organización">
-            <button *ngIf="search" matSuffix mat-icon-button aria-label="Limpiar" (click)="clearSearch()">
+            <input matInput [(ngModel)]="search" (ngModelChange)="onSearch()" placeholder="Nombre, correo u organización" />
+            <button *ngIf="search" matSuffix mat-icon-button aria-label="Limpiar búsqueda" (click)="clearSearch()">
               <mat-icon>close</mat-icon>
             </button>
           </mat-form-field>
-          <div class="filter-chips">
-            <mat-chip class="filter-chip" [class.active]="filter === 'all'" (click)="setFilter('all')">Todos</mat-chip>
-            <mat-chip class="filter-chip" [class.active]="filter === 'active'" (click)="setFilter('active')">Activos</mat-chip>
-            <mat-chip class="filter-chip" [class.active]="filter === 'blocked'" (click)="setFilter('blocked')">Bloqueados</mat-chip>
-          </div>
         </div>
 
         @if (filteredUsers.length === 0) {
           <div class="no-results">
-            <mat-icon>search_off</mat-icon>
-            <p>No se encontraron usuarios con los filtros aplicados</p>
+            <div class="empty-icon"><mat-icon>search_off</mat-icon></div>
+            <p>No se encontraron propietarios con los filtros aplicados</p>
+            <button mat-stroked-button (click)="clearSearch(); setFilter('all')">
+              <mat-icon>filter_alt_off</mat-icon>
+              Limpiar filtros
+            </button>
           </div>
         } @else {
           <div class="table-wrapper">
             <table mat-table [dataSource]="paginatedUsers" class="users-table">
               <ng-container matColumnDef="usuario">
                 <th mat-header-cell *matHeaderCellDef> Usuario </th>
-                <td mat-cell *matCellDef="let u" (click)="toggleExpand(u)">
+                <td mat-cell *matCellDef="let u" (click)="openDetails(u)">
                   <div class="name-cell">
-                    <span class="avatar" [class.avatar-blocked]="u.blocked">{{ u.name.charAt(0).toUpperCase() }}</span>
+                    <span class="avatar" [class.avatar-blocked]="u.blocked" [style.background]="avatarColor(u)">{{ u.name.charAt(0).toUpperCase() }}</span>
                     <div class="name-meta">
                       <strong>{{ u.name }}</strong>
                       <span class="email">{{ u.email }}</span>
@@ -88,48 +162,41 @@
                 </td>
               </ng-container>
 
-              <ng-container matColumnDef="rol">
-                <th mat-header-cell *matHeaderCellDef> Rol </th>
-                <td mat-cell *matCellDef="let u" (click)="toggleExpand(u)">
-                  <mat-chip selectable="false" [class.chip-owner]="u.role === 'owner'"
-                    [class.chip-admin]="u.role === 'admin'">
-                    {{ roleLabel(u.role) }}
-                  </mat-chip>
-                </td>
-              </ng-container>
-
               <ng-container matColumnDef="organizacion">
                 <th mat-header-cell *matHeaderCellDef> Organización </th>
-                <td mat-cell *matCellDef="let u" (click)="toggleExpand(u)">
-                  <span *ngIf="u.organizationName; else noOrg">{{ u.organizationName }}</span>
-                  <ng-template #noOrg><span class="muted">Sin organización</span></ng-template>
+                <td mat-cell *matCellDef="let u" (click)="openDetails(u)">
+                  <div class="org-cell">
+                    <mat-icon class="org-icon">domain</mat-icon>
+                    <span *ngIf="u.organizationName; else noOrg">{{ u.organizationName }}</span>
+                    <ng-template #noOrg><span class="muted">Sin organización</span></ng-template>
+                  </div>
                 </td>
               </ng-container>
 
               <ng-container matColumnDef="plan">
                 <th mat-header-cell *matHeaderCellDef> Plan </th>
-                <td mat-cell *matCellDef="let u" (click)="toggleExpand(u)">
+                <td mat-cell *matCellDef="let u" (click)="openDetails(u)">
                   <div class="plan-cell">
-                    <span>{{ planLabel(u.plan) }}</span>
-                    <span class="billing" [class.billing-bad]="u.billingStatus !== 'active'">{{ billingLabel(u.billingStatus) }}</span>
+                    <span class="plan-pill">{{ planLabel(u.plan) }}</span>
+                    <span class="billing-pill" [class.bad]="u.billingStatus !== 'active'">{{ billingLabel(u.billingStatus) }}</span>
                   </div>
                 </td>
               </ng-container>
 
               <ng-container matColumnDef="estado">
                 <th mat-header-cell *matHeaderCellDef> Estado </th>
-                <td mat-cell *matCellDef="let u" (click)="toggleExpand(u)">
-                  <mat-chip selectable="false" [class.chip-blocked]="u.blocked" [class.chip-active]="!u.blocked"
+                <td mat-cell *matCellDef="let u" (click)="openDetails(u)">
+                  <span class="status-pill" [class.blocked]="u.blocked" [class.active]="!u.blocked"
                     [matTooltip]="u.blocked ? (u.blockedReason || 'Bloqueado por el propietario o administrador') : 'Acceso activo'">
                     <mat-icon>{{ u.blocked ? 'block' : 'check_circle' }}</mat-icon>
                     {{ u.blocked ? 'Bloqueado' : 'Activo' }}
-                  </mat-chip>
+                  </span>
                 </td>
               </ng-container>
 
               <ng-container matColumnDef="registrado">
                 <th mat-header-cell *matHeaderCellDef> Registrado </th>
-                <td mat-cell *matCellDef="let u" (click)="toggleExpand(u)">
+                <td mat-cell *matCellDef="let u" (click)="openDetails(u)">
                   <span class="muted">{{ formatDate(u.createdAt) }}</span>
                 </td>
               </ng-container>
@@ -137,111 +204,18 @@
               <ng-container matColumnDef="acciones">
                 <th mat-header-cell *matHeaderCellDef> Acciones </th>
                 <td mat-cell *matCellDef="let u" class="actions-cell">
-                  <button mat-icon-button (click)="toggleExpand(u)" matTooltip="Ver detalles" aria-label="Ver detalles">
-                    <mat-icon>{{ expandedId === u.id ? 'expand_less' : 'expand_more' }}</mat-icon>
+                  <button mat-icon-button (click)="openDetails(u)" matTooltip="Gestionar plan, extras y cuenta" aria-label="Gestionar">
+                    <mat-icon>tune</mat-icon>
                   </button>
                   @if (canBlock(u)) {
-                    <button mat-icon-button color="warn" (click)="startBlock(u)" matTooltip="Bloquear del sistema" aria-label="Bloquear">
+                    <button mat-icon-button color="warn" (click)="openDetails(u, true)" matTooltip="Bloquear del sistema" aria-label="Bloquear" [disabled]="actioningId === u.id">
                       <mat-icon>block</mat-icon>
                     </button>
                   }
                   @if (canUnblock(u)) {
-                    <button mat-icon-button color="primary" (click)="unblock(u)" matTooltip="Desbloquear" aria-label="Desbloquear">
+                    <button mat-icon-button color="primary" (click)="unblock(u)" matTooltip="Desbloquear" aria-label="Desbloquear" [disabled]="actioningId === u.id">
                       <mat-icon>lock_open</mat-icon>
                     </button>
-                  }
-                </td>
-              </ng-container>
-
-              <ng-container matColumnDef="expand">
-                <th mat-header-cell *matHeaderCellDef> </th>
-                <td mat-cell *matCellDef="let u" [attr.colspan]="displayedColumns.length">
-                  @if (expandedId === u.id) {
-                    <div class="user-details">
-                      <div class="details-grid">
-                        <div class="detail-item">
-                          <span class="detail-label">Teléfono</span>
-                          <span class="detail-value">{{ u.phone || '—' }}</span>
-                        </div>
-                        <div class="detail-item">
-                          <span class="detail-label">Teléfono verificado</span>
-                          <span class="detail-value">{{ u.phoneVerified ? 'Sí' : 'No' }}</span>
-                        </div>
-                        <div class="detail-item">
-                          <span class="detail-label">Verificación en 2 pasos</span>
-                          <span class="detail-value">{{ u.twoFactorEnabled ? 'Activada' : 'Desactivada' }}</span>
-                        </div>
-                        <div class="detail-item">
-                          <span class="detail-label">Notificaciones</span>
-                          <span class="detail-value">{{ u.notificationsEnabled ? 'Activadas' : 'Desactivadas' }}</span>
-                        </div>
-                        <div class="detail-item">
-                          <span class="detail-label">Instancias</span>
-                          <span class="detail-value">{{ u.instanceCount }}</span>
-                        </div>
-                        <div class="detail-item">
-                          <span class="detail-label">Sesiones activas</span>
-                          <span class="detail-value">{{ u.sessionCount }}</span>
-                        </div>
-                        <div class="detail-item">
-                          <span class="detail-label">Plan</span>
-                          <span class="detail-value">{{ planLabel(u.plan) }}</span>
-                        </div>
-                        <div class="detail-item">
-                          <span class="detail-label">Facturación</span>
-                          <span class="detail-value" [class.billing-bad]="u.billingStatus !== 'active'">{{ billingLabel(u.billingStatus) }}</span>
-                        </div>
-                        <div class="detail-item">
-                          <span class="detail-label">Última actualización</span>
-                          <span class="detail-value">{{ formatDate(u.updatedAt) }}</span>
-                        </div>
-                        @if (u.blocked) {
-                          <div class="detail-item detail-item-wide">
-                            <span class="detail-label">Motivo del bloqueo</span>
-                            <span class="detail-value">{{ u.blockedReason || 'Sin motivo indicado' }}</span>
-                          </div>
-                          <div class="detail-item">
-                            <span class="detail-label">Bloqueado el</span>
-                            <span class="detail-value">{{ formatDate(u.blockedAt) }}</span>
-                          </div>
-                        }
-                        <div class="detail-item detail-item-wide">
-                          <span class="detail-label">Permisos</span>
-                          <span class="detail-value">
-                            @if (u.permissions.length > 0) {
-                              <span class="perm-chips">
-                                @for (p of u.permissions; track p) {
-                                  <span class="perm-chip">{{ p }}</span>
-                                }
-                              </span>
-                            } @else {
-                              Todos
-                            }
-                          </span>
-                        </div>
-                      </div>
-
-                      @if (blockTargetId === u.id) {
-                        <div class="block-form">
-                          <mat-form-field appearance="outline" class="reason-field">
-                            <mat-label>Motivo del bloqueo (opcional)</mat-label>
-                            <input matInput [(ngModel)]="blockReason" maxlength="200" placeholder="Ej: incumplimiento de los términos">
-                          </mat-form-field>
-                          <button mat-raised-button color="warn" (click)="confirmBlock()" [disabled]="actioningId === u.id">
-                            <mat-spinner diameter="18" *ngIf="actioningId === u.id"></mat-spinner>
-                            {{ actioningId === u.id ? 'Bloqueando...' : 'Confirmar bloqueo' }}
-                          </button>
-                          <button mat-button (click)="cancelBlock()">Cancelar</button>
-                        </div>
-                      } @else if (canBlock(u)) {
-                        <div class="details-actions">
-                          <button mat-raised-button color="warn" (click)="startBlock(u)">
-                            <mat-icon>block</mat-icon>
-                            Bloquear del sistema
-                          </button>
-                        </div>
-                      }
-                    </div>
                   }
                 </td>
               </ng-container>
@@ -250,26 +224,29 @@
               <tr mat-row *matRowDef="let row; columns: displayedColumns;" class="user-row"></tr>
             </table>
           </div>
-          <mat-paginator
-            [length]="filteredUsers.length"
-            [pageSize]="pageSize"
-            [pageIndex]="pageIndex"
-            [pageSizeOptions]="[10, 25, 50]"
-            [showFirstLastButtons]="true"
-            (page)="onPage($event)"
-            aria-label="Paginación de usuarios">
-          </mat-paginator>
+          <div class="results-footer">
+            <span class="results-count">{{ resultsRange }}</span>
+            <mat-paginator
+              [length]="filteredUsers.length"
+              [pageSize]="pageSize"
+              [pageIndex]="pageIndex"
+              [pageSizeOptions]="[10, 25, 50]"
+              [showFirstLastButtons]="true"
+              (page)="onPage($event)"
+              aria-label="Paginación de usuarios">
+            </mat-paginator>
+          </div>
         }
       }
     </mat-card-content>
   </mat-card>
 
-  @if (isOwner || isAdmin) {
+  @if (isAdmin) {
     <mat-card class="audit-card">
       <mat-card-header>
         <mat-icon mat-card-avatar>history</mat-icon>
         <mat-card-title>Historial de bloqueos y desbloqueos</mat-card-title>
-        <mat-card-subtitle>Acciones del propietario o administrador sobre las cuentas registradas</mat-card-subtitle>
+        <mat-card-subtitle>Acciones del administrador sobre los propietarios de organizaciones</mat-card-subtitle>
       </mat-card-header>
       <mat-card-content>
         @if (loadingAudit) {
@@ -277,9 +254,18 @@
             <mat-spinner diameter="32"></mat-spinner>
             <p>Cargando historial...</p>
           </div>
+        } @else if (loadAuditError) {
+          <div class="loading-container">
+            <div class="empty-icon"><mat-icon>error_outline</mat-icon></div>
+            <p>No se pudo cargar el historial.</p>
+            <button mat-stroked-button (click)="loadAudit()">
+              <mat-icon>refresh</mat-icon>
+              Reintentar
+            </button>
+          </div>
         } @else if (auditEntries.length === 0) {
           <div class="empty-state">
-            <mat-icon>manage_history</mat-icon>
+            <div class="empty-icon"><mat-icon>manage_history</mat-icon></div>
             <h3>Sin eventos registrados</h3>
             <p>Cuando bloquees o desbloquees usuarios, la acción quedará registrada aquí.</p>
           </div>

@@ -24,8 +24,6 @@
           <mat-icon class="nav-icon">{{ item.icon }}</mat-icon>
         </div>
         <span class="nav-label" *ngIf="!collapsed()">{{ item.label }}</span>
-        <span class="nav-badge" *ngIf="item.badge && !collapsed()">{{ item.badge }}</span>
-        <span class="nav-badge-mini" *ngIf="item.badge && collapsed()">{{ item.badge }}</span>
       </a>
     </div>
   </div>

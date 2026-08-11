@@ -28,6 +28,12 @@ export class ReportsService {
     return this.api.get<ConversationSummary[]>(`/conversations?instanceId=${instanceId}`).pipe(map((res) => res.data));
   }
 
+  syncConversations(instanceId: string): Observable<{ synced: number; created: number; updated: number; total: number }> {
+    return this.api
+      .post<{ synced: number; created: number; updated: number; total: number }>('/conversations/sync', { instanceId })
+      .pipe(map((res) => res.data));
+  }
+
   getConversationHistory(instanceId: string, senderJid: string): Observable<ConversationMessage[]> {
     return this.api.get<ConversationMessage[]>(`/conversations/history?instanceId=${instanceId}&senderJid=${senderJid}`).pipe(map((res) => res.data));
   }

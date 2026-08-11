@@ -13,6 +13,17 @@ export const authGuard: CanActivateFn = (route, state) => {
   return false;
 };
 
+export const globalAdminGuard: CanActivateFn = (_route, _state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+  const user = authService.getAuthState().user;
+  if (user?.role === 'admin') {
+    return true;
+  }
+  router.navigate(['/app/dashboard']);
+  return false;
+};
+
 export const guestGuard: CanActivateFn = (route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);

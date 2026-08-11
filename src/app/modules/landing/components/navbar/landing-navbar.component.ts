@@ -7,6 +7,7 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import { Subscription } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { ThemeService } from '../../../../core/services/theme.service';
+import { AuthService } from '../../../../core/services/auth.service';
 
 @Component({
   selector: 'app-landing-navbar',
@@ -17,6 +18,7 @@ import { ThemeService } from '../../../../core/services/theme.service';
 })
 export class LandingNavbarComponent implements OnDestroy {
   themeService = inject(ThemeService);
+  authService = inject(AuthService);
   isScrolled = false;
   mobileMenuOpen = false;
 

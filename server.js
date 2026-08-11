@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
 const { WebSocketServer } = require('ws');
+const cron = require('node-cron');
 
 // Centro de IA: todo acceso a proveedores pasa por IAProvider vía ProviderManager.
 const { providerManager } = require('./providers/provider-manager');
@@ -16,6 +17,10 @@ const { createGoogleClient } = require('./google');
 // ---------------------------------------------------------------------------
 const dotenv = require('dotenv');
 dotenv.config();
+
+// Zona horaria local para timestamps y logs (sobreescribible con TZ en .env/env).
+// Debe fijarse antes de cualquier uso de Date.
+process.env.TZ = process.env.TZ || 'America/Caracas';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const DIST = resolveDist();
@@ -36,6 +41,10 @@ const SETUP_FILE = path.join(__dirname, 'data', 'setup.json');
 let INSTALLED = false;
 const INSTANCE_SYNC_MS = parseInt(process.env.INSTANCE_SYNC_INTERVAL_MS || '30000', 10);
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+// Envío automático de campañas programadas: cron ejecutado dentro del contenedor
+// (no depende de n8n ni de conexiones externas). Por defecto cada minuto.
+const CAMPAIGN_CRON = process.env.CAMPAIGN_CRON || '* * * * *';
 
 // Códigos de verificación por WhatsApp (6 dígitos).
 const OTP_TTL_MS = 10 * 60 * 1000;        // validez: 10 min
@@ -362,6 +371,66 @@ async function initDb() {
         direction TEXT DEFAULT 'outgoing',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE,
+        jid TEXT NOT NULL,
+        name TEXT,
+        last_message TEXT,
+        last_message_type TEXT DEFAULT 'text',
+        last_message_at TIMESTAMPTZ,
+        unread INT DEFAULT 0,
+        profile_pic TEXT,
+        archived BOOLEAN DEFAULT FALSE,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(instance_id, jid)
+      );
+      CREATE TABLE IF NOT EXISTS products (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        organization_id TEXT,
+        name TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        category TEXT DEFAULT '',
+        sku TEXT DEFAULT '',
+        price NUMERIC(12,2) DEFAULT 0,
+        cost NUMERIC(12,2) DEFAULT 0,
+        stock NUMERIC(12,2) DEFAULT 0,
+        unit TEXT DEFAULT 'unidad',
+        image TEXT DEFAULT '',
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS documents (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        organization_id TEXT,
+        title TEXT NOT NULL,
+        type TEXT DEFAULT 'documento',
+        content TEXT DEFAULT '',
+        active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS appointments (
+        id TEXT PRIMARY KEY,
+        user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+        organization_id TEXT,
+        title TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        customer_name TEXT DEFAULT '',
+        customer_jid TEXT DEFAULT '',
+        start_at TIMESTAMPTZ NOT NULL,
+        end_at TIMESTAMPTZ,
+        status TEXT DEFAULT 'pendiente',
+        location TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      ALTER TABLE products ADD COLUMN IF NOT EXISTS image TEXT DEFAULT '';
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS summary TEXT;
+      ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_minutes INT DEFAULT 0;
       CREATE TABLE IF NOT EXISTS auto_replies (
         id TEXT PRIMARY KEY,
         instance_id TEXT REFERENCES instances(id) ON DELETE CASCADE,
@@ -389,6 +458,7 @@ async function initDb() {
       ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS company_info TEXT DEFAULT '';
       ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS price_list JSONB DEFAULT '[]';
       ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS calendar TEXT DEFAULT '';
+      ALTER TABLE chatbot_configs ADD COLUMN IF NOT EXISTS temperature NUMERIC DEFAULT 0.7;
       -- Documentos del bot (RAG): el chatbot busca en los documentos de la
       -- instancia los fragmentos relevantes a la consulta del cliente y los
       -- inyecta en el prompt. Los embeddings son opcionales (si el proveedor de
@@ -1071,7 +1141,7 @@ async function getOtpSenderInstance(purpose = 'otp') {
 }
 
 async function sendWhatsAppText(instance, number, text) {
-  await fetchJson('POST', `${instance.evolution_url}/message/sendText/${evoInstanceName(instance)}`,
+  await fetchJson('POST', `${evolutionBaseUrl(instance)}/message/sendText/${evoInstanceName(instance)}`,
     { apikey: instance.api_key }, { number: String(number), text, delay: 0 });
 }
 
@@ -1578,8 +1648,11 @@ async function handleRequest(req, res, pathname) {
       case 'users':
         if (method === 'GET' && id === 'audit') return await getUsersAudit(res, session);
         if (method === 'GET' && !id) return await getAdminUsers(res, session);
+        if (method === 'GET' && id && !action) return await getAdminUserDetail(res, id, session);
+        if (method === 'PUT' && id && !action) return await updateAdminUser(res, id, await parseBody(req), session);
         if (method === 'POST' && id && action === 'block') return await blockUser(res, id, await parseBody(req), session);
         if (method === 'POST' && id && action === 'unblock') return await unblockUser(res, id, session);
+        if (method === 'POST' && id && action === 'password-reset') return await sendUserPasswordReset(res, id, session);
         break;
 
       // -- Organizations --
@@ -1655,6 +1728,10 @@ async function handleRequest(req, res, pathname) {
         if (method === 'POST' && id === 'sync') {
           const bd = await parseBody(req);
           return await syncGroups(res, bd.instanceId, session);
+        }
+        if (method === 'POST' && id === 'create-remote') {
+          const bd = await parseBody(req);
+          return await createRemoteGroup(res, bd, session);
         }
         break;
 
@@ -1751,6 +1828,33 @@ async function handleRequest(req, res, pathname) {
       case 'conversations':
         if (method === 'GET' && !id) return await getConversations(res, req, session);
         if (method === 'GET' && id === 'history') return await getConversationHistory(res, req, session);
+        if (method === 'POST' && id === 'sync') return await syncConversations(res, (await parseBody(req)).instanceId, session);
+        break;
+
+      // -- Productos / Catálogo / Precios / Inventario --
+      case 'products':
+        if (method === 'GET' && id === 'categories') return await getProductCategories(res, session);
+        if (method === 'GET' && !id) return await getProducts(res, req, session);
+        if (method === 'POST' && !id) return await createProduct(res, await parseBody(req), session);
+        if (method === 'PUT' && id) return await updateProduct(res, id, await parseBody(req), session);
+        if (method === 'DELETE' && id) return await deleteProduct(res, id, session);
+        break;
+
+      // -- Documentos (políticas, menús, FAQ, contratos) --
+      case 'documents':
+        if (method === 'GET' && id === 'types') return await getDocumentTypes(res, session);
+        if (method === 'GET' && !id) return await getDocuments(res, req, session);
+        if (method === 'POST' && !id) return await createDocument(res, await parseBody(req), session);
+        if (method === 'PUT' && id) return await updateDocument(res, id, await parseBody(req), session);
+        if (method === 'DELETE' && id) return await deleteDocument(res, id, session);
+        break;
+
+      // -- Agenda / Citas / Eventos --
+      case 'appointments':
+        if (method === 'GET' && !id) return await getAppointments(res, req, session);
+        if (method === 'POST' && !id) return await createAppointment(res, await parseBody(req), session);
+        if (method === 'PUT' && id) return await updateAppointment(res, id, await parseBody(req), session);
+        if (method === 'DELETE' && id) return await deleteAppointment(res, id, session);
         break;
 
       // -- Mensajes (envío) --
@@ -2399,20 +2503,13 @@ async function updateUserSessionsInStore(userId, fields) {
 }
 
 async function getAdminUsers(res, session) {
-  // El administrador global ve todos los propietarios de organizaciones; el
-  // resto de usuarios ve únicamente los miembros de su propia organización.
-  let where = 'TRUE';
-  let params = [];
-  if (session.role === 'admin') {
-    where = "u.role = 'owner'";
-  } else {
-    const user = (await pool.query('SELECT organization_id FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
-    if (!user || !user.organization_id) {
-      return sendJson(res, 404, { error: 'Aún no tienes una organización' });
-    }
-    where = 'u.organization_id = $1';
-    params = [user.organization_id];
+  // Solo el administrador global puede listar a los dueños de organizaciones;
+  // los miembros se gestionan en /api/organizations/current/members.
+  if (session.role !== 'admin') {
+    return sendJson(res, 403, { error: 'Solo el administrador puede ver los propietarios de organizaciones' });
   }
+  const where = "u.role = 'owner'";
+  const params = [];
   const result = await pool.query(
     `SELECT u.id, u.email, u.name, u.role, u.permissions, u.plan, u.billing_status,
             u.phone, u.phone_verified, u.two_factor_enabled, u.notifications_enabled,
@@ -2450,6 +2547,164 @@ async function getAdminUsers(res, session) {
     sessionCount: Number(r.session_count || 0),
   }));
   sendJson(res, 200, { data, success: true });
+}
+
+// Admin: detalle completo de un propietario de organización, incluyendo sus
+// add-ons activos, el catálogo de add-ons y los planes disponibles.
+async function getAdminUserDetail(res, id, session) {
+  if (session.role !== 'admin') {
+    return sendJson(res, 403, { error: 'Solo el administrador puede ver los detalles de un propietario' });
+  }
+  const result = await pool.query(
+    `SELECT u.id, u.email, u.name, u.role, u.permissions, u.plan, u.billing_status,
+            u.phone, u.phone_verified, u.two_factor_enabled, u.notifications_enabled,
+            u.organization_id, u.blocked, u.blocked_at, u.blocked_reason,
+            u.created_at, u.updated_at,
+            o.name AS organization_name,
+            (SELECT COUNT(*) FROM instances i WHERE i.user_id = u.id) AS instance_count,
+            (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id) AS session_count
+     FROM users u
+     LEFT JOIN organizations o ON o.id = u.organization_id
+     WHERE u.id = $1`,
+    [id]
+  ).catch(() => ({ rows: [] }));
+  const r = result.rows[0];
+  if (!r) return sendJson(res, 404, { error: 'Usuario no encontrado' });
+  const user = {
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    role: r.role,
+    permissions: r.permissions || [],
+    plan: r.plan,
+    billingStatus: r.billing_status,
+    phone: r.phone,
+    phoneVerified: !!r.phone_verified,
+    twoFactorEnabled: !!r.two_factor_enabled,
+    notificationsEnabled: !!r.notifications_enabled,
+    organizationId: r.organization_id,
+    organizationName: r.organization_name,
+    blocked: !!r.blocked,
+    blockedAt: r.blocked_at,
+    blockedReason: r.blocked_reason,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    instanceCount: Number(r.instance_count || 0),
+    sessionCount: Number(r.session_count || 0),
+    addons: await getUserAddons(id),
+  };
+  const plans = (await pool.query('SELECT * FROM plans ORDER BY sort_order ASC, created_at ASC').catch(() => ({ rows: [] }))).rows.map(enrichPlan);
+  const addonCatalog = await getAddonCatalog();
+  const monthly = await getUserMonthlyAmount(id, r.role);
+  sendJson(res, 200, { data: { user, plans, addonCatalog, monthly }, success: true });
+}
+
+// Admin: actualiza el plan base y/o los extras de un propietario. Aplica los
+// cambios de inmediato y, si el monto mensual sube, genera una factura
+// pendiente por la diferencia (mismo comportamiento que el auto-cambio).
+async function updateAdminUser(res, id, body, session) {
+  if (session.role !== 'admin') {
+    return sendJson(res, 403, { error: 'Solo el administrador puede actualizar el plan de un propietario' });
+  }
+  const target = (await pool.query('SELECT * FROM users WHERE id = $1', [id]).catch(() => ({ rows: [] }))).rows[0];
+  if (!target) return sendJson(res, 404, { error: 'Usuario no encontrado' });
+  if (target.role === 'admin') return sendJson(res, 400, { error: 'El administrador no gestiona un plan' });
+
+  // El monto mensual ANTES de aplicar los cambios, para facturar la diferencia
+  // si el nuevo total sube.
+  const oldTotal = await getUserMonthlyAmount(id, target.role);
+  let changed = false;
+
+  const newPlan = String((body || {}).plan || '').toLowerCase();
+  if (newPlan) {
+    const planRow = (await pool.query('SELECT * FROM plans WHERE slug = $1', [newPlan]).catch(() => ({ rows: [] }))).rows[0];
+    if (!planRow) return sendJson(res, 400, { error: 'Plan no encontrado' });
+    await pool.query('UPDATE users SET plan = $1, updated_at = NOW() WHERE id = $2', [newPlan, id]);
+    changed = true;
+  }
+
+  if (Array.isArray((body || {}).addons)) {
+    const catalog = await getAddonCatalog();
+    const validKeys = new Set(catalog.map((a) => a.key));
+    const normalized = [];
+    for (const item of body.addons) {
+      const key = String((item && item.key) || '');
+      if (!validKeys.has(key)) continue;
+      const quantity = Math.max(0, Math.min(MAX_ADDON_QTY, parseInt(item.quantity, 10) || 0));
+      const def = catalog.find((a) => a.key === key);
+      normalized.push({ key, quantity, unitAmount: def ? def.unitAmount : 0 });
+    }
+    await pool.query('DELETE FROM user_addons WHERE user_id = $1', [id]);
+    for (const item of normalized) {
+      if (item.quantity <= 0) continue;
+      await pool.query(
+        `INSERT INTO user_addons (id, user_id, addon_key, quantity, unit_amount)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [cuid(), id, item.key, item.quantity, item.unitAmount]
+      );
+    }
+    changed = true;
+  }
+
+  if (changed) {
+    const newTotal = await getUserMonthlyAmount(id, target.role);
+    if (newTotal > oldTotal) {
+      const diff = Math.round((newTotal - oldTotal) * 100) / 100;
+      const period = `Plan gestionado por el administrador · ${new Date().toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}`;
+      await createPendingInvoice(id, diff, period, new Date(Date.now() + 30 * 86400000));
+    }
+  }
+
+  return await getAdminUserDetail(res, id, session);
+}
+
+// Admin: genera un enlace de restablecimiento de contraseña y lo envía por
+// WhatsApp al número verificado del propietario. El enlace contiene el token
+// de la OTP; el propietario completa el cambio en /reset-password con el
+// código de 6 dígitos incluido en el mismo mensaje.
+async function sendUserPasswordReset(res, id, session) {
+  if (session.role !== 'admin') {
+    return sendJson(res, 403, { error: 'Solo el administrador puede enviar enlaces de recuperación' });
+  }
+  const target = (await pool.query('SELECT * FROM users WHERE id = $1', [id]).catch(() => ({ rows: [] }))).rows[0];
+  if (!target) return sendJson(res, 404, { error: 'Usuario no encontrado' });
+  if (target.role === 'admin') {
+    return sendJson(res, 400, { error: 'El administrador no recupera su contraseña por este medio' });
+  }
+  if (!target.phone || !target.phone_verified) {
+    return sendJson(res, 400, { error: 'El usuario no tiene un número de WhatsApp verificado. No se puede enviar el enlace.' });
+  }
+  if (await hasRecentOtp(target.phone, 'password_reset')) {
+    return sendJson(res, 429, { error: 'Ya se envió un enlace hace poco. Espera un momento para reenviarlo.' });
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  const code = genOtpCode();
+  await createOtp({ phone: target.phone, code, purpose: 'password_reset', token });
+  const base = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
+  const url = `${base}/reset-password?token=${token}`;
+  const name = (target.name || target.email || '').trim();
+  const text = [
+    `Hola ${name},`,
+    `El administrador de WhatsApp Ads generó un enlace para restablecer tu contraseña.`,
+    ``,
+    `Abre este enlace: ${url}`,
+    `Y usa el código de verificación: ${code}`,
+    ``,
+    `El enlace y el código vencen en 10 minutos. Si no lo solicitaste, ignora este mensaje.`,
+  ].join('\n');
+  const inst = await getOtpSenderInstance('password_reset');
+  const maskedPhone = maskPhone(target.phone);
+  if (!inst) {
+    console.log(`[Admin] Sin instancia conectada. Enlace para ${target.email}: ${url} (código ${code})`);
+    return sendJson(res, 200, { data: { sent: false, delivered: false, noInstance: true, url, maskedPhone }, success: true });
+  }
+  try {
+    await sendWhatsAppText(inst, target.phone, text);
+    return sendJson(res, 200, { data: { sent: true, delivered: true, url, maskedPhone }, success: true });
+  } catch (e) {
+    console.warn('[Admin] Envío del enlace falló a ' + target.phone + ':', e.message);
+    return sendJson(res, 200, { data: { sent: true, delivered: false, url, maskedPhone }, success: true });
+  }
 }
 
 async function blockUser(res, id, body, session) {
@@ -2655,7 +2910,7 @@ async function configureInstanceWebhook(instance) {
       base64: false,
     },
   };
-  await fetchJson('POST', `${instance.evolution_url}/webhook/set/${evoInstanceName(instance)}`,
+  await fetchJson('POST', `${evolutionBaseUrl(instance)}/webhook/set/${evoInstanceName(instance)}`,
     { apikey: instance.api_key }, payload);
   return payload;
 }
@@ -2751,7 +3006,7 @@ async function deleteInstance(res, id, session) {
   if (inst.rows.length === 0) return sendJson(res, 404, { error: 'Instancia no encontrada' });
   if (!isOwner(inst.rows[0], session)) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   try {
-    await fetchJson('DELETE', `${inst.rows[0].evolution_url}/instance/delete/${evoInstanceName(inst.rows[0])}`,
+    await fetchJson('DELETE', `${evolutionBaseUrl(inst.rows[0])}/instance/delete/${evoInstanceName(inst.rows[0])}`,
       { apikey: inst.rows[0].api_key });
   } catch (e) {
     console.warn('Evolution delete warning:', e.message);
@@ -2766,6 +3021,25 @@ function evoInstanceName(i) {
   return i.evolution_instance_id || i.name;
 }
 
+// URL base de Evolution para las llamadas desde la app. La instancia guarda la
+// URL que el usuario vio desde su navegador (p.ej. http://localhost:3100),
+// pero cuando la app corre dentro de Docker la API de Evolution solo es
+// alcanzable por la red interna (http://evolution_api:8080). Si la URL
+// guardada apunta a localhost del host y el entorno (EVOLUTION_API_URL) indica
+// otra red, se usa la URL del entorno.
+function evolutionBaseUrl(i) {
+  let url = (i && i.evolution_url) || EVO_URL || 'http://localhost:3100';
+  try {
+    const storedHost = new URL(url).hostname;
+    const envHost = (() => { try { return new URL(EVO_URL).hostname; } catch { return ''; } })();
+    if ((storedHost === 'localhost' || storedHost === '127.0.0.1')
+      && envHost && envHost !== 'localhost' && envHost !== '127.0.0.1') {
+      url = EVO_URL;
+    }
+  } catch { /* URL inválida: se usa la guardada */ }
+  return url.replace(/\/+$/, '');
+}
+
 async function connectInstance(res, id, session) {
   const inst = await pool.query('SELECT * FROM instances WHERE id = $1', [id]);
   if (inst.rows.length === 0) return sendJson(res, 404, { error: 'Instancia no encontrada' });
@@ -2774,7 +3048,7 @@ async function connectInstance(res, id, session) {
   // Si la instancia no existe en Evolution, se crea primero
   if (!i.evolution_instance_id) {
     try {
-      const created = await fetchJson('POST', `${i.evolution_url}/instance/create`, { apikey: i.api_key }, {
+      const created = await fetchJson('POST', `${evolutionBaseUrl(i)}/instance/create`, { apikey: i.api_key }, {
         instanceName: i.name,
         integration: 'WHATSAPP-BAILEYS',
         qrcode: true,
@@ -2789,7 +3063,7 @@ async function connectInstance(res, id, session) {
   // WhatsApp y devuelve el QR)
   let qrData;
   try {
-    qrData = await fetchJson('GET', `${i.evolution_url}/instance/connect/${evoInstanceName(i)}`,
+    qrData = await fetchJson('GET', `${evolutionBaseUrl(i)}/instance/connect/${evoInstanceName(i)}`,
       { apikey: i.api_key });
   } catch (e) {
     console.warn('Evolution connect warning:', e.message);
@@ -2808,7 +3082,7 @@ async function disconnectInstance(res, id, session) {
   if (!isOwner(inst.rows[0], session)) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   const i = inst.rows[0];
   try {
-    await fetchJson('DELETE', `${i.evolution_url}/instance/logout/${evoInstanceName(i)}`,
+    await fetchJson('DELETE', `${evolutionBaseUrl(i)}/instance/logout/${evoInstanceName(i)}`,
       { apikey: i.api_key });
   } catch (e) {
     console.warn('Evolution disconnect warning:', e.message);
@@ -2826,7 +3100,7 @@ async function getInstanceQr(res, id, session) {
   let qrCode = null;
   // Asegura que la sesión de WhatsApp esté iniciada para que haya un QR
   try {
-    const qrData = await fetchJson('GET', `${i.evolution_url}/instance/connect/${evoInstanceName(i)}`,
+    const qrData = await fetchJson('GET', `${evolutionBaseUrl(i)}/instance/connect/${evoInstanceName(i)}`,
       { apikey: i.api_key });
     qrCode = qrData?.base64 || qrData?.code || qrData?.qrcode || qrData || null;
   } catch (e) {
@@ -2842,7 +3116,7 @@ async function getInstanceStatus(res, id, session) {
   const i = inst.rows[0];
   let evoStatus = 'disconnected';
   try {
-    const state = await fetchJson('GET', `${i.evolution_url}/instance/connectionState/${evoInstanceName(i)}`,
+    const state = await fetchJson('GET', `${evolutionBaseUrl(i)}/instance/connectionState/${evoInstanceName(i)}`,
       { apikey: i.api_key });
     evoStatus = state.state || state.instance?.state || 'disconnected';
   } catch {
@@ -2976,7 +3250,7 @@ async function syncInstancesWithEvolution() {
   for (const i of instances.rows) {
     let evoStatus = null;
     try {
-      const state = await fetchJson('GET', `${i.evolution_url}/instance/connectionState/${evoInstanceName(i)}`,
+      const state = await fetchJson('GET', `${evolutionBaseUrl(i)}/instance/connectionState/${evoInstanceName(i)}`,
         { apikey: i.api_key });
       evoStatus = state.state || state.instance?.state || null;
     } catch (e) {
@@ -3145,7 +3419,7 @@ async function createCampaign(res, body, session) {
      recurrence_config, concurrence, start_time, end_time, interval_value, interval_unit,
      template_id, instance_id, group_ids, tags, exclude_tags)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
-    [id, body.name, body.description || '', 'draft', body.active !== false,
+    [id, body.name, body.description || '', body.scheduledAt ? 'scheduled' : 'draft', body.active !== false,
      body.scheduledAt || null, body.recurrence || 'none', JSON.stringify(body.recurrenceConfig || {}),
      body.concurrence || 1, startTime, endTime,
      body.intervalValue || 1, body.intervalUnit || 'none',
@@ -3166,6 +3440,12 @@ async function updateCampaign(res, id, body, session) {
   }
   const startTime = toTimeString(body.startTime);
   const endTime = toTimeString(body.endTime);
+  // Al editar, si el formulario envía scheduledAt se recalcula el estado:
+  // con fecha futura → 'scheduled'; "enviar ahora" (sin fecha) → 'draft'.
+  const status =
+    body.scheduledAt !== undefined
+      ? (body.scheduledAt ? 'scheduled' : 'draft')
+      : (body.status || null);
   // scheduled_at, template_id, start_time y end_time se asignan directamente
   // (no COALESCE) para permitir limpiarlos al editar (p. ej. "Sin plantilla"
   // o quitar la programación); el frontend envía el formulario completo.
@@ -3184,7 +3464,7 @@ async function updateCampaign(res, id, body, session) {
      exclude_tags = COALESCE($17, exclude_tags),
      updated_at = NOW() WHERE id = $18 RETURNING *`,
     [body.name || null, body.description !== undefined ? body.description : null,
-     body.status || null, body.active !== undefined ? body.active : null,
+     status, body.active !== undefined ? body.active : null,
      body.scheduledAt || null, body.templateId || null, body.instanceId || null,
      body.groupIds ? body.groupIds : null,
      body.tags ? body.tags : null,
@@ -3222,6 +3502,20 @@ async function sendCampaign(res, id, session) {
   const owned = await loadCampaignAccess(id);
   if (!owned) return sendJson(res, 404, { error: 'Campaña no encontrada' });
   if (!canAccessCampaign(owned, session)) return sendJson(res, 403, { error: 'No tienes acceso a esta campaña' });
+  const result = await executeCampaign(id, { force: true });
+  if (result.skipped) return sendJson(res, 400, { error: 'La campaña ya fue enviada o no está pendiente' });
+  if (result.error) return sendJson(res, result.status || 400, { error: result.error });
+  sendJson(res, 200, { data: { message: `Enviado a ${result.sent} grupos (${result.failed} fallos)` }, success: true });
+}
+
+// -------------------------------------------------------------------------
+// Envío automático de campañas programadas (cron dentro del contenedor)
+// -------------------------------------------------------------------------
+// Ejecuta el envío de una campaña sin pasar por HTTP (lo usa tanto el endpoint
+// manual como el cron). Con `force:true` (envío manual) se procesa aunque ya
+// esté enviada; sin force (cron) solo se procesan campañas pendientes y se
+// respeta la ventana diaria (start_time/end_time).
+async function executeCampaign(id, opts = {}) {
   const campaign = await pool.query(
     `SELECT c.*, t.content as template_content, i.name as instance_name,
      i.evolution_url, i.api_key, i.status as instance_status
@@ -3231,13 +3525,33 @@ async function sendCampaign(res, id, session) {
      WHERE c.id = $1`, [id]
   );
   const c = campaign.rows[0];
-  if (!c.template_id) return sendJson(res, 400, { error: 'La campaña no tiene template' });
-  if (!c.active) return sendJson(res, 400, { error: 'La campaña no está activa' });
-  if (c.instance_status !== 'connected') {
-    return sendJson(res, 400, { error: `La instancia "${c.instance_name}" no está conectada (estado: ${c.instance_status}). Escanea el QR antes de lanzar la campaña.` });
+  if (!c) return { error: 'Campaña no encontrada', status: 404 };
+
+  if (!opts.force) {
+    // Solo procesa campañas pendientes: activas, sin enviar y ya vencidas.
+    if (!c.active) return { skipped: true };
+    if (c.status !== 'draft' && c.status !== 'scheduled') return { skipped: true };
+    if (c.status === 'draft' && c.scheduled_at && new Date(c.scheduled_at) > new Date()) return { skipped: true };
+    if (!campaignInWindow(c)) return { skipped: true };
   }
 
-  await pool.query("UPDATE campaigns SET status = 'sending' WHERE id = $1", [id]);
+  if (!c.template_id) return { error: 'La campaña no tiene template', status: 400 };
+  if (!c.active) return { error: 'La campaña no está activa', status: 400 };
+  if (c.instance_status !== 'connected') {
+    return {
+      error: `La instancia "${c.instance_name}" no está conectada (estado: ${c.instance_status}). Escanea el QR antes de lanzar la campaña.`,
+      status: 400,
+    };
+  }
+
+  // Reclama la campaña con UPDATE condicional para evitar envíos duplicados
+  // cuando el cron y un envío manual coinciden en el mismo minuto.
+  const claimed = await pool.query(
+    `UPDATE campaigns SET status = 'sending', updated_at = NOW() WHERE id = $1
+     ${opts.force ? '' : "AND status IN ('draft','scheduled')"} RETURNING id`,
+    [id]
+  );
+  if (claimed.rows.length === 0) return { skipped: true };
 
   const groups = await pool.query(
     'SELECT * FROM groups_ WHERE id = ANY($1) AND excluded = FALSE',
@@ -3247,7 +3561,7 @@ async function sendCampaign(res, id, session) {
   let sent = 0, failed = 0;
   const tc = c.template_content || {};
   const hasMedia = !!(tc.mediaUrl && tc.mediaType);
-  const evo = { baseUrl: c.evolution_url, apiKey: c.api_key };
+  const evo = { baseUrl: evolutionBaseUrl(c), apiKey: c.api_key };
 
   for (const group of groups.rows) {
     try {
@@ -3279,16 +3593,103 @@ async function sendCampaign(res, id, session) {
     }
   }
 
-  await pool.query(
-    'UPDATE campaigns SET status = $1, total_sent = $2, total_failed = $3 WHERE id = $4',
-    [failed > 0 ? 'partial' : 'sent', sent, failed, id]
-  );
+  const nextAt = computeNextScheduled(c);
+  if (nextAt) {
+    // Recurrencia: reprograma la próxima ocurrencia y vuelve a 'scheduled'.
+    await pool.query(
+      "UPDATE campaigns SET status = 'scheduled', scheduled_at = $1, total_sent = $2, total_failed = $3 WHERE id = $4",
+      [nextAt.toISOString(), sent, failed, id]
+    );
+  } else {
+    await pool.query(
+      'UPDATE campaigns SET status = $1, total_sent = $2, total_failed = $3 WHERE id = $4',
+      [failed > 0 ? 'partial' : 'sent', sent, failed, id]
+    );
+  }
   await pool.query(
     'INSERT INTO send_logs (id, campaign_id, sent, failed) VALUES ($1, $2, $3, $4)',
     [cuid(), id, sent, failed]
   );
 
-  sendJson(res, 200, { data: { message: `Enviado a ${sent} grupos (${failed} fallos)` }, success: true });
+  return { sent, failed };
+}
+
+// Indica si la hora actual cae dentro de la ventana diaria de la campaña
+// (start_time/end_time). Sin ventana definida siempre devuelve true.
+function campaignInWindow(campaign) {
+  if (!campaign.start_time && !campaign.end_time) return true;
+  const d = new Date();
+  const cur = d.getHours() * 60 + d.getMinutes();
+  const toMin = (t) => {
+    if (!t) return null;
+    const p = String(t).split(':').map(Number);
+    if (p.length < 2 || isNaN(p[0]) || isNaN(p[1])) return null;
+    return p[0] * 60 + p[1];
+  };
+  const s = toMin(campaign.start_time);
+  const e = toMin(campaign.end_time);
+  if (s == null && e == null) return true;
+  if (s != null && e != null) return cur >= s && cur <= e;
+  if (s != null) return cur >= s;
+  return cur <= e;
+}
+
+// Calcula la próxima fecha de envío de una campaña recurrente partiendo del
+// ancla (scheduled_at) y avanzando por el período hasta quedar en el futuro.
+function computeNextScheduled(campaign) {
+  if (!campaign || !campaign.recurrence || campaign.recurrence === 'none') return null;
+  const now = new Date();
+  const anchor = campaign.scheduled_at ? new Date(campaign.scheduled_at) : now;
+  const next = new Date(anchor);
+  const step = () => {
+    switch (campaign.recurrence) {
+      case 'daily': next.setDate(next.getDate() + 1); break;
+      case 'weekly': next.setDate(next.getDate() + 7); break;
+      case 'monthly': next.setMonth(next.getMonth() + 1); break;
+      case 'custom': {
+        const value = (campaign.interval_value && campaign.interval_value > 0) ? campaign.interval_value : 1;
+        switch (campaign.interval_unit || 'days') {
+          case 'minutes': next.setMinutes(next.getMinutes() + value); break;
+          case 'hours': next.setHours(next.getHours() + value); break;
+          default: next.setDate(next.getDate() + value); break;
+        }
+        break;
+      }
+    }
+  };
+  let guard = 0;
+  step();
+  while (next.getTime() <= now.getTime() && guard < 10000) {
+    const before = next.getTime();
+    step();
+    if (next.getTime() <= before) break;
+    guard++;
+  }
+  return next;
+}
+
+// Busca campañas programadas vencidas y las envía (cron, cada minuto).
+async function processDueCampaigns() {
+  const due = await pool.query(
+    `SELECT c.id FROM campaigns c
+     LEFT JOIN instances i ON i.id = c.instance_id
+     WHERE c.active = TRUE
+       AND c.template_id IS NOT NULL
+       AND c.status IN ('draft','scheduled')
+       AND c.scheduled_at <= NOW()
+       AND i.status = 'connected'
+     ORDER BY c.scheduled_at ASC`
+  );
+  for (const row of due.rows) {
+    try {
+      const result = await executeCampaign(row.id);
+      if (result && result.error) {
+        console.warn(`[campaign-cron] campaña ${row.id} no enviada:`, result.error);
+      }
+    } catch (e) {
+      console.warn(`[campaign-cron] fallo al enviar la campaña ${row.id}:`, e.message);
+    }
+  }
 }
 
 // =========================================================================
@@ -3456,7 +3857,7 @@ async function syncGroups(res, instanceId, session) {
   const evoName = encodeURIComponent(evoInstanceName(i));
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      remoteGroups = await fetchJson('GET', `${i.evolution_url}/group/fetchAllGroups/${evoName}?getParticipants=true`,
+      remoteGroups = await fetchJson('GET', `${evolutionBaseUrl(i)}/group/fetchAllGroups/${evoName}?getParticipants=true`,
         { apikey: i.api_key });
       break;
     } catch (e) {
@@ -3515,6 +3916,89 @@ async function syncGroups(res, instanceId, session) {
     synced,
     created,
     total: groupList.length,
+  });
+}
+
+// Normaliza un teléfono para participants de Evolution: números desnudos con
+// código de país, o un JID ya completo (mantiene @g.us / @s.whatsapp.net).
+function normalizeParticipant(p) {
+  const s = String(p || '').trim();
+  if (!s) return '';
+  if (s.includes('@')) return s;
+  return s.replace(/[^\d]/g, '');
+}
+
+async function createRemoteGroup(res, body, session) {
+  if (!body || !body.instanceId) return sendJson(res, 400, { error: 'instanceId requerido' });
+  const inst = await pool.query('SELECT * FROM instances WHERE id = $1', [body.instanceId]);
+  if (inst.rows.length === 0) return sendJson(res, 404, { error: 'Instancia no encontrada' });
+  if (!isOwner(inst.rows[0], session)) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+
+  const name = String(body.name || '').trim();
+  if (!name) return sendJson(res, 400, { error: 'El nombre del grupo es obligatorio' });
+
+  const participants = [...new Set((Array.isArray(body.contacts) ? body.contacts : [])
+    .map((c) => normalizeParticipant(c && c.phone))
+    .filter(Boolean))];
+  if (participants.length === 0) {
+    return sendJson(res, 400, { error: 'Agrega al menos un contacto con número válido' });
+  }
+
+  const limits = await getUserPlanLimits(session.id, session.role);
+  if (limits) {
+    const used = parseInt((await pool.query(
+      `SELECT COUNT(*)::int FROM groups_ g JOIN instances i ON i.id = g.instance_id
+       WHERE i.user_id = $1 AND g.excluded = FALSE`, [session.id])).rows[0].count, 10);
+    if (!enforceLimit(res, used, limits.maxGroups, 'grupos')) return;
+  }
+
+  const i = inst.rows[0];
+  let created;
+  try {
+    created = await fetchJson(
+      'POST',
+      `${evolutionBaseUrl(i)}/group/create/${encodeURIComponent(evoInstanceName(i))}`,
+      { apikey: i.api_key },
+      {
+        subject: name,
+        name, // compat con versiones antiguas de Evolution
+        description: String(body.description || ''),
+        participants,
+      }
+    );
+  } catch (e) {
+    console.warn('Evolution group create failed:', e.message);
+    return sendJson(res, 502, {
+      error: `Evolution no pudo crear el grupo: ${e.message}. Verifica que la instancia tenga la sesión conectada y que los contactos tengan WhatsApp.`,
+    });
+  }
+
+  const jid = (created && (created.group?.id || created.group?.jid || created.id || created.groupId
+    || created.group?.key?.remoteJid || created.key?.remoteJid)) || '';
+  if (!jid) {
+    return sendJson(res, 502, { error: 'Evolution no devolvió el identificador del grupo creado' });
+  }
+
+  const existing = await pool.query(
+    'SELECT * FROM groups_ WHERE instance_id = $1 AND jid = $2',
+    [body.instanceId, jid]
+  );
+  if (existing.rows.length > 0) {
+    return sendJson(res, 200, { data: enrichGroup(existing.rows[0]), success: true, duplicated: true });
+  }
+
+  const id = cuid();
+  const result = await pool.query(
+    `INSERT INTO groups_ (id, instance_id, jid, name, description, participants, tags, excluded)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [id, body.instanceId, jid, name, String(body.description || ''),
+     participants.length, body.tags || [], false]
+  );
+  wsBroadcast('group:created', { id, instanceId: body.instanceId, jid, name });
+  sendJson(res, 201, {
+    data: enrichGroup(result.rows[0]),
+    success: true,
+    participantsAdded: participants.length,
   });
 }
 
@@ -4488,7 +4972,9 @@ async function updateAddonPrices(res, body, session) {
 // Total mensual del usuario = precio del plan base + total de add-ons.
 // Admin no tiene cargo.
 async function getUserMonthlyAmount(userId, role) {
-  if (isAdminRole(role)) return 0;
+  // Solo el rol 'admin' está exento de cargo. El owner paga igual que un
+  // usuario normal; por eso los flujos de cambio de plan pasan 'user'.
+  if (role === 'admin') return 0;
   let base = 0;
   try {
     const u = (await pool.query('SELECT plan FROM users WHERE id = $1', [userId])).rows[0];
@@ -5221,26 +5707,418 @@ async function getConversations(res, req, session) {
     conds.push('instance_id IN (SELECT id FROM instances WHERE user_id = $' + (params.length + 1) + ')');
     params.push(session.id);
   }
-  let q = `SELECT DISTINCT ON (sender_jid) sender_jid, sender_name, group_jid, content, message_type,
-           status, created_at,
-           (SELECT COUNT(*) FROM message_logs m WHERE m.sender_jid = message_logs.sender_jid
-             AND ($1::text IS NULL OR m.instance_id = $1::text)) AS message_count
-           FROM message_logs WHERE direction = 'incoming'`;
-  q += ' AND ' + conds.join(' AND ');
-  q += ' ORDER BY sender_jid, created_at DESC';
-  const result = await pool.query(q, params);
-  sendJson(res, 200, { data: result.rows.map(r => ({
-    instanceId: iid,
-    senderJid: r.sender_jid,
-    senderName: r.sender_name,
-    groupJid: r.group_jid,
-    lastMessage: r.content,
-    lastMessageType: r.message_type,
-    lastMessageAt: r.created_at,
-    messageCount: r.message_count || 0,
-    unread: 0,
-  })), success: true });
+  const scope = conds.join(' AND ');
+
+  // 1) Conversaciones extraídas desde Evolution (tabla conversations)
+  const syncedRows = (await pool.query(
+    `SELECT c.* FROM conversations c WHERE ${scope} ORDER BY last_message_at DESC NULLS LAST`,
+    params
+  )).rows.map(r => ({
+    jid: r.jid,
+    instanceId: r.instance_id,
+    name: r.name || '',
+    groupJid: r.jid.includes('@g.us') ? r.jid : null,
+    lastMessage: r.last_message || '',
+    lastMessageType: r.last_message_type || 'text',
+    lastMessageAt: r.last_message_at,
+    unread: r.unread || 0,
+    profilePic: r.profile_pic || '',
+    fromSync: true,
+  }));
+
+  // 2) Conversaciones detectadas por el webhook (message_logs) que quizá aún
+  //    no se han extraído; se fusionan con las de arriba por jid.
+  const logRows = (await pool.query(
+    `SELECT DISTINCT ON (sender_jid) sender_jid, sender_name, group_jid, content, message_type, created_at,
+       (SELECT COUNT(*) FROM message_logs m
+         WHERE m.sender_jid = message_logs.sender_jid
+           AND ($1::text IS NULL OR m.instance_id = $1::text)) AS message_count
+     FROM message_logs WHERE direction = 'incoming' AND ${scope}
+     ORDER BY sender_jid, created_at DESC`,
+    params
+  )).rows;
+
+  const map = new Map();
+  for (const s of syncedRows) map.set(s.jid, s);
+  for (const r of logRows) {
+    if (!r.sender_jid) continue;
+    const key = r.sender_jid;
+    const existing = map.get(key);
+    const msgAt = r.created_at;
+    if (!existing || (msgAt && (!existing.lastMessageAt || new Date(msgAt) > new Date(existing.lastMessageAt)))) {
+      map.set(key, {
+        jid: key,
+        instanceId: r.instance_id || iid || null,
+        name: r.sender_name || (existing ? existing.name : '') || '',
+        groupJid: r.group_jid || null,
+        lastMessage: r.content || '',
+        lastMessageType: r.message_type || 'text',
+        lastMessageAt: r.created_at,
+        unread: existing ? existing.unread : 0,
+        profilePic: existing ? existing.profilePic : '',
+        messageCount: parseInt(r.message_count || 0, 10),
+        fromSync: !!existing,
+      });
+    } else if (existing && existing.fromSync) {
+      existing.messageCount = parseInt(r.message_count || 0, 10) + (existing.messageCount || 0);
+    }
+  }
+
+  const rows = [...map.values()]
+    .sort((a, b) => (b.lastMessageAt ? new Date(b.lastMessageAt) : 0) - (a.lastMessageAt ? new Date(a.lastMessageAt) : 0))
+    .map(r => ({
+      instanceId: r.instanceId,
+      senderJid: r.jid,
+      senderName: r.name,
+      groupJid: r.groupJid,
+      lastMessage: r.lastMessage,
+      lastMessageType: r.lastMessageType,
+      lastMessageAt: r.lastMessageAt,
+      messageCount: r.messageCount || 0,
+      unread: r.unread || 0,
+      profilePic: r.profilePic || '',
+    }));
+
+  sendJson(res, 200, { data: rows, success: true });
 }
+
+// Extrae las conversaciones existentes de la instancia desde Evolution
+// (/chat/findChats) y las guarda en la tabla conversations para que aparezcan
+// en el módulo aunque no hayan llegado mensajes nuevos por el webhook.
+async function syncConversations(res, instanceId, session) {
+  if (!instanceId) return sendJson(res, 400, { error: 'instanceId requerido' });
+  const inst = await pool.query('SELECT * FROM instances WHERE id = $1', [instanceId]);
+  if (inst.rows.length === 0) return sendJson(res, 404, { error: 'Instancia no encontrada' });
+  if (!isOwner(inst.rows[0], session)) return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
+  const i = inst.rows[0];
+  const evoName = encodeURIComponent(evoInstanceName(i));
+  let chats = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      chats = await fetchJson('POST', `${evolutionBaseUrl(i)}/chat/findChats/${evoName}`,
+        { apikey: i.api_key }, { limit: 500, offset: 0 });
+      break;
+    } catch (e) {
+      if (attempt === 3) {
+        console.error('syncConversations: error obteniendo chats de Evolution:', e);
+        return sendJson(res, 502, {
+          error: 'No se pudieron obtener las conversaciones desde Evolution. Verifica que la instancia tenga la sesión de WhatsApp conectada.',
+        });
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  const chatList = Array.isArray(chats) ? chats : (chats?.value || chats?.chats || []);
+  let created = 0, updated = 0;
+  for (const c of chatList) {
+    const jid = c.id || c.jid || c.remoteJid;
+    if (!jid) continue;
+    const name = c.name || c.subject || c.pushName || (jid.includes('@g.us') ? 'Grupo' : jid.split('@')[0]) || '';
+    const lastMsg = (typeof c.lastMessage === 'object' && c.lastMessage)
+      ? (c.lastMessage.text || c.lastMessage.conversation || c.lastMessage.caption || '')
+      : (c.lastMessage || '');
+    const lastAt = c.timestamp
+      ? new Date(Number(c.timestamp) * 1000)
+      : (c.updatedAt ? new Date(c.updatedAt) : null);
+    const count = typeof c.unreadCount === 'number' ? c.unreadCount : (c.unread || 0);
+    const upsert = await pool.query(
+      `INSERT INTO conversations (id, instance_id, jid, name, last_message, last_message_type, last_message_at, unread, profile_pic)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (instance_id, jid)
+       DO UPDATE SET name = EXCLUDED.name,
+         last_message = CASE WHEN EXCLUDED.last_message <> '' THEN EXCLUDED.last_message ELSE conversations.last_message END,
+         last_message_type = EXCLUDED.last_message_type,
+         last_message_at = CASE WHEN EXCLUDED.last_message_at IS NOT NULL THEN EXCLUDED.last_message_at ELSE conversations.last_message_at END,
+         unread = EXCLUDED.unread,
+         profile_pic = COALESCE(EXCLUDED.profile_pic, conversations.profile_pic),
+         updated_at = NOW()
+       RETURNING (xmax = 0) AS inserted`,
+      [cuid(), i.id, jid, name, String(lastMsg), 'text', lastAt, count, (c.profilePicUrl || c.pictureUrl || null)]
+    );
+    if (upsert.rows[0]?.inserted) created++; else updated++;
+  }
+  const total = (await pool.query(
+    'SELECT COUNT(*)::int FROM conversations WHERE instance_id = $1', [i.id]
+  )).rows[0].count;
+  sendJson(res, 200, { data: { synced: chatList.length, created, updated, total }, success: true });
+}
+
+// =========================================================================
+// 17. Productos / Catálogo / Precios / Inventario
+// =========================================================================
+function enrichProduct(r) {
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description || '',
+    category: r.category || '',
+    sku: r.sku || '',
+    price: r.price != null ? Number(r.price) : 0,
+    cost: r.cost != null ? Number(r.cost) : 0,
+    stock: r.stock != null ? Number(r.stock) : 0,
+    unit: r.unit || 'unidad',
+    image: r.image || '',
+    active: r.active,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+async function getProductScope(session) {
+  if (isAdminRole(session.role)) return { cond: '', params: [] };
+  return { cond: ' AND user_id = $1', params: [session.id] };
+}
+
+async function getProducts(res, req, session) {
+  const u = new URL(req.url, `http://${req.headers.host}`);
+  const { cond, params } = await getProductScope(session);
+  const filters = [];
+  const cat = u.searchParams.get('category');
+  const onlyActive = u.searchParams.get('active');
+  const q = u.searchParams.get('q');
+  if (cat) { filters.push(`category = $${params.length + 1}`); params.push(cat); }
+  if (onlyActive === 'true') { filters.push('active = TRUE'); }
+  if (q) { filters.push(`(name ILIKE $${params.length + 1} OR sku ILIKE $${params.length + 1} OR description ILIKE $${params.length + 1})`); params.push(`%${q}%`); }
+  const where = filters.length ? 'WHERE 1=1' + cond + ' AND ' + filters.join(' AND ') : 'WHERE 1=1' + cond;
+  const result = await pool.query(
+    `SELECT * FROM products ${where} ORDER BY category, name`, params
+  );
+  const list = result.rows.map(enrichProduct);
+  const totalValue = list.reduce((s, p) => s + (p.active ? p.price * p.stock : 0), 0);
+  const totalStock = list.reduce((s, p) => s + p.stock, 0);
+  sendJson(res, 200, { data: list, summary: { totalValue, totalStock }, success: true });
+}
+
+async function getProductCategories(res, session) {
+  const { cond, params } = await getProductScope(session);
+  const result = await pool.query(
+    `SELECT DISTINCT category FROM products WHERE category <> '' AND category IS NOT NULL ${cond} ORDER BY category`, params
+  );
+  sendJson(res, 200, { data: result.rows.map(r => r.category), success: true });
+}
+
+async function createProduct(res, body, session) {
+  const { name, description, category, sku, price, cost, stock, unit, image } = body;
+  if (!name || !String(name).trim()) return sendJson(res, 400, { error: 'El nombre del producto es requerido' });
+  const org = (await pool.query('SELECT organization_id FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
+  const result = await pool.query(
+    `INSERT INTO products (id, user_id, organization_id, name, description, category, sku, price, cost, stock, unit, image)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+    [cuid(), session.id, org?.organization_id || null, String(name).trim(),
+     description || '', category || '', sku || '',
+     price != null ? price : 0, cost != null ? cost : 0,
+     stock != null ? stock : 0, unit || 'unidad', image || '']
+  );
+  sendJson(res, 201, { data: enrichProduct(result.rows[0]), success: true });
+}
+
+async function updateProduct(res, id, body, session) {
+  const { cond, params } = await getProductScope(session);
+  const cur = (await pool.query(`SELECT * FROM products WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
+  if (!cur) return sendJson(res, 404, { error: 'Producto no encontrado' });
+  const result = await pool.query(
+    `UPDATE products SET
+       name = COALESCE(NULLIF($1, ''), name),
+       description = COALESCE($2, description),
+       category = COALESCE(NULLIF($3, ''), category),
+       sku = COALESCE(NULLIF($4, ''), sku),
+       price = COALESCE($5, price),
+       cost = COALESCE($6, cost),
+       stock = COALESCE($7, stock),
+       unit = COALESCE(NULLIF($8, ''), unit),
+       image = COALESCE($9, image),
+       active = COALESCE($10, active),
+       updated_at = NOW()
+     WHERE id = $11 RETURNING *`,
+    [body.name ?? null, body.description ?? null, body.category ?? null, body.sku ?? null,
+     body.price ?? null, body.cost ?? null, body.stock ?? null, body.unit ?? null,
+     body.image ?? null, body.active ?? null, id]
+  );
+  sendJson(res, 200, { data: enrichProduct(result.rows[0]), success: true });
+}
+
+async function deleteProduct(res, id, session) {
+  const { cond, params } = await getProductScope(session);
+  const cur = (await pool.query(`SELECT id FROM products WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
+  if (!cur) return sendJson(res, 404, { error: 'Producto no encontrado' });
+  await pool.query('DELETE FROM products WHERE id = $1', [id]);
+  sendJson(res, 200, { success: true });
+}
+
+// =========================================================================
+// 18. Documentos (políticas, menús, FAQ, contratos)
+// =========================================================================
+function enrichDocument(r) {
+  return {
+    id: r.id,
+    title: r.title,
+    type: r.type || 'documento',
+    content: r.content || '',
+    summary: r.summary || '',
+    active: r.active,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+async function getDocuments(res, req, session) {
+  const u = new URL(req.url, `http://${req.headers.host}`);
+  const { cond, params } = await getProductScope(session);
+  const filters = [];
+  const type = u.searchParams.get('type');
+  const q = u.searchParams.get('q');
+  if (type) { filters.push(`type = $${params.length + 1}`); params.push(type); }
+  if (q) { filters.push(`(title ILIKE $${params.length + 1} OR content ILIKE $${params.length + 1})`); params.push(`%${q}%`); }
+  const where = filters.length ? 'WHERE 1=1' + cond + ' AND ' + filters.join(' AND ') : 'WHERE 1=1' + cond;
+  const result = await pool.query(
+    `SELECT * FROM documents ${where} ORDER BY type, title`, params
+  );
+  sendJson(res, 200, { data: result.rows.map(enrichDocument), success: true });
+}
+
+async function getDocumentTypes(res, session) {
+  const { cond, params } = await getProductScope(session);
+  const result = await pool.query(
+    `SELECT DISTINCT type FROM documents WHERE type <> '' AND type IS NOT NULL ${cond} ORDER BY type`, params
+  );
+  sendJson(res, 200, { data: result.rows.map(r => r.type), success: true });
+}
+
+async function createDocument(res, body, session) {
+  const { title, type, content, summary, active } = body;
+  if (!title || !String(title).trim()) return sendJson(res, 400, { error: 'El título del documento es requerido' });
+  const org = (await pool.query('SELECT organization_id FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
+  const result = await pool.query(
+    `INSERT INTO documents (id, user_id, organization_id, title, type, content, summary, active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [cuid(), session.id, org?.organization_id || null, String(title).trim(),
+     type || 'documento', content || '', summary || '', active !== false]
+  );
+  sendJson(res, 201, { data: enrichDocument(result.rows[0]), success: true });
+}
+
+async function updateDocument(res, id, body, session) {
+  const { cond, params } = await getProductScope(session);
+  const cur = (await pool.query(`SELECT id FROM documents WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
+  if (!cur) return sendJson(res, 404, { error: 'Documento no encontrado' });
+  const result = await pool.query(
+    `UPDATE documents SET
+       title = COALESCE(NULLIF($1, ''), title),
+       type = COALESCE(NULLIF($2, ''), type),
+       content = COALESCE($3, content),
+       summary = COALESCE($4, summary),
+       active = COALESCE($5, active),
+       updated_at = NOW()
+     WHERE id = $6 RETURNING *`,
+    [body.title ?? null, body.type ?? null, body.content ?? null,
+     body.summary ?? null, body.active ?? null, id]
+  );
+  sendJson(res, 200, { data: enrichDocument(result.rows[0]), success: true });
+}
+
+async function deleteDocument(res, id, session) {
+  const { cond, params } = await getProductScope(session);
+  const cur = (await pool.query(`SELECT id FROM documents WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
+  if (!cur) return sendJson(res, 404, { error: 'Documento no encontrado' });
+  await pool.query('DELETE FROM documents WHERE id = $1', [id]);
+  sendJson(res, 200, { success: true });
+}
+
+// =========================================================================
+// 19. Agenda / Citas / Eventos / Disponibilidad
+// =========================================================================
+function enrichAppointment(r) {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description || '',
+    customerName: r.customer_name || '',
+    customerJid: r.customer_jid || '',
+    startAt: r.start_at,
+    endAt: r.end_at,
+    status: r.status || 'pendiente',
+    location: r.location || '',
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+async function getAppointments(res, req, session) {
+  const u = new URL(req.url, `http://${req.headers.host}`);
+  const { cond, params } = await getProductScope(session);
+  const filters = [];
+  const status = u.searchParams.get('status');
+  const from = u.searchParams.get('from');
+  const to = u.searchParams.get('to');
+  if (status) { filters.push(`status = $${params.length + 1}`); params.push(status); }
+  if (from) { filters.push(`start_at >= $${params.length + 1}`); params.push(from); }
+  if (to) { filters.push(`start_at < $${params.length + 1}`); params.push(to); }
+  const where = filters.length ? 'WHERE 1=1' + cond + ' AND ' + filters.join(' AND ') : 'WHERE 1=1' + cond;
+  const result = await pool.query(
+    `SELECT * FROM appointments ${where} ORDER BY start_at ASC`, params
+  );
+  sendJson(res, 200, { data: result.rows.map(enrichAppointment), success: true });
+}
+
+async function createAppointment(res, body, session) {
+  const { title, description, customerName, customerJid, startAt, endAt, status, location } = body;
+  if (!title || !String(title).trim()) return sendJson(res, 400, { error: 'El título de la cita es requerido' });
+  if (!startAt) return sendJson(res, 400, { error: 'La fecha de inicio es requerida' });
+  const start = new Date(startAt);
+  if (isNaN(start.getTime())) return sendJson(res, 400, { error: 'Fecha de inicio inválida' });
+  const end = endAt ? new Date(endAt) : new Date(start.getTime() + 60 * 60 * 1000);
+  if (isNaN(end.getTime())) return sendJson(res, 400, { error: 'Fecha de fin inválida' });
+  const org = (await pool.query('SELECT organization_id FROM users WHERE id = $1', [session.id]).catch(() => ({ rows: [] }))).rows[0];
+  const result = await pool.query(
+    `INSERT INTO appointments (id, user_id, organization_id, title, description, customer_name, customer_jid, start_at, end_at, status, location)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    [cuid(), session.id, org?.organization_id || null, String(title).trim(),
+     description || '', customerName || '', customerJid || '',
+     start.toISOString(), end.toISOString(), status || 'pendiente', location || '']
+  );
+  sendJson(res, 201, { data: enrichAppointment(result.rows[0]), success: true });
+}
+
+async function updateAppointment(res, id, body, session) {
+  const { cond, params } = await getProductScope(session);
+  const cur = (await pool.query(`SELECT id FROM appointments WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
+  if (!cur) return sendJson(res, 404, { error: 'Cita no encontrada' });
+  let start = body.startAt ?? null;
+  let end = body.endAt ?? null;
+  if (start) {
+    start = new Date(start);
+    if (isNaN(start.getTime())) return sendJson(res, 400, { error: 'Fecha de inicio inválida' });
+  }
+  if (end) {
+    end = new Date(end);
+    if (isNaN(end.getTime())) return sendJson(res, 400, { error: 'Fecha de fin inválida' });
+  }
+  const result = await pool.query(
+    `UPDATE appointments SET
+       title = COALESCE(NULLIF($1, ''), title),
+       description = COALESCE($2, description),
+       customer_name = COALESCE(NULLIF($3, ''), customer_name),
+       customer_jid = COALESCE(NULLIF($4, ''), customer_jid),
+       start_at = COALESCE($5, start_at),
+       end_at = COALESCE($6, end_at),
+       status = COALESCE(NULLIF($7, ''), status),
+       location = COALESCE(NULLIF($8, ''), location),
+       updated_at = NOW()
+     WHERE id = $9 RETURNING *`,
+    [body.title ?? null, body.description ?? null, body.customerName ?? null,
+     body.customerJid ?? null, start, end, body.status ?? null, body.location ?? null, id]
+  );
+  sendJson(res, 200, { data: enrichAppointment(result.rows[0]), success: true });
+}
+
+async function deleteAppointment(res, id, session) {
+  const { cond, params } = await getProductScope(session);
+  const cur = (await pool.query(`SELECT id FROM appointments WHERE id = $1 ${cond}`, [id, ...params])).rows[0];
+  if (!cur) return sendJson(res, 404, { error: 'Cita no encontrada' });
+  await pool.query('DELETE FROM appointments WHERE id = $1', [id]);
+  sendJson(res, 200, { success: true });
+}
+
 async function getConversationHistory(res, req, session) {
   const u = new URL(req.url, `http://${req.headers.host}`);
   const iid = u.searchParams.get('instanceId');
@@ -5282,7 +6160,7 @@ async function sendMessage(res, body, session) {
   }
   if (!(await checkMessageLimit(res, session))) return;
   try {
-    await fetchJson('POST', `${i.evolution_url}/message/sendText/${evoInstanceName(i)}`,
+    await fetchJson('POST', `${evolutionBaseUrl(i)}/message/sendText/${evoInstanceName(i)}`,
       { apikey: i.api_key }, {
         number: to,
         text,
@@ -5902,7 +6780,7 @@ async function findMatchingAutoReply(instance, content) {
 
 async function sendReplyToWhatsApp(instance, to, text, groupJid, senderJid) {
   if (!text) return;
-  await fetchJson('POST', `${instance.evolution_url}/message/sendText/${evoInstanceName(instance)}`,
+  await fetchJson('POST', `${evolutionBaseUrl(instance)}/message/sendText/${evoInstanceName(instance)}`,
     { apikey: instance.api_key }, { number: to, text, delay: 500 }).catch(() => {});
   await pool.query(
     `INSERT INTO message_logs (id, instance_id, group_jid, sender_jid, sender_name, content, direction, status, message_type)
@@ -5957,7 +6835,7 @@ async function processAutoReply(instance, rule, targetJid, senderJid, senderName
 // (ownerJid de fetchInstances) y lo guarda en la instancia al conectar.
 async function syncInstancePhone(i) {
   try {
-    const list = await fetchJson('GET', `${i.evolution_url}/instance/fetchInstances`, { apikey: i.api_key });
+    const list = await fetchJson('GET', `${evolutionBaseUrl(i)}/instance/fetchInstances`, { apikey: i.api_key });
     const found = (Array.isArray(list) ? list : []).find(
       (inst) => inst.name === evoInstanceName(i) || inst.id === i.evolution_instance_id
     );
@@ -6299,6 +7177,62 @@ async function handleN8nChatbot(instance, senderJid, senderName, content) {
 // de la interfaz IAProvider y genera una respuesta para un DM privado. No
 // envía: el llamador decide cómo entregarla (Evolution directo, o workflow n8n).
 // ---------------------------------------------------------------------------
+// Lee en tiempo real los datos del negocio (catálogo, precios, inventario,
+// documentos y agenda) desde la BD para que el bot responda con la información
+// más actualizada, nunca con datos estáticos.
+async function buildLiveBusinessContext(userId, question) {
+  const blocks = [];
+
+  const products = (await pool.query(
+    `SELECT name, category, price, stock, unit, sku FROM products
+     WHERE user_id = $1 AND active = TRUE AND price > 0
+     ORDER BY category, name LIMIT 40`, [userId]
+  )).rows;
+  if (products.length > 0) {
+    const byCat = {};
+    for (const p of products) {
+      const cat = p.category || 'General';
+      (byCat[cat] = byCat[cat] || []).push(p);
+    }
+    const lines = [];
+    for (const [cat, items] of Object.entries(byCat)) {
+      lines.push(`${cat}:`);
+      for (const p of items) {
+        lines.push(`  - ${p.name} (${p.sku || 'sin sku'}): $${Number(p.price).toFixed(2)}${p.stock != null && p.stock !== 0 ? ` | stock: ${Number(p.stock)} ${p.unit || ''}` : ''}`);
+      }
+    }
+    blocks.push(`CATÁLOGO Y PRECIOS (actualizado)\n${lines.join('\n')}`);
+  }
+
+  const documents = (await pool.query(
+    `SELECT title, type, content FROM documents
+     WHERE user_id = $1 AND active = TRUE
+     ORDER BY type, title LIMIT 25`, [userId]
+  )).rows;
+  if (documents.length > 0) {
+    const lines = documents.map((d) => {
+      const snippet = (d.content || '').replace(/\s+/g, ' ').slice(0, 400);
+      return `- [${d.type || 'documento'}] ${d.title}${snippet ? `: ${snippet}` : ''}`;
+    });
+    blocks.push(`DOCUMENTOS DE LA EMPRESA (políticas, menús, FAQ, contratos)\n${lines.join('\n')}`);
+  }
+
+  const upcoming = (await pool.query(
+    `SELECT title, customer_name, start_at, end_at, status FROM appointments
+     WHERE user_id = $1 AND start_at >= NOW() - INTERVAL '1 hour'
+     ORDER BY start_at ASC LIMIT 20`, [userId]
+  )).rows;
+  if (upcoming.length > 0) {
+    const lines = upcoming.map((a) => {
+      const when = a.start_at ? new Date(a.start_at).toLocaleString('es-VE') : '';
+      return `- ${a.title}${a.customer_name ? ` (${a.customer_name})` : ''} | ${when} | estado: ${a.status || 'pendiente'}`;
+    });
+    blocks.push(`AGENDA Y CITAS PRÓXIMAS\n${lines.join('\n')}`);
+  }
+
+  return blocks.join('\n\n');
+}
+
 async function generateChatbotReply(instance, senderJid, senderName, content) {
   const config = (await pool.query(
     'SELECT * FROM chatbot_configs WHERE instance_id = $1 AND is_active = TRUE', [instance.id]
@@ -6315,7 +7249,9 @@ async function generateChatbotReply(instance, senderJid, senderName, content) {
   const aiConfig = (await pool.query('SELECT * FROM ai_configs WHERE user_id = $1', [tenantId])).rows[0];
   if (!aiConfig || !aiConfig.status) return null;
 
-  const session = { id: tenantId, role: 'user' };
+  // La sesión del bot usa el rol real del tenant (owner/admin no pagan cuota SaaS).
+  const tenantRow = (await pool.query('SELECT role FROM users WHERE id = $1', [tenantId]).catch(() => ({ rows: [] }))).rows[0];
+  const session = { id: tenantId, role: tenantRow && tenantRow.role ? tenantRow.role : 'user' };
   if (!(await checkAiQuota(null, session, aiConfig, aiConfig.mode))) return null;
 
   const settings = await resolveAiSettings(session, aiConfig);
@@ -6352,6 +7288,16 @@ async function generateChatbotReply(instance, senderJid, senderName, content) {
     } catch (e) {
       console.warn('[RAG] recuperación de contexto falló:', e.message);
     }
+    // Datos dinámicos del negocio (catálogo, precios, documentos y agenda)
+    // leídos de la base en el momento de responder.
+    try {
+      const live = await buildLiveBusinessContext(tenantId, content);
+      if (live) {
+        systemPrompt += `\n\nDATOS ACTUALES DEL NEGOCIO (leídos de la base de datos al responder)\nUsa estos datos como fuente de verdad para responder al cliente; si la pregunta no guarda relación, ignóralos:\n${live}`;
+      }
+    } catch (e) {
+      console.warn('[live-context] falló al leer datos del negocio:', e.message);
+    }
     const result = await settings.provider.generate(
       {
         apiKey: settings.apiKey,
@@ -6384,7 +7330,7 @@ async function generateChatbotReply(instance, senderJid, senderName, content) {
 async function handleChatbotMessage(instance, senderJid, senderName, content) {
   const reply = await generateChatbotReply(instance, senderJid, senderName, content);
   if (!reply) return;
-  await fetchJson('POST', `${instance.evolution_url}/message/sendText/${evoInstanceName(instance)}`,
+  await fetchJson('POST', `${evolutionBaseUrl(instance)}/message/sendText/${evoInstanceName(instance)}`,
     { apikey: instance.api_key }, { number: senderJid, text: reply, delay: 500 })
     .catch(() => {});
   await pool.query(
@@ -6598,6 +7544,13 @@ async function start() {
   setInterval(() => {
     runBillingChecks().catch((e) => console.warn('[billing] check failed:', e.message));
   }, BILLING_CHECK_MS);
+  // Envío automático de campañas programadas: cron dentro del contenedor
+  // (no depende de n8n ni de conexiones externas). Por defecto cada minuto.
+  processDueCampaigns().catch((e) => console.warn('[campaign-cron] initial run failed:', e.message));
+  cron.schedule(CAMPAIGN_CRON, () => {
+    processDueCampaigns().catch((e) => console.warn('[campaign-cron] run failed:', e.message));
+  });
+  console.log(`Campaign cron: ${CAMPAIGN_CRON}`);
 }
 
 start();

@@ -24,6 +24,7 @@ import { Group, GroupFormData } from '../../core/models/group.model';
 import { Instance } from '../../core/models/instance.model';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog/confirm-dialog.component';
 import { GroupFormDialogComponent } from './components/group-form-dialog/group-form-dialog.component';
+import { CreateGroupDialogComponent } from './components/create-group-dialog/create-group-dialog.component';
 
 type StatusFilter = 'all' | 'active' | 'excluded';
 
@@ -165,6 +166,20 @@ export class GroupsComponent implements OnInit, OnDestroy {
 
   setStatusFilter(filter: StatusFilter): void {
     this.statusFilter = filter;
+  }
+
+  openCreateGroupDialog(): void {
+    const dialogRef = this.dialog.open(CreateGroupDialogComponent, {
+      width: '640px',
+      maxWidth: '95vw',
+      data: { instanceId: this.instances[0]?.id },
+    });
+    dialogRef.afterClosed().subscribe((result) => {
+      if (result) {
+        this.loadGroups();
+        this.snackBar.open(`Grupo "${result.name}" creado en WhatsApp`, 'Cerrar', { duration: 3500 });
+      }
+    });
   }
 
   syncAll(): void {

@@ -563,6 +563,8 @@ Tras registrarse, el usuario **no puede usar el panel** hasta completar el onboa
 
 > **Programación**: el formulario usa un **calendario** para la fecha de envío y **relojes** (Material timepicker) para la hora de envío y para la ventana diaria (`start_time`/`end_time`) de campañas con recurrencia. `start_time` y `end_time` son del tipo `TIME` (hora del día, formato `HH:MM`); el backend los normaliza al guardar (`toTimeString`) y los devuelve como `HH:MM`. Al editar, la ventana de horas debe tener `end > start` (validado en el formulario). `PUT /api/campaigns/:id` actualiza también recurrencia, configuración, concurrencia, ventana de horas, intervalo y etiquetas excluidas.
 
+> **Envío automático**: al crear/editar una campaña con fecha programada el backend la marca como `scheduled`; un **cron interno del contenedor** (`node-cron`, expresión `CAMPAIGN_CRON`, cada minuto por defecto) revisa las campañas vencidas (`scheduled_at <= NOW()`, activas, sin enviar, instancia conectada) y ejecuta el envío **sin depender de n8n ni de conexiones externas**. Las campañas recurrentes se reprograman automáticamente (`computeNextScheduled`) según `recurrence`/`interval_value`/`interval_unit`, respetando la ventana diaria `start_time`/`end_time` (`campaignInWindow`). El endpoint manual `POST /api/campaigns/:id/send` comparte la misma lógica (`executeCampaign`), que usa un `UPDATE` condicional para evitar envíos duplicados entre el cron y el envío manual.
+
 ### Plantillas
 
 | Método | Ruta | Descripción |
@@ -882,9 +884,9 @@ El nombre de la instancia en la URL de envío se codifica con `encodeURIComponen
 
 ### Flujos exportados (`n8n-workflows/`)
 
-Son de referencia (importables desde la UI de n8n):
+Son de referencia (importables desde la UI de n8n). El **envío automático de campañas ya no depende de n8n**: lo gestiona el cron interno de la app (`processDueCampaigns`, ver *Envío automático* en la sección 7), por lo que `campaign-sender.json` queda obsoleto:
 
-- **campaign-sender.json**: trigger periódico que consulta campañas programadas al backend y dispara el envío.
+- **campaign-sender.json** (legacy): trigger periódico que consultaba campañas programadas al backend y disparaba el envío. La app ahora se auto-programa con `node-cron`.
 - **webhook-receiver.json**: trigger HTTP que reenvía eventos de Evolution al backend.
 
 ## 12. Centro de IA
@@ -975,7 +977,7 @@ src/app/
 | Webhook / chatbot | 5956+ | `syncInstancePhone`, `handleWebhook`, `handleN8nChatbot` |
 | n8n dinámico | 6109+ | `buildN8nChatbotWorkflow`, `ensureN8nWorkflow` (workflow por instancia `dm-chatbot-<id>`) |
 | IA del chatbot | 6300+ | `generateChatbotReply` (usa el AI Center del tenant) |
-| Arranque | 6554+ | `start()`: modo setup vs. instalado, bucles de sync y billing |
+| Arranque | 6554+ | `start()`: modo setup vs. instalado, bucles de sync y billing, y cron de campañas (`processDueCampaigns`) |
 
 ## 15. Resolución de problemas
 

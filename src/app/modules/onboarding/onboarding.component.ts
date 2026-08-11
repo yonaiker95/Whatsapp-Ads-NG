@@ -26,6 +26,7 @@ import { Instance } from '../../core/models/instance.model';
       <div class="ob-bg-shapes">
         <div class="shape shape-1"></div>
         <div class="shape shape-2"></div>
+        <div class="shape shape-3"></div>
       </div>
 
       <div class="ob-container">
@@ -34,11 +35,14 @@ import { Instance } from '../../core/models/instance.model';
             <mat-icon>rocket_launch</mat-icon>
           </div>
           <h1>Configura tu espacio</h1>
-          <p class="brand-subtitle">Completa estos pasos y empieza a automatizar</p>
+          <p class="brand-subtitle">Completa estos pasos y empieza a automatizar tus ventas</p>
         </div>
 
         <div class="ob-stepper" aria-label="Progreso del onboarding">
-          <div class="step" *ngFor="let s of steps; let i = index" [class.active]="i === currentStep" [class.done]="i < currentStep">
+          <div class="step" *ngFor="let s of steps; let i = index"
+               [class.active]="i === currentStep"
+               [class.done]="i < currentStep"
+               [attr.aria-current]="i === currentStep ? 'step' : null">
             <div class="step-dot">
               <mat-icon *ngIf="i < currentStep">check</mat-icon>
               <span *ngIf="i >= currentStep">{{ i + 1 }}</span>
@@ -47,163 +51,192 @@ import { Instance } from '../../core/models/instance.model';
           </div>
         </div>
 
+        <div class="ob-progress" role="progressbar" [attr.aria-valuenow]="progress" aria-valuemin="0" aria-valuemax="100" aria-label="Porcentaje completado">
+          <div class="ob-progress-fill" [style.width.%]="progress"></div>
+        </div>
+        <p class="ob-step-counter">Paso {{ currentStep + 1 }} de {{ steps.length }}</p>
+
         <mat-card class="ob-card">
-          <!-- STEP 1: Organización (crear o unirse) -->
-          <div *ngIf="currentStep === 0">
-            @if (joinMode) {
+          @if (loading) {
+            <div class="ob-loading" aria-live="polite">
+              <mat-spinner diameter="40"></mat-spinner>
+              <p>Cargando tu configuración...</p>
+            </div>
+          } @else {
+            <!-- STEP 1: Organización (crear o unirse) -->
+            <div *ngIf="currentStep === 0" class="ob-step-pane">
+              @if (joinMode) {
+                <div class="step-header">
+                  <mat-icon>groups</mat-icon>
+                  <div>
+                    <h2>{{ isOrgOwner ? 'Tu organización está lista' : 'Únete a tu organización' }}</h2>
+                    <p *ngIf="!isOrgOwner">Tu equipo ya tiene un espacio configurado. Te unirás a <strong>{{ existingOrgName }}</strong>.</p>
+                    <p *ngIf="isOrgOwner">Tu espacio <strong>{{ existingOrgName }}</strong> ya está creado. Continúa para terminar tu configuración.</p>
+                  </div>
+                </div>
+              } @else {
+                <div class="step-header">
+                  <mat-icon>domain</mat-icon>
+                  <div>
+                    <h2>Tu organización</h2>
+                    <p>¿Cómo se llama tu empresa o proyecto?</p>
+                  </div>
+                </div>
+                <form [formGroup]="orgForm" class="ob-form">
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Nombre de la organización *</mat-label>
+                    <input matInput formControlName="name" placeholder="Ej: Agencia Andina" autocomplete="organization">
+                    <mat-error *ngIf="orgForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
+                    <mat-error *ngIf="orgForm.get('name')?.hasError('minlength')">Mínimo 2 caracteres</mat-error>
+                  </mat-form-field>
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Descripción</mat-label>
+                    <textarea matInput formControlName="description" rows="2" placeholder="Opcional. ¿A qué se dedica tu organización?"></textarea>
+                  </mat-form-field>
+                </form>
+              }
+            </div>
+
+            <!-- STEP 2: Usuario del equipo -->
+            <div *ngIf="currentStep === 1" class="ob-step-pane">
               <div class="step-header">
-                <mat-icon>groups</mat-icon>
+                <mat-icon>group_add</mat-icon>
                 <div>
-                  <h2>{{ isOrgOwner ? 'Tu organización está lista' : 'Únete a tu organización' }}</h2>
-                  <p *ngIf="!isOrgOwner">Tu equipo ya tiene un espacio configurado. Te unirás a <strong>{{ existingOrgName }}</strong>.</p>
-                  <p *ngIf="isOrgOwner">Tu espacio <strong>{{ existingOrgName }}</strong> ya está creado. Continúa para terminar tu configuración.</p>
+                  <h2>Invita a tu equipo</h2>
+                  <p>Crea el primer miembro de tu organización. Puedes saltarte este paso.</p>
                 </div>
               </div>
-            } @else {
-              <div class="step-header">
-                <mat-icon>domain</mat-icon>
-                <div>
-                  <h2>Tu organización</h2>
-                  <p>¿Cómo se llama tu empresa o proyecto?</p>
-                </div>
-              </div>
-              <form [formGroup]="orgForm" class="ob-form">
+              <form [formGroup]="memberForm" class="ob-form">
                 <mat-form-field appearance="outline" class="full-width">
-                  <mat-label>Nombre de la organización *</mat-label>
-                  <input matInput formControlName="name" placeholder="Ej: Agencia Andina" autocomplete="organization">
-                  <mat-error *ngIf="orgForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
-                  <mat-error *ngIf="orgForm.get('name')?.hasError('minlength')">Mínimo 2 caracteres</mat-error>
+                  <mat-label>Nombre *</mat-label>
+                  <input matInput formControlName="name" placeholder="Ej: Ana Torres" autocomplete="name">
+                  <mat-error *ngIf="memberForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
+                  <mat-error *ngIf="memberForm.get('name')?.hasError('minlength')">Mínimo 2 caracteres</mat-error>
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Correo electrónico *</mat-label>
+                  <input matInput type="email" formControlName="email" placeholder="ana@tuempresa.com" autocomplete="email">
+                  <mat-error *ngIf="memberForm.get('email')?.hasError('required')">El correo es requerido</mat-error>
+                  <mat-error *ngIf="memberForm.get('email')?.hasError('email')">Ingresa un correo válido</mat-error>
+                </mat-form-field>
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Contraseña *</mat-label>
+                  <input matInput [type]="hidePassword ? 'password' : 'text'" formControlName="password" autocomplete="new-password" placeholder="••••••••">
+                  <button mat-icon-button matSuffix type="button" (click)="hidePassword = !hidePassword"
+                          [attr.aria-label]="hidePassword ? 'Mostrar contraseña' : 'Ocultar contraseña'">
+                    <mat-icon>{{ hidePassword ? 'visibility' : 'visibility_off' }}</mat-icon>
+                  </button>
+                  <mat-error *ngIf="memberForm.get('password')?.hasError('required')">La contraseña es requerida</mat-error>
+                  <mat-error *ngIf="memberForm.get('password')?.hasError('minlength')">Mínimo 6 caracteres</mat-error>
+                </mat-form-field>
+              </form>
+            </div>
+
+            <!-- STEP 3: Conectar WhatsApp -->
+            <div *ngIf="currentStep === 2" class="ob-step-pane">
+              <div class="step-header">
+                <mat-icon>phone_android</mat-icon>
+                <div>
+                  <h2>Conecta WhatsApp</h2>
+                  <p>Vincula una instancia escaneando el código QR desde tu teléfono.</p>
+                </div>
+              </div>
+
+              <form [formGroup]="instanceForm" class="ob-form" *ngIf="!instance">
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Nombre de la instancia *</mat-label>
+                  <input matInput formControlName="name" placeholder="Ej: WhatsApp Ventas" autocomplete="off">
+                  <mat-error *ngIf="instanceForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
+                  <mat-error *ngIf="instanceForm.get('name')?.hasError('minlength')">Mínimo 3 caracteres</mat-error>
+                </mat-form-field>
+              </form>
+
+              <div class="ob-qr" *ngIf="instance">
+                @if (connected) {
+                  <div class="qr-connected">
+                    <mat-icon>check_circle</mat-icon>
+                    <h3>¡Conectado!</h3>
+                    <p>La instancia "{{ instance.name }}" se vinculó correctamente a WhatsApp.</p>
+                  </div>
+                } @else if (status === 'disconnected') {
+                  <div class="qr-disconnected">
+                    <mat-icon>link_off</mat-icon>
+                    <h3>Instancia sin conexión</h3>
+                    <p>La instancia "{{ instance.name }}" existe pero aún no está vinculada a WhatsApp.</p>
+                    <button mat-stroked-button color="primary" (click)="requestReconnect()" [disabled]="busy">
+                      <mat-icon>refresh</mat-icon> Reintentar conexión
+                    </button>
+                  </div>
+                } @else if (qrCode) {
+                  <div class="qr-image">
+                    <img [src]="qrCode" alt="Código QR para conectar WhatsApp">
+                  </div>
+                  <p class="qr-instructions">
+                    1. Abre WhatsApp en tu teléfono<br>
+                    2. Ve a Dispositivos vinculados → Vincular dispositivo<br>
+                    3. Escanea este código QR
+                  </p>
+                  <p class="qr-note">
+                    <mat-icon>autorenew</mat-icon> El código se actualiza automáticamente. Estado: {{ statusLabel }}
+                  </p>
+                } @else {
+                  <div class="qr-loading">
+                    <mat-spinner diameter="40"></mat-spinner>
+                    <p>Generando código QR...</p>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <!-- STEP 4: Crear campaña -->
+            <div *ngIf="currentStep === 3" class="ob-step-pane">
+              <div class="step-header">
+                <mat-icon>campaign</mat-icon>
+                <div>
+                  <h2>Tu primera campaña</h2>
+                  <p>Crea una campaña en borrador. Podrás editarla y lanzarla cuando quieras.</p>
+                </div>
+              </div>
+              <form [formGroup]="campaignForm" class="ob-form">
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Nombre de la campaña *</mat-label>
+                  <input matInput formControlName="name" placeholder="Ej: Bienvenida nuevos clientes">
+                  <mat-error *ngIf="campaignForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
+                  <mat-error *ngIf="campaignForm.get('name')?.hasError('minlength')">Mínimo 3 caracteres</mat-error>
                 </mat-form-field>
                 <mat-form-field appearance="outline" class="full-width">
                   <mat-label>Descripción</mat-label>
-                  <textarea matInput formControlName="description" rows="2" placeholder="Opcional. ¿A qué se dedica tu organización?"></textarea>
+                  <textarea matInput formControlName="description" rows="2" placeholder="Opcional. ¿Cuál es el objetivo de la campaña?"></textarea>
                 </mat-form-field>
-              </form>
-            }
-          </div>
-
-          <!-- STEP 2: Usuario del equipo -->
-          <div *ngIf="currentStep === 1">
-            <div class="step-header">
-              <mat-icon>group_add</mat-icon>
-              <div>
-                <h2>Invita a tu equipo</h2>
-                <p>Crea el primer miembro de tu organización. Puedes saltarte este paso.</p>
-              </div>
-            </div>
-            <form [formGroup]="memberForm" class="ob-form">
-              <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Nombre *</mat-label>
-                <input matInput formControlName="name" placeholder="Ej: Ana Torres" autocomplete="name">
-                <mat-error *ngIf="memberForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
-                <mat-error *ngIf="memberForm.get('name')?.hasError('minlength')">Mínimo 2 caracteres</mat-error>
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Correo electrónico *</mat-label>
-                <input matInput type="email" formControlName="email" placeholder="ana@tuempresa.com" autocomplete="email">
-                <mat-error *ngIf="memberForm.get('email')?.hasError('required')">El correo es requerido</mat-error>
-                <mat-error *ngIf="memberForm.get('email')?.hasError('email')">Ingresa un correo válido</mat-error>
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Contraseña *</mat-label>
-                <input matInput [type]="hidePassword ? 'password' : 'text'" formControlName="password" autocomplete="new-password" placeholder="••••••••">
-                <mat-error *ngIf="memberForm.get('password')?.hasError('required')">La contraseña es requerida</mat-error>
-                <mat-error *ngIf="memberForm.get('password')?.hasError('minlength')">Mínimo 6 caracteres</mat-error>
-              </mat-form-field>
-            </form>
-          </div>
-
-          <!-- STEP 3: Conectar WhatsApp -->
-          <div *ngIf="currentStep === 2">
-            <div class="step-header">
-              <mat-icon>phone_android</mat-icon>
-              <div>
-                <h2>Conecta WhatsApp</h2>
-                <p>Vincula una instancia escaneando el código QR desde tu teléfono.</p>
-              </div>
-            </div>
-
-            <form [formGroup]="instanceForm" class="ob-form" *ngIf="!instance">
-              <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Nombre de la instancia *</mat-label>
-                <input matInput formControlName="name" placeholder="Ej: WhatsApp Ventas" autocomplete="off">
-                <mat-error *ngIf="instanceForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
-                <mat-error *ngIf="instanceForm.get('name')?.hasError('minlength')">Mínimo 3 caracteres</mat-error>
-              </mat-form-field>
-            </form>
-
-            <div class="ob-qr" *ngIf="instance">
-              @if (connected) {
-                <div class="qr-connected">
-                  <mat-icon>check_circle</mat-icon>
-                  <h3>¡Conectado!</h3>
-                  <p>La instancia "{{ instance.name }}" se vinculó correctamente a WhatsApp.</p>
-                </div>
-              } @else if (qrCode) {
-                <div class="qr-image">
-                  <img [src]="qrCode" alt="Código QR para conectar WhatsApp">
-                </div>
-                <p class="qr-instructions">
-                  1. Abre WhatsApp en tu teléfono<br>
-                  2. Ve a Dispositivos vinculados → Vincular dispositivo<br>
-                  3. Escanea este código QR
+                <mat-form-field appearance="outline" class="full-width" *ngIf="instance">
+                  <mat-label>Instancia</mat-label>
+                  <input matInput [value]="instance.name" readonly>
+                </mat-form-field>
+                <p class="ob-hint" *ngIf="!instance">
+                  <mat-icon>info</mat-icon> No tienes una instancia conectada. La campaña se creará sin instancia; podrás asignarla después.
                 </p>
-                <p class="qr-note">El código se actualiza automáticamente. Estado: {{ statusLabel }}</p>
-              } @else {
-                <div class="qr-loading">
-                  <mat-spinner diameter="40"></mat-spinner>
-                  <p>Generando código QR...</p>
-                </div>
-              }
+              </form>
             </div>
-          </div>
 
-          <!-- STEP 4: Crear campaña -->
-          <div *ngIf="currentStep === 3">
-            <div class="step-header">
-              <mat-icon>campaign</mat-icon>
-              <div>
-                <h2>Tu primera campaña</h2>
-                <p>Crea una campaña en borrador. Podrás editarla y lanzarla cuando quieras.</p>
-              </div>
-            </div>
-            <form [formGroup]="campaignForm" class="ob-form">
-              <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Nombre de la campaña *</mat-label>
-                <input matInput formControlName="name" placeholder="Ej: Bienvenida nuevos clientes">
-                <mat-error *ngIf="campaignForm.get('name')?.hasError('required')">El nombre es requerido</mat-error>
-                <mat-error *ngIf="campaignForm.get('name')?.hasError('minlength')">Mínimo 3 caracteres</mat-error>
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="full-width">
-                <mat-label>Descripción</mat-label>
-                <textarea matInput formControlName="description" rows="2" placeholder="Opcional. ¿Cuál es el objetivo de la campaña?"></textarea>
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="full-width" *ngIf="instance">
-                <mat-label>Instancia</mat-label>
-                <input matInput [value]="instance.name" readonly>
-              </mat-form-field>
-              <p class="ob-hint" *ngIf="!instance">
-                <mat-icon>info</mat-icon> No tienes una instancia conectada. La campaña se creará sin instancia; podrás asignarla después.
-              </p>
-            </form>
-          </div>
-
-          <mat-card-actions class="ob-actions">
-            <button mat-button type="button" (click)="goBack()" *ngIf="currentStep > 0" [disabled]="busy">
-              <mat-icon>arrow_back</mat-icon> Atrás
-            </button>
-            <button mat-button type="button" (click)="skipStep()" *ngIf="currentStep > 0" [disabled]="busy">
-              Saltar paso
-            </button>
-            <span class="spacer"></span>
-            <button mat-raised-button color="primary" (click)="nextStep()" [disabled]="busy || !isStepValid()">
-              <mat-spinner diameter="18" *ngIf="busy"></mat-spinner>
-              <span *ngIf="!busy">
-                {{ currentStep === steps.length - 1 ? 'Finalizar' : 'Continuar' }}
-                <mat-icon>arrow_forward</mat-icon>
+            <mat-card-actions class="ob-actions">
+              <button mat-stroked-button color="primary" type="button" (click)="goBack()" *ngIf="currentStep > 0" [disabled]="busy">
+                <mat-icon>arrow_back</mat-icon> Atrás
+              </button>
+              <span class="ob-skip" *ngIf="currentStep > 0">
+                <button mat-button type="button" (click)="skipStep()" [disabled]="busy">
+                  Saltar paso
+                </button>
               </span>
-            </button>
-          </mat-card-actions>
+              <span class="spacer"></span>
+              <button mat-raised-button color="primary" class="ob-cta" (click)="nextStep()" [disabled]="busy || !isStepValid()">
+                <mat-spinner diameter="18" *ngIf="busy"></mat-spinner>
+                <span *ngIf="!busy">
+                  {{ currentStep === steps.length - 1 ? 'Finalizar' : 'Continuar' }}
+                  <mat-icon>arrow_forward</mat-icon>
+                </span>
+              </button>
+            </mat-card-actions>
+          }
         </mat-card>
       </div>
     </div>
@@ -212,62 +245,88 @@ import { Instance } from '../../core/models/instance.model';
     .onboarding-page { min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); padding: 48px 24px; position: relative; overflow: hidden; }
     .ob-bg-shapes { position: absolute; inset: 0; pointer-events: none; }
     .ob-bg-shapes .shape { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.15; }
-    .ob-bg-shapes .shape-1 { width: 420px; height: 420px; top: -120px; right: -60px; background: radial-gradient(circle, #25D366, transparent); animation: floatShape 20s ease-in-out infinite; }
-    .ob-bg-shapes .shape-2 { width: 360px; height: 360px; bottom: -100px; left: -100px; background: radial-gradient(circle, #128C7E, transparent); animation: floatShape 25s ease-in-out infinite reverse; }
+    .ob-bg-shapes .shape-1 { width: 420px; height: 420px; top: -120px; right: -60px; background: radial-gradient(circle, var(--secondary), transparent); animation: floatShape 20s ease-in-out infinite; }
+    .ob-bg-shapes .shape-2 { width: 360px; height: 360px; bottom: -100px; left: -100px; background: radial-gradient(circle, var(--primary-light), transparent); animation: floatShape 25s ease-in-out infinite reverse; }
+    .ob-bg-shapes .shape-3 { width: 200px; height: 200px; top: 45%; left: 62%; background: radial-gradient(circle, var(--primary), transparent); animation: floatShape 15s ease-in-out infinite; }
     @keyframes floatShape { 0%, 100% { transform: translate(0, 0) scale(1); } 33% { transform: translate(30px, -30px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } }
 
     .ob-container { width: 100%; max-width: 560px; position: relative; z-index: 1; animation: fadeInUp 0.6s ease-out; }
     @keyframes fadeInUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
-    .ob-brand { text-align: center; margin-bottom: 28px; }
-    .ob-brand .brand-icon { width: 64px; height: 64px; border-radius: 20px; background: linear-gradient(135deg, #25D366, #128C7E); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; box-shadow: 0 8px 32px rgba(37, 211, 102, 0.3); }
-    .ob-brand .brand-icon mat-icon { font-size: 32px; width: 32px; height: 32px; color: white; }
+    .ob-brand { text-align: center; margin-bottom: 24px; }
+    .ob-brand .brand-icon { width: 64px; height: 64px; border-radius: 20px; background: linear-gradient(135deg, var(--secondary), var(--primary-light)); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; box-shadow: 0 8px 32px rgba(37, 211, 102, 0.3); }
+    .ob-brand .brand-icon mat-icon { font-size: 32px; width: 32px; height: 32px; color: var(--text-on-secondary); }
     .ob-brand h1 { margin: 0 0 8px; font-size: 28px; font-weight: 700; color: #ffffff; }
     .ob-brand .brand-subtitle { margin: 0; color: rgba(255, 255, 255, 0.6); font-size: 14px; }
 
-    .ob-stepper { display: flex; justify-content: space-between; margin-bottom: 24px; padding: 0 8px; }
-    .ob-stepper .step { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; }
-    .ob-stepper .step-dot { width: 34px; height: 34px; border-radius: 50%; background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.6); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; transition: all 0.25s ease; }
+    .ob-stepper { display: flex; justify-content: space-between; margin-bottom: 12px; padding: 0 8px; }
+    .ob-stepper .step { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; position: relative; }
+    .ob-stepper .step:not(:first-child)::before { content: ''; position: absolute; top: 17px; left: -50%; width: 100%; height: 2px; background: rgba(255, 255, 255, 0.14); transition: background var(--transition-normal); }
+    .ob-stepper .step.done:not(:first-child)::before, .ob-stepper .step.active:not(:first-child)::before { background: linear-gradient(90deg, var(--secondary), var(--secondary-light)); }
+    .ob-stepper .step-dot { width: 34px; height: 34px; border-radius: 50%; background: rgba(255, 255, 255, 0.12); color: rgba(255, 255, 255, 0.6); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; position: relative; z-index: 1; transition: all 0.25s ease; }
     .ob-stepper .step-dot mat-icon { font-size: 18px; width: 18px; height: 18px; }
-    .ob-stepper .step.active .step-dot { background: #25D366; color: #062e1e; box-shadow: 0 0 0 4px rgba(37, 211, 102, 0.25); }
-    .ob-stepper .step.done .step-dot { background: #128C7E; color: white; }
+    .ob-stepper .step.active .step-dot { background: var(--secondary); color: var(--text-on-secondary); box-shadow: 0 0 0 4px rgba(37, 211, 102, 0.25); transform: scale(1.06); }
+    .ob-stepper .step.done .step-dot { background: var(--primary-light); color: white; }
     .ob-stepper .step-label { font-size: 12px; color: rgba(255, 255, 255, 0.5); text-align: center; }
     .ob-stepper .step.active .step-label, .ob-stepper .step.done .step-label { color: rgba(255, 255, 255, 0.9); }
 
-    .ob-card { padding: 32px 28px; border-radius: var(--radius-lg, 16px); background: rgba(255, 255, 255, 0.97); backdrop-filter: blur(20px); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35); }
+    .ob-progress { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); overflow: hidden; margin: 0 8px; }
+    .ob-progress-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--secondary), var(--secondary-light)); transition: width var(--transition-normal); }
+    .ob-step-counter { margin: 6px 8px 20px; text-align: right; font-size: 12px; color: rgba(255, 255, 255, 0.55); letter-spacing: 0.3px; }
+
+    .ob-card { padding: 32px 28px; border-radius: var(--radius-lg); background: var(--surface); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.35); }
+    html[data-theme='dark'] .ob-card { background: rgba(17, 26, 44, 0.92); }
+
+    .ob-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 56px 0; color: var(--text-secondary); }
+    .ob-loading p { margin: 0; font-size: 14px; }
+
+    .ob-step-pane { animation: paneIn 0.4s ease-out; }
+    @keyframes paneIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
     .step-header { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 22px; }
-    .step-header > mat-icon { font-size: 32px; width: 44px; height: 44px; border-radius: 12px; background: #e0f2fe; color: #0369a1; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .step-header h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; color: var(--text-primary, #111827); }
-    .step-header p { margin: 0; font-size: 13px; color: var(--text-secondary, #6b7280); }
+    .step-header > mat-icon { font-size: 32px; width: 44px; height: 44px; border-radius: 12px; background: rgba(37, 211, 102, 0.12); color: #047857; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    html[data-theme='dark'] .step-header > mat-icon { background: rgba(37, 211, 102, 0.16); color: #34d399; }
+    .step-header h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; color: var(--text-primary); }
+    .step-header p { margin: 0; font-size: 13px; color: var(--text-secondary); }
     .ob-form { display: flex; flex-direction: column; gap: 8px; }
     .full-width { width: 100%; }
 
     .ob-qr { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px 8px; text-align: center; }
-    .ob-qr .qr-image img { max-width: 280px; height: auto; border: 1px solid #e5e7eb; border-radius: 12px; background: white; }
-    .ob-qr .qr-instructions { color: #4b5563; line-height: 1.8; margin: 0; font-size: 14px; }
-    .ob-qr .qr-note { font-size: 13px; color: #9ca3af; margin: 0; }
-    .ob-qr .qr-loading { display: flex; flex-direction: column; align-items: center; gap: 14px; color: #6b7280; padding: 40px 0; }
+    .ob-qr .qr-image img { max-width: 280px; height: auto; border: 1px solid var(--border); border-radius: 12px; background: white; }
+    .ob-qr .qr-instructions { color: var(--text-secondary); line-height: 1.8; margin: 0; font-size: 14px; }
+    .ob-qr .qr-note { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; color: var(--text-muted); margin: 0; }
+    .ob-qr .qr-note mat-icon { font-size: 16px; width: 16px; height: 16px; flex-shrink: 0; }
+    .ob-qr .qr-loading { display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--text-secondary); padding: 40px 0; }
+    .ob-qr .qr-loading p { margin: 0; }
     .ob-qr .qr-connected { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 0; }
     .ob-qr .qr-connected mat-icon { font-size: 56px; width: 56px; height: 56px; color: #22c55e; }
-    .ob-qr .qr-connected h3 { margin: 0; font-size: 20px; color: #111827; }
-    .ob-qr .qr-connected p { margin: 0; color: #6b7280; font-size: 14px; }
+    .ob-qr .qr-connected h3 { margin: 0; font-size: 20px; color: var(--text-primary); }
+    .ob-qr .qr-connected p { margin: 0; color: var(--text-secondary); font-size: 14px; }
+    .ob-qr .qr-disconnected { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 16px; background: var(--surface-alt); border: 1px dashed var(--border); border-radius: var(--radius-md); }
+    .ob-qr .qr-disconnected mat-icon { font-size: 48px; width: 48px; height: 48px; color: var(--text-muted); }
+    .ob-qr .qr-disconnected h3 { margin: 0; font-size: 18px; color: var(--text-primary); }
+    .ob-qr .qr-disconnected p { margin: 0; color: var(--text-secondary); font-size: 14px; }
 
-    .ob-hint { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; font-size: 13px; color: #9ca3af; }
+    .ob-hint { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; font-size: 13px; color: var(--text-secondary); }
     .ob-hint mat-icon { font-size: 18px; width: 18px; height: 18px; }
 
-    .ob-actions { display: flex; align-items: center; gap: 8px; margin: 8px -8px -8px; padding: 16px 0 0; }
+    .ob-actions { display: flex; align-items: center; gap: 4px; margin: 8px -8px -8px; padding: 20px 0 0; }
     .ob-actions .spacer { flex: 1; }
     .ob-actions mat-spinner { display: inline-block; margin-right: 8px; }
-    .ob-actions button[mat-raised-button] mat-icon { margin-left: 6px; }
-
-    .ob-skip-all { text-align: center; margin: 20px 0 0; }
-    .ob-skip-all a { color: rgba(255, 255, 255, 0.7); font-size: 13px; text-decoration: none; }
-    .ob-skip-all a:hover { color: #25D366; text-decoration: underline; }
+    .ob-actions .ob-skip button[mat-button] { color: var(--text-secondary); transition: color var(--transition-fast); }
+    .ob-actions .ob-skip button[mat-button]:hover:not(:disabled) { color: var(--primary); }
+    .ob-actions .ob-cta { height: 48px; font-size: 16px; font-weight: 600; border-radius: var(--radius-sm); padding: 0 24px; transition: all var(--transition-fast); }
+    .ob-actions .ob-cta:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(7, 94, 84, 0.3); }
+    .ob-actions .ob-cta mat-icon { margin-left: 6px; }
 
     @media (max-width: 520px) {
       .onboarding-page { padding: 32px 16px; }
       .ob-card { padding: 24px 18px; }
       .ob-stepper .step-label { font-size: 11px; }
+    }
+
+    @media (max-width: 420px) {
+      .ob-stepper .step-label { display: none; }
     }
   `],
 })
@@ -275,6 +334,7 @@ export class OnboardingComponent implements OnInit, OnDestroy {
   steps = ['Organización', 'Equipo', 'WhatsApp', 'Campaña'];
   currentStep = 0;
   busy = false;
+  loading = true;
   hidePassword = true;
   joinMode = false;
   isOrgOwner = false;
@@ -321,6 +381,10 @@ export class OnboardingComponent implements OnInit, OnDestroy {
     });
   }
 
+  get progress(): number {
+    return this.steps.length > 1 ? Math.round((this.currentStep / (this.steps.length - 1)) * 100) : 100;
+  }
+
   ngOnInit(): void {
     this.onboardingService.getStatus().subscribe({
       next: (status) => {
@@ -336,8 +400,11 @@ export class OnboardingComponent implements OnInit, OnDestroy {
         if (this.joinMode) {
           this.steps = ['Organización', 'WhatsApp', 'Campaña'];
         }
+        this.loading = false;
       },
-      error: () => {},
+      error: () => {
+        this.loading = false;
+      },
     });
     this.instanceService.getAll().subscribe({
       next: (instances) => {
@@ -347,11 +414,14 @@ export class OnboardingComponent implements OnInit, OnDestroy {
           this.connected = true;
         } else if (instances.length > 0) {
           this.instance = instances[0];
+          this.status = this.instance.status || 'disconnected';
+          this.statusLabel = this.getStatusLabel(this.status);
           if (this.instance.status === 'connecting' || this.instance.status === 'qrcoded') {
             this.startPolling();
           }
         }
       },
+      error: () => {},
     });
   }
 
@@ -469,6 +539,8 @@ export class OnboardingComponent implements OnInit, OnDestroy {
       next: (created) => {
         this.busy = false;
         this.instance = created;
+        this.status = created.status || 'connecting';
+        this.statusLabel = this.getStatusLabel(this.status);
         this.qrCode = (created as Instance & { qrCode?: string }).qrCode || null;
         if (!this.qrCode) {
           this.loadQrCode(created.id);
@@ -478,6 +550,25 @@ export class OnboardingComponent implements OnInit, OnDestroy {
       error: (err) => {
         this.busy = false;
         this.snackBar.open(err?.error?.error || 'Error al crear la instancia', 'Cerrar', { duration: 5000 });
+      },
+    });
+  }
+
+  requestReconnect(): void {
+    if (!this.instance || this.busy) return;
+    this.busy = true;
+    this.qrCode = null;
+    this.status = 'connecting';
+    this.statusLabel = 'Conectando...';
+    this.instanceService.connect(this.instance.id).subscribe({
+      next: () => {
+        this.busy = false;
+        this.startPolling();
+      },
+      error: (err) => {
+        this.busy = false;
+        this.snackBar.open(err?.error?.error || 'No se pudo restablecer la conexión', 'Cerrar', { duration: 5000 });
+        this.loadQrCode(this.instance!.id);
       },
     });
   }
