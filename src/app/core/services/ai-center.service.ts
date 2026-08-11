@@ -9,6 +9,7 @@ import {
   AiProviderInfo,
   AiUsageSummary,
   AiSaaSKey,
+  GoogleOAuthConfig,
 } from '../models/ai-center.model';
 
 @Injectable({ providedIn: 'root' })
@@ -65,5 +66,17 @@ export class AiCenterService {
 
   deleteSaaSKey(id: string): Observable<{ id: string }> {
     return this.api.delete<{ id: string }>(`/ai/saas-keys/${id}`).pipe(map((res) => res.data));
+  }
+
+  getGoogleOAuthConfig(): Observable<GoogleOAuthConfig> {
+    return this.api.get<GoogleOAuthConfig>('/admin/google-config').pipe(map((res) => res.data));
+  }
+
+  setGoogleOAuthConfig(data: { clientId: string; clientSecret: string }): Observable<{ success: boolean }> {
+    return this.api.post<{ success: boolean }>('/admin/google-config', data).pipe(map((res) => res.data));
+  }
+
+  clearGoogleOAuthConfig(): Observable<{ success: boolean }> {
+    return this.api.delete<{ success: boolean }>('/admin/google-config').pipe(map((res) => res.data));
   }
 }

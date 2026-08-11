@@ -497,6 +497,15 @@ async function initDb() {
         calendar_days INT DEFAULT 30,
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+      -- Credenciales OAuth de Google del sistema (Client ID/Secret). Fila única
+      -- configurable desde el panel (admin); si no existe, se usan las variables
+      -- de entorno GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. El secret va cifrado.
+      CREATE TABLE IF NOT EXISTS google_oauth_config (
+        id TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        client_secret_enc TEXT NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
       -- Se eliminan las tablas del módulo Negocio (catálogo, inventario,
       -- documentos y agenda) porque toda esa información se lee en vivo de la
       -- cuenta de Google asociada a la instancia.
@@ -1736,6 +1745,15 @@ async function handleRequest(req, res, pathname) {
           return await deleteChatbotDocument(res, parts[2], session);
         if (parts[1] === 'google')
           return await handleGoogleRoutes(res, req, session, parts.slice(2));
+        break;
+
+      // -- Configuración del sistema (solo admin) --
+      case 'admin':
+        if (id === 'google-config') {
+          if (method === 'GET') return await getGoogleOAuthConfig(res, session);
+          if (method === 'POST') return await setGoogleOAuthConfig(res, await parseBody(req), session);
+          if (method === 'DELETE') return await clearGoogleOAuthConfig(res, session);
+        }
         break;
 
       // -- Auto-replies --
@@ -4336,6 +4354,38 @@ async function googleOAuthCallback(res, q) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Admin: configuración OAuth de Google del sistema (Client ID/Secret).
+// Si no hay config en la BD se usan las variables de entorno.
+// ---------------------------------------------------------------------------
+async function getGoogleOAuthConfig(res, session) {
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar la configuración de Google' });
+  const cfg = await googleClient.getOAuthConfigPublic();
+  sendJson(res, 200, { data: cfg, success: true });
+}
+
+async function setGoogleOAuthConfig(res, body, session) {
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar la configuración de Google' });
+  const clientId = (body.clientId || '').trim();
+  const clientSecret = (body.clientSecret || '').trim();
+  if (!clientId || !clientSecret) {
+    return sendJson(res, 400, { error: 'El Client ID y el Client Secret son requeridos' });
+  }
+  if (!/^[\w\-]+\.apps\.googleusercontent\.com$/.test(clientId)) {
+    return sendJson(res, 400, { error: 'El Client ID no tiene el formato esperado (termina en .apps.googleusercontent.com)' });
+  }
+  await googleClient.setOAuthConfig(clientId, clientSecret);
+  logAiAudit(session, 'google_oauth_set', `Credenciales de Google OAuth configuradas (Client ID ${clientId})`);
+  sendJson(res, 201, { data: { success: true }, success: true });
+}
+
+async function clearGoogleOAuthConfig(res, session) {
+  if (!isAdminRole(session.role)) return sendJson(res, 403, { error: 'Solo el administrador puede gestionar la configuración de Google' });
+  await googleClient.clearOAuthConfig();
+  logAiAudit(session, 'google_oauth_removed', 'Credenciales de Google OAuth eliminadas');
+  sendJson(res, 200, { data: { success: true }, success: true });
+}
+
 async function handleGoogleRoutes(res, req, session, seg) {
   const method = req.method;
   const q = new URL(req.url, `http://${req.headers.host}`);
@@ -4344,13 +4394,13 @@ async function handleGoogleRoutes(res, req, session, seg) {
     return sendJson(res, 403, { error: 'No tienes acceso a esta instancia' });
   }
   if (method === 'GET' && seg[0] === 'auth-url') {
-    if (!googleClient.isConfigured()) {
+    if (!(await googleClient.isConfigured())) {
       return sendJson(res, 400, {
-        error: 'Google no está configurado: faltan GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET (guía en DOCUMENTACION.md)',
+        error: 'Google no está configurado: faltan GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET (configúralo en Administración → Google OAuth o guíate por DOCUMENTACION.md)',
       });
     }
     if (!iid) return sendJson(res, 400, { error: 'Selecciona la instancia antes de conectar Google' });
-    return sendJson(res, 200, { data: { url: googleClient.buildAuthUrl(session.id, iid) }, success: true });
+    return sendJson(res, 200, { data: { url: await googleClient.buildAuthUrl(session.id, iid) }, success: true });
   }
   if (method === 'GET' && seg[0] === 'status') {
     if (!iid) return sendJson(res, 200, { data: { connected: false, email: null }, success: true });

@@ -15,6 +15,13 @@
 // cada llamada.
 const crypto = require('crypto');
 
+function maskKey(key) {
+  const s = String(key || '').trim();
+  if (!s) return '';
+  if (s.length <= 4) return `****${s}`;
+  return `****${s.slice(-4)}`;
+}
+
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/drive.readonly',
@@ -37,7 +44,7 @@ const MAX_CALENDAR_EVENTS = parseInt(process.env.GOOGLE_CALENDAR_MAX_EVENTS || '
 function createGoogleClient(deps) {
   const { getPool, encryptSecret, decryptSecret, appUrl } = deps;
 
-  function clientConfig() {
+  function clientConfigFromEnv() {
     const clientId = process.env.GOOGLE_CLIENT_ID || '';
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
     const redirectUri = (
@@ -47,8 +54,62 @@ function createGoogleClient(deps) {
     return { clientId, clientSecret, redirectUri };
   }
 
-  function isConfigured() {
-    const { clientId, clientSecret } = clientConfig();
+  // Resuelve las credenciales OAuth: primero las de la BD (google_oauth_config,
+  // configurables desde el panel por el admin) y si no hay, cae a las variables
+  // de entorno GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET.
+  async function getClientConfig() {
+    let cfg = clientConfigFromEnv();
+    try {
+      const row = (await getPool().query(
+        'SELECT * FROM google_oauth_config ORDER BY updated_at DESC LIMIT 1'
+      )).rows[0];
+      if (row) {
+        cfg = {
+          clientId: row.client_id || cfg.clientId,
+          clientSecret: decryptSecret(row.client_secret_enc) || cfg.clientSecret,
+          redirectUri: cfg.redirectUri,
+        };
+      }
+    } catch {
+      // Si la tabla aún no existe (primer arranque) se usa el entorno.
+    }
+    return cfg;
+  }
+
+  // Estado público para la UI del admin: nunca expone el secret.
+  async function getOAuthConfigPublic() {
+    const { clientId, clientSecret, redirectUri } = await getClientConfig();
+    return {
+      configured: Boolean(clientId && clientSecret),
+      clientId,
+      clientSecretMasked: clientSecret ? maskKey(clientSecret) : '',
+      redirectUri,
+      fromDb: Boolean((await getPool().query('SELECT 1 FROM google_oauth_config LIMIT 1').catch(() => ({ rows: [] }))).rows.length),
+    };
+  }
+
+  // Guarda las credenciales en la BD (fila única, upsert) cifrando el secret.
+  async function setOAuthConfig(clientId, clientSecret) {
+    const row = (await getPool().query(
+      `INSERT INTO google_oauth_config (id, client_id, client_secret_enc)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (id) DO UPDATE SET
+         client_id = EXCLUDED.client_id,
+         client_secret_enc = EXCLUDED.client_secret_enc,
+         updated_at = NOW()
+       RETURNING client_id`,
+      ['google-oauth-config', clientId, encryptSecret(clientSecret)]
+    )).rows[0];
+    return { clientId: row.client_id };
+  }
+
+  // Elimina la config de la BD: vuelve a usarse el entorno si está definido.
+  async function clearOAuthConfig() {
+    await getPool().query('DELETE FROM google_oauth_config');
+  }
+
+  async function isConfigured() {
+    const { clientId, clientSecret } = await getClientConfig();
     return Boolean(clientId && clientSecret);
   }
 
@@ -124,7 +185,7 @@ function createGoogleClient(deps) {
 
     // Renueva el access token si está a punto de caducar (margen de 1 min).
     if (refreshToken && Date.now() > expiresAt - 60 * 1000) {
-      const { clientId, clientSecret } = clientConfig();
+      const { clientId, clientSecret } = await getClientConfig();
       const fresh = await postForm(TOKEN_URL, {
         client_id: clientId,
         client_secret: clientSecret,
@@ -170,8 +231,8 @@ function createGoogleClient(deps) {
   // -------------------------------------------------------------------------
   const oauthStates = new Map(); // state -> { userId, instanceId, expiresAt }
 
-  function buildAuthUrl(userId, instanceId) {
-    const { clientId, redirectUri } = clientConfig();
+  async function buildAuthUrl(userId, instanceId) {
+    const { clientId, redirectUri } = await getClientConfig();
     const state = crypto.randomBytes(16).toString('hex');
     oauthStates.set(state, { userId, instanceId, expiresAt: Date.now() + 10 * 60 * 1000 });
     const params = new URLSearchParams({
@@ -195,7 +256,7 @@ function createGoogleClient(deps) {
       err.stateInvalid = true;
       throw err;
     }
-    const { clientId, clientSecret, redirectUri } = clientConfig();
+    const { clientId, clientSecret, redirectUri } = await getClientConfig();
     const data = await postForm(TOKEN_URL, {
       code,
       client_id: clientId,
@@ -451,6 +512,9 @@ function createGoogleClient(deps) {
 
   return {
     isConfigured,
+    getOAuthConfigPublic,
+    setOAuthConfig,
+    clearOAuthConfig,
     buildAuthUrl,
     handleCallback,
     disconnect,

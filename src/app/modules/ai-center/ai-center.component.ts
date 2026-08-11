@@ -30,6 +30,7 @@ import {
   AiProviderInfo,
   AiUsageSummary,
   AiSaaSKey,
+  GoogleOAuthConfig,
 } from '../../core/models/ai-center.model';
 
 const AI_DEFAULT_QUOTA = 20;
@@ -84,6 +85,13 @@ export class AiCenterComponent implements OnInit, OnDestroy {
   saasProvider: AiProviderId = 'gemini';
   saasApiKey = '';
   saasLabel = '';
+
+  // Admin: credenciales OAuth de Google del sistema
+  googleOAuth: GoogleOAuthConfig | null = null;
+  googleOAuthLoading = false;
+  googleOAuthSaving = false;
+  googleClientId = '';
+  googleClientSecret = '';
 
   get isAdmin(): boolean {
     const role = this.authService.currentUser()?.role;
@@ -154,6 +162,7 @@ export class AiCenterComponent implements OnInit, OnDestroy {
       },
     });
     if (this.isAdmin) this.loadSaaSKeys();
+    if (this.isAdmin) this.loadGoogleOAuthConfig();
   }
 
   loadOverview(): void {
@@ -338,6 +347,61 @@ export class AiCenterComponent implements OnInit, OnDestroy {
         next: () => {
           this.snackBar.open('Clave del sistema eliminada', 'Cerrar', { duration: 4000 });
           this.loadSaaSKeys();
+        },
+        error: (err) => {
+          this.snackBar.open(err?.error?.error || 'Error al eliminar', 'Cerrar', { duration: 5000 });
+        },
+      });
+  }
+
+  // ---- Admin: credenciales OAuth de Google ----
+  loadGoogleOAuthConfig(): void {
+    this.googleOAuthLoading = true;
+    this.aiService.getGoogleOAuthConfig()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (cfg) => {
+          this.googleOAuth = cfg;
+          this.googleOAuthLoading = false;
+        },
+        error: () => {
+          this.googleOAuthLoading = false;
+        },
+      });
+  }
+
+  saveGoogleOAuthConfig(): void {
+    const clientId = this.googleClientId.trim();
+    const clientSecret = this.googleClientSecret.trim();
+    if (!clientId || !clientSecret) {
+      this.snackBar.open('Ingresa el Client ID y el Client Secret de Google', 'Cerrar', { duration: 4000 });
+      return;
+    }
+    this.googleOAuthSaving = true;
+    this.aiService.setGoogleOAuthConfig({ clientId, clientSecret })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.googleOAuthSaving = false;
+          this.googleClientId = '';
+          this.googleClientSecret = '';
+          this.snackBar.open('Credenciales de Google guardadas. Ya puedes conectar cuentas en el módulo Chatbot', 'Cerrar', { duration: 5000 });
+          this.loadGoogleOAuthConfig();
+        },
+        error: (err) => {
+          this.googleOAuthSaving = false;
+          this.snackBar.open(err?.error?.error || 'Error al guardar las credenciales', 'Cerrar', { duration: 5000 });
+        },
+      });
+  }
+
+  clearGoogleOAuthConfig(): void {
+    this.aiService.clearGoogleOAuthConfig()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.snackBar.open('Credenciales de Google eliminadas', 'Cerrar', { duration: 4000 });
+          this.loadGoogleOAuthConfig();
         },
         error: (err) => {
           this.snackBar.open(err?.error?.error || 'Error al eliminar', 'Cerrar', { duration: 5000 });

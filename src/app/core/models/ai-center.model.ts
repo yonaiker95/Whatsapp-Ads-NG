@@ -100,3 +100,11 @@ export interface AiSaaSKey {
   isActive: boolean;
   createdAt: string;
 }
+
+export interface GoogleOAuthConfig {
+  configured: boolean;
+  clientId: string;
+  clientSecretMasked: string;
+  redirectUri: string;
+  fromDb: boolean;
+}

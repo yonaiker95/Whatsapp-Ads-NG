@@ -180,7 +180,7 @@ Definidas en `.env` (ver `.env.example` para la referencia):
 | `N8N_EVOLUTION_URL` | URL de Evolution visible desde el contenedor n8n | http://evolution_api:8080 |
 | `AI_ENC_KEY` | Clave maestra de cifrado de API keys de IA | cambiar-en-produccion-clave-maestra-ia |
 | `GEMINI_API_KEY` | Clave para el chatbot (legacy) | — |
-| `GOOGLE_CLIENT_ID` | Client ID de OAuth de Google (conectar la cuenta de Google de cada instancia para leer hojas/documentos/agenda en vivo) | — |
+| `GOOGLE_CLIENT_ID` | Client ID de OAuth de Google (conectar la cuenta de Google de cada instancia para leer hojas/documentos/agenda en vivo). La config desde el panel (`google_oauth_config`) tiene prioridad | — |
 | `GOOGLE_CLIENT_SECRET` | Client Secret de OAuth de Google | — |
 | `GOOGLE_REDIRECT_URI` | URL de retorno del OAuth (opcional; por defecto `{APP_URL}/api/chatbot/google/callback`) | — |
 | `PORT` | Puerto del backend | 3000 |
@@ -212,6 +212,7 @@ El esquema se crea automáticamente al iniciar el backend (`server.js`). Tablas:
 | `bot_document_chunks` | Fragmentos de cada documento con sus embeddings (búsqueda semántica) |
 | `google_connections` | Conexión OAuth de la cuenta de Google **por instancia** (tokens cifrados) |
 | `instance_google_sources` | Fuentes de Google de cada instancia que alimentan al bot en vivo: hoja de cálculo (`sheet_id`, `sheet_name`, `sheet_range`), documentos (`doc_ids`) y calendario (`calendar_id`, `calendar_days`) |
+| `google_oauth_config` | Credenciales OAuth de Google del **sistema** (fila única): `client_id` + `client_secret_enc` (cifrado). Configurable desde el panel (admin) o por variables de entorno |
 | `ai_configs` | Configuración de IA por usuario (modo SaaS/BYOK, proveedor, modelo) |
 | `ai_saas_keys` | Claves de sistema (modo SaaS) administradas por el admin |
 | `ai_usage_logs` | Registro de consumo de IA (tokens, costo, estado) |
@@ -241,6 +242,7 @@ Campos principales: `phone` (sin `+`), `code`, `purpose`, `token` (solo login/re
 
 - Un **usuario** tiene muchas **instancias**.
 - Una **instancia** tiene muchos **grupos**, **campañas**, **mensajes**, **auto-respuestas**, una **configuración de chatbot**, una **conexión de Google** (`google_connections`) y sus **fuentes de Google** (`instance_google_sources`).
+- La **configuración OAuth de Google del sistema** (`google_oauth_config`) es una fila única usada por todas las conexiones; si no existe, se leen `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` del entorno.
 - Una **plantilla** se utiliza en muchas **campañas**.
 - Una **campaña** pertenece a una **instancia** y puede usar una **plantilla**.
 - Los **logs de envío** y los **mensajes** pertenecen a una campaña o instancia.
@@ -551,6 +553,12 @@ erDiagram
         text calendar_id
         int calendar_days
     }
+    google_oauth_config {
+        text id PK
+        text client_id
+        text client_secret_enc
+        datetime updated_at
+    }
     user_block_audit {
         bigint id PK
         text actor_id
@@ -563,7 +571,7 @@ erDiagram
     }
 ```
 
-> Las tablas `otp_codes`, `payment_destinations`, `plans`, `plan_addons`, `testimonials`, `ai_saas_keys` y `user_block_audit` no tienen claves foráneas; se relacionan lógicamente por columnas (p. ej. `reported_payments.destination_id` → `payment_destinations.id`, o `user_block_audit.actor_id`/`target_id` → `users.id`). Las tablas `products`, `documents` y `appointments` del antiguo módulo Negocio fueron eliminadas: esa información ahora se lee en vivo desde la cuenta de Google de cada instancia (`google_connections` + `instance_google_sources`).
+> Las tablas `otp_codes`, `payment_destinations`, `plans`, `plan_addons`, `testimonials`, `ai_saas_keys`, `google_oauth_config` y `user_block_audit` no tienen claves foráneas; se relacionan lógicamente por columnas (p. ej. `reported_payments.destination_id` → `payment_destinations.id`, o `user_block_audit.actor_id`/`target_id` → `users.id`). Las tablas `products`, `documents` y `appointments` del antiguo módulo Negocio fueron eliminadas: esa información ahora se lee en vivo desde la cuenta de Google de cada instancia (`google_connections` + `instance_google_sources`).
 
 ### Permisos por módulo (`users.permissions`)
 
@@ -726,6 +734,14 @@ Tras registrarse, el usuario **no puede usar el panel** hasta completar el onboa
 | GET | `/api/chatbot/google/calendars?instanceId=` | Lista los calendarios de la instancia |
 | GET | `/api/chatbot/google/sources?instanceId=` | Lee las fuentes configuradas de la instancia (`{ sheetId, sheetName, sheetRange, docIds, calendarId, calendarDays }`) |
 | POST | `/api/chatbot/google/sources` | Guarda las fuentes de la instancia (body: `instanceId`, `sheetId`, `sheetName`, `sheetRange`, `docIds[]`, `calendarId`, `calendarDays`) |
+
+### Configuración del sistema (admin)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/admin/google-config` | Estado de las credenciales OAuth de Google del sistema (`{ configured, clientId, clientSecretMasked, redirectUri, fromDb }`); solo admin |
+| POST | `/api/admin/google-config` | Guarda el Client ID/Secret en la BD (cifrado); solo admin |
+| DELETE | `/api/admin/google-config` | Elimina la config de la BD (vuelve a usarse el entorno); solo admin |
 
 ### Respuestas automáticas
 
@@ -916,6 +932,7 @@ Las sesiones se almacenan en memoria (objeto `sessions` en `server.js`). En un d
 El bot se alimenta no solo con texto pegado a mano (`source = manual`) sino también desde la **cuenta de Google de cada instancia**: hojas de cálculo (`sheet`), documentos de Google (`docs`) y agenda (`calendar`). A diferencia del modelo anterior (que copiaba el contenido a `bot_documents` como "instantánea"), ahora las fuentes se **leen en vivo** en cada respuesta (`buildGoogleBusinessContext`): el bot consulta los datos actuales de la hoja, los documentos y el calendario seleccionados y los inyecta como "DATOS ACTUALES DE LA CUENTA DE GOOGLE DE LA INSTANCIA". Si un archivo cambia, el bot responde con lo nuevo automáticamente, sin reimportar nada.
 
 - **`google_connections` por instancia**: una fila por instancia con los tokens de OAuth **cifrados** (`access_token_enc`, `refresh_token_enc`, `scopes`, `expires_at`); `instance_id` es único. El access token se renueva automáticamente con el refresh token antes de cada llamada.
+- **`google_oauth_config` del sistema**: credenciales OAuth de la aplicación (`client_id` + `client_secret_enc` cifrado, fila única) que se configuran desde el **Centro de IA → Google OAuth (admin)** con `GET/POST/DELETE /api/admin/google-config`. Si no hay fila, se usan las variables `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` del entorno. La config de la BD tiene prioridad.
 - **`instance_google_sources`**: qué fuentes alimentan a cada instancia — `sheet_id` + `sheet_name` + `sheet_range` (catálogo/precios), `doc_ids[]` (documentos) y `calendar_id` + `calendar_days` (agenda). Se guardan con `POST /api/chatbot/google/sources` y se leen con `GET /api/chatbot/google/sources?instanceId=`.
 - **Conexión**: `GET /api/chatbot/google/auth-url?instanceId=` devuelve la URL de autorización; el navegador pasa por Google y `GET /api/chatbot/google/callback` intercambia el código, asocia la cuenta a la instancia mediante el parámetro `state` y redirige de vuelta a la SPA (`/app/chatbot`). El estado se consulta con `GET /api/chatbot/google/status?instanceId=` y se desconecta con `DELETE /api/chatbot/google?instanceId=`.
 - **Listados**: `GET /api/chatbot/google/files?instanceId=&kind=sheets|docs` lista el Drive de la cuenta conectada (Drive API) y `GET /api/chatbot/google/calendars?instanceId=` sus calendarios.
@@ -941,13 +958,15 @@ Para activar la conexión con Google necesitas un proyecto en **Google Cloud Con
    - Nombre: "WhatsApp Ads".
    - **URIs de redireccionamiento autorizadas**: agrega `http://localhost:3000/api/chatbot/google/callback` (y la URL pública de tu despliegue, por ejemplo `https://tu-dominio.com/api/chatbot/google/callback`).
    - El valor **debe coincidir** con `GOOGLE_REDIRECT_URI` (por defecto `{APP_URL}/api/chatbot/google/callback`).
-5. **Guardar las credenciales**: copia el **Client ID** y el **Client Secret** y configúralos en el entorno:
+5. **Guardar las credenciales**: copia el **Client ID** y el **Client Secret**. Hay dos formas de configurarlos:
+   - **Desde el panel (recomendado)**: en el **Centro de IA** → tarjeta *"Google OAuth (datos del negocio)"* (visible solo para admin) pega ambos valores y pulsa *"Guardar credenciales"*. Se guardan **cifrados** en `google_oauth_config` y se pueden quitar desde ahí.
+   - **Variables de entorno** (o si usas Docker, en el `.env` del proyecto, que el compose inyecta) y reinicia el contenedor: `docker compose up -d app`:
    ```dotenv
    GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=GOCSPX-xxxxx
    # GOOGLE_REDIRECT_URI=http://localhost:3000/api/chatbot/google/callback  (opcional)
    ```
-   En Docker, agrégalas al `.env` del proyecto (el compose las inyecta) y reinicia el contenedor: `docker compose up -d app`.
+   La config de la BD tiene prioridad sobre el entorno.
 6. **Usar la app**: en el módulo **Chatbot** aparece la tarjeta *"Datos del negocio desde Google"*. Conecta la cuenta de Google de la instancia y elige qué hoja de cálculo, documentos y calendario alimentan al bot (todo opcional); pulsa *"Guardar fuentes del bot"*. Desde ese momento el bot lee esos datos **en vivo** en cada respuesta.
 
 ### Pausa por conversación

@@ -326,5 +326,63 @@
         </div>
       </mat-card-content>
     </mat-card>
+
+    <!-- ============ Admin: credenciales OAuth de Google (sistema) ============ -->
+    <mat-card class="saas-admin-card" appearance="outlined" *ngIf="isAdmin">
+      <mat-card-header>
+        <mat-card-title>
+          <mat-icon>verified_user</mat-icon>
+          Google OAuth (datos del negocio)
+        </mat-card-title>
+        <span class="admin-badge">Admin</span>
+      </mat-card-header>
+      <mat-divider></mat-divider>
+      <mat-card-content>
+        <p class="saas-admin-desc">
+          Credenciales OAuth de la aplicación (Client ID y Client Secret) para que cada instancia conecte su
+          cuenta de Google y el chatbot lea en vivo hojas de cálculo, documentos y agenda. Si no se configuran aquí,
+          se usan las variables de entorno <code>GOOGLE_CLIENT_ID</code> y <code>GOOGLE_CLIENT_SECRET</code>.
+          Guía paso a paso en <code>DOCUMENTACION.md</code>.
+        </p>
+
+        <div class="google-oauth-status" *ngIf="googleOAuthLoading">
+          <mat-spinner diameter="20"></mat-spinner>
+        </div>
+
+        <div class="google-oauth-status" *ngIf="!googleOAuthLoading && googleOAuth">
+          <mat-icon [class.ok]="googleOAuth.configured" [class.warn]="!googleOAuth.configured">
+            {{ googleOAuth.configured ? 'check_circle' : 'error_outline' }}
+          </mat-icon>
+          <span *ngIf="googleOAuth.configured; else notConfigured">
+            Configurado{{ googleOAuth.fromDb ? ' (desde el panel)' : ' (desde variables de entorno)' }}:
+            <code>{{ googleOAuth.clientId }}</code>
+            <ng-container *ngIf="googleOAuth.clientSecretMasked"> · secret <code>{{ googleOAuth.clientSecretMasked }}</code></ng-container>
+          </span>
+          <ng-template #notConfigured>
+            No configurado: faltan el Client ID y el Client Secret.
+          </ng-template>
+        </div>
+
+        <div class="saas-key-form">
+          <mat-form-field appearance="outline" class="saas-key-input">
+            <mat-label>Google Client ID</mat-label>
+            <input matInput [(ngModel)]="googleClientId" placeholder="xxxxx.apps.googleusercontent.com">
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="saas-key-input">
+            <mat-label>Google Client Secret</mat-label>
+            <input matInput type="password" [(ngModel)]="googleClientSecret" placeholder="GOCSPX-...">
+          </mat-form-field>
+          <button mat-raised-button color="primary" (click)="saveGoogleOAuthConfig()" [disabled]="googleOAuthSaving">
+            <mat-spinner diameter="18" *ngIf="googleOAuthSaving"></mat-spinner>
+            <mat-icon *ngIf="!googleOAuthSaving">save</mat-icon>
+            Guardar credenciales
+          </button>
+          <button mat-stroked-button color="warn" (click)="clearGoogleOAuthConfig()" *ngIf="googleOAuth?.fromDb">
+            <mat-icon>delete</mat-icon>
+            Quitar
+          </button>
+        </div>
+      </mat-card-content>
+    </mat-card>
   </div>
 </div>

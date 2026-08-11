@@ -107,7 +107,7 @@ Configuración mediante `.env` (misma sintaxis que `.env.example`; el compose la
 | `AI_ENC_KEY` | Clave maestra de cifrado de API keys de IA |
 | `EVOLUTION_API_KEY` | API Key de Evolution API |
 | `N8N_API_KEY` | API Key de n8n (X-N8N-API-KEY) para aprovisionar workflows |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciales OAuth de Google (datos del negocio en vivo por instancia) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciales OAuth de Google (datos del negocio en vivo por instancia). También configurables desde el panel: Centro de IA → Google OAuth (admin) |
 | `CAMPAIGN_CRON` | Expresión cron del envío automático de campañas (por defecto `* * * * *`) |
 | `EVO_WEBHOOK_URL` | URL del webhook de Evolution hacia la app (solo si la app corre en el host) |
 | `N8N_WEBHOOK_URL` | URL pública de n8n (solo si la app corre en el host) |
@@ -148,7 +148,7 @@ Copia `.env.example` a `.env` y ajusta los valores (o usa el **instalador** de `
 | `N8N_APP_URL` | URL con la que n8n llama a la app (`http://host.docker.internal:3000`) |
 | `N8N_EVOLUTION_URL` | URL de Evolution visible desde el contenedor n8n (`http://evolution_api:8080`) |
 | `AI_ENC_KEY` | Clave maestra de cifrado de API keys de IA |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciales OAuth de Google (datos del negocio en vivo por instancia). Ver `DOCUMENTACION.md` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciales OAuth de Google (datos del negocio en vivo por instancia). También configurables desde el panel (Centro de IA → Google OAuth). Ver `DOCUMENTACION.md` |
 | `PORT` | Puerto del backend (3000) |
 | `CAMPAIGN_CRON` | Expresión cron del envío automático de campañas programadas (por defecto cada minuto, `* * * * *`) |
 
